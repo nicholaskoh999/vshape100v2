@@ -22,7 +22,11 @@
   "assets": {
     "binding": "ASSETS",
     // Route every non-API, non-asset URL to index.html so React Router owns routing.
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
+    // SPA not_found_handling answers browser *navigations* for unknown paths
+    // with index.html, which would swallow /api/auth/* before the Worker sees
+    // them. Worker-first on /api/* keeps the auth routes reachable.
+    "run_worker_first": ["/api/*"]
   },
   "d1_databases": [
     {
