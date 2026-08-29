@@ -1,13 +1,10 @@
-import { ChevronRight, Moon, Scale, Sparkles } from 'lucide-react'
-import { motion } from 'motion/react'
-import { Link } from 'react-router'
+import { Scale } from 'lucide-react'
 
-import { Card } from '@/components/ui/Card'
 import { EmptyShell } from '@/components/ui/EmptyShell'
-import { IntensityBadge } from '@/components/ui/IntensityBadge'
 import { PageHeader } from '@/components/ui/PageHeader'
-import { listItemVariants, listVariants, press } from '@/design/motion'
-import { trainingSessions } from '@/features/training/sessions'
+import { TodayHero } from './components/TodayHero'
+import { TodaySection } from './components/TodaySection'
+import { useToday } from './useToday'
 
 const FOUNDATION_DAY_1 = new Date(2026, 7, 31) // 2026-08-31 local time
 const MS_PER_DAY = 24 * 60 * 60 * 1000
@@ -18,21 +15,47 @@ function foundationDay(now: Date) {
   return Math.floor((today.getTime() - FOUNDATION_DAY_1.getTime()) / MS_PER_DAY) + 1
 }
 
-const weekdaySessionIds = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
-
-export function TodayPage() {
-  const now = new Date()
-  const day = foundationDay(now)
-  const weekday = now.getDay() // 0 = Sunday
-  const session = trainingSessions.find(
-    (entry) => entry.id === weekdaySessionIds[weekday - 1],
+/** Small live readout — also the visible proof the page follows the clock. */
+function ClockChip({ now }: { now: Date }) {
+  return (
+    <div className="flex shrink-0 items-center gap-2 rounded-full border border-edge bg-surface px-3 py-1.5">
+      <span className="size-1.5 animate-pulse rounded-full bg-lime" aria-hidden="true" />
+      <span className="text-sm font-bold tabular-nums text-ink-dim">
+        {now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+      </span>
+    </div>
   )
+}
 
+/**
+ * Today.
+ *
+ * Layout follows priority, not the clock: what is happening leads, unfinished
+ * overdue work sits right behind it, then the rest of the day, then what is
+ * already done.
+ *
+ * - mobile: one column, sections ordered NOW → LATE → NEXT → LATER → DONE
+ * - tablet: same column, wider rows and a two-up "Later today" grid
+ * - desktop: schedule on the left, needs-attention + done in a lighter rail
+ *
+ * The mobile order is expressed with `order-*` on a `display: contents`
+ * wrapper, so both layouts share one set of DOM nodes.
+ */
+export function TodayPage() {
+  const { now, agenda, groups, toggle } = useToday()
+
+  const day = foundationDay(now)
   const dateLabel = now.toLocaleDateString('en-GB', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
   })
+
+  // With nothing current, the closest upcoming item leads instead — and then
+  // it must not appear a second time under "Up next".
+  const hero = groups.NOW[0] ?? groups.NEXT[0] ?? null
+  const alsoNow = groups.NOW.slice(1)
+  const upNext = groups.NOW.length > 0 ? groups.NEXT : []
 
   return (
     <>
@@ -43,73 +66,64 @@ export function TodayPage() {
             : `Foundation · Day ${day}`
         }
         title="Today"
-        subline={dateLabel}
+        subline={`${dateLabel} · ${agenda.route.label}`}
+        actions={<ClockChip now={now} />}
       />
 
-      <motion.div
-        variants={listVariants}
-        initial="initial"
-        animate="enter"
-        className="flex flex-col gap-4"
-      >
-        <motion.div variants={listItemVariants}>
-          {session ? (
-            <Link to={`/training/${session.id}`} className="block rounded-card">
-              <motion.div {...press}>
-                <Card className="flex items-center gap-4 p-5 transition-colors duration-150 hover:border-edge-strong">
-                  <div className="min-w-0 flex-1">
-                    <div className="mb-1.5 flex items-center gap-2">
-                      <IntensityBadge intensity={session.intensity} />
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                        20:30 – 21:30
-                      </span>
-                    </div>
-                    <p className="truncate text-lg font-extrabold tracking-tight text-offwhite">
-                      {session.focus}
-                    </p>
-                    <p className="mt-0.5 text-[13px] text-ink-faint">
-                      {session.exercises.length} exercises · Home Mode
-                    </p>
-                  </div>
-                  <ChevronRight className="size-5 shrink-0 text-ink-faint" aria-hidden="true" />
-                </Card>
-              </motion.div>
-            </Link>
-          ) : (
-            <Card className="flex items-center gap-4 p-5">
-              <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-light-day/15 text-light-day">
-                <Moon className="size-5" aria-hidden="true" />
-              </span>
-              <div>
-                <p className="text-lg font-extrabold tracking-tight text-offwhite">
-                  {weekday === 6 ? 'Chill route' : 'Recovery route'}
-                </p>
-                <p className="mt-0.5 text-[13px] text-ink-faint">
-                  {weekday === 6
-                    ? 'No gym today — flexible after work.'
-                    : 'No gym — weekly progress check + room reset.'}
-                </p>
-              </div>
-            </Card>
-          )}
-        </motion.div>
+      <div className="flex flex-col gap-5 xl:grid xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] xl:items-start xl:gap-6">
+        {/* Schedule column */}
+        <div className="contents xl:flex xl:flex-col xl:gap-5">
+          <div className="order-1 flex flex-col gap-2.5 xl:order-none">
+            <TodayHero
+              entry={hero}
+              nowMinutes={agenda.nowMinutes}
+              onToggle={toggle}
+              routeSummary={agenda.route.summary}
+            />
+            <TodaySection title="Also now" entries={alsoNow} onToggle={toggle} />
+          </div>
 
-        <motion.div variants={listItemVariants}>
-          <EmptyShell
-            icon={Sparkles}
-            title="Your day builds here"
-            note="NOW / NEXT / LATER routine flow arrives with the daily engine in an upcoming round."
+          <TodaySection
+            title="Up next"
+            entries={upNext}
+            onToggle={toggle}
+            className="order-3 xl:order-none"
           />
-        </motion.div>
 
-        <motion.div variants={listItemVariants}>
+          <TodaySection
+            title="Later today"
+            entries={groups.LATER}
+            onToggle={toggle}
+            className="order-4 xl:order-none"
+            listClassName="md:grid md:grid-cols-2 md:items-start xl:grid-cols-1"
+          />
+        </div>
+
+        {/* Attention + archive rail */}
+        <div className="contents xl:flex xl:flex-col xl:gap-5">
+          <TodaySection
+            title="Needs attention"
+            entries={groups.LATE}
+            onToggle={toggle}
+            tone="alert"
+            className="order-2 xl:order-none"
+          />
+
+          <TodaySection
+            title="Done earlier"
+            entries={groups.DONE_EARLIER}
+            onToggle={toggle}
+            className="order-5 xl:order-none"
+          />
+
           <EmptyShell
             icon={Scale}
             title="Weight check-in"
             note="Optional daily weight logging lands together with local data storage."
+            className="order-6 xl:order-none"
           />
-        </motion.div>
-      </motion.div>
+        </div>
+      </div>
     </>
   )
 }

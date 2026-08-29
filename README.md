@@ -4,9 +4,9 @@ Today-first personal daily training system. Foundation 100 runs 2026-08-31 → 2
 
 Target domain: `vshapev2.nkmwei.de`
 
-## Current state — Round 02
+## Current state — Round 03
 
-**App-native Google Login + Trusted Device Foundation**, on top of the Round 01 shell.
+**Today Daily Engine (client-side)**, on top of the Round 01 shell and Round 02 auth.
 
 ### Round 01 (accepted)
 - React 19 + TypeScript + Vite app shell, Tailwind CSS v4
@@ -15,7 +15,7 @@ Target domain: `vshapev2.nkmwei.de`
 - Brand palette + semantic tokens, centralized motion tokens, reduced motion respected
 - Brand V icon in `public/`
 
-### Round 02 (this round)
+### Round 02 (accepted)
 - Branded `/login` screen — VShape100 first, never a generic auth page. No app navigation around it.
 - Google OIDC **authorization-code flow with PKCE (S256)**, unpredictable `state` and `nonce`
 - ID token verified against Google's JWKS: signature, issuer, audience, expiry, nonce, `sub`, email presence and `email_verified`
@@ -26,7 +26,24 @@ Target domain: `vshapev2.nkmwei.de`
 - Logout for the current device
 - Minimal D1 auth schema and migration
 
-No workout persistence, no daily engine, no push, no production deploy — those remain later rounds.
+### Round 03 (this round)
+- `/today` is a working daily engine: the accepted Home Mode / Saturday / Sunday
+  routes resolved against the local clock
+- Five states — **NOW / NEXT / LATER / LATE / DONE EARLIER**
+- **Time never completes a task.** The clock only changes how an item looks and
+  where it sits; only an explicit tap can finish one
+- Cross-midnight intervals (`23:30–00:30`) and previous-day spillover
+  (Saturday's `01:00–03:00` block seen from Sunday) are modelled, not truncated
+- Flexible parts of the weekend are semantic **window** items — the engine never
+  invents a clock time that was not accepted
+- Manual complete + undo, **in client memory only** (a refresh clears it — the
+  accepted limitation for this round)
+- Live recomputation on every minute boundary, no refresh needed
+- Responsive Today layout: one column on mobile, wider rows and a two-up
+  "Later today" grid on tablet, schedule + attention rail on desktop
+
+No workout persistence, no Today persistence, no push, no production deploy —
+those remain later rounds.
 
 ## Local setup
 
@@ -164,14 +181,20 @@ src/
   design/           # tokens.css, motion.ts
   features/
     auth/           # provider, guard, login screen, client
-    today/ training/ progress/ calendar/ achievements/ settings/
-  test/             # shell + auth tests
+    today/
+      model/        # types, accepted routes, pure engine, ordering, formatting
+      components/   # hero, item row, section, completion controls
+      useTodayClock.ts  # the one place the app reads the wall clock
+      useToday.ts       # clock + in-memory completion + engine
+      TodayPage.tsx
+    training/ progress/ calendar/ achievements/ settings/
+  test/             # shell, auth and Today tests
 public/             # favicon.svg, app-icon.svg, PNG/ICO icon set
 ```
 
 ## Later rounds (not in this repo yet)
 
-Daily routine engine (NOW/NEXT/LATER), workout persistence with set-by-set
-logging and Double Progression, Holiday Mode data flow, weight logging,
+Today persistence (routine schema + completion history), workout persistence
+with set-by-set logging and Double Progression, Holiday Mode data flow, weight logging,
 achievements engine, PWA/Web Push, exercise media (external URL first, R2
 optional), trusted-device management and sign-out-everywhere.
