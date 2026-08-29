@@ -7,6 +7,7 @@
 
 import type { OAuthStateRecord, OAuthStateStore } from '../auth/oauthState'
 import type { SessionRecord, SessionStore } from '../auth/session'
+import type { CompletionRecord, CompletionStore } from '../today/completions'
 
 export function createMemorySessionStore() {
   const rows = new Map<string, SessionRecord>()
@@ -52,6 +53,35 @@ export function createMemoryStateStore() {
       for (const [key, row] of rows) {
         if (row.expiresAt <= now) rows.delete(key)
       }
+    },
+  }
+
+  return { store, rows }
+}
+
+export function createMemoryCompletionStore() {
+  const rows = new Map<string, CompletionRecord>()
+  const id = (googleSub: string, occurrenceKey: string) =>
+    `${googleSub}\u0000${occurrenceKey}`
+
+  const store: CompletionStore = {
+    async listRange(googleSub, from, to) {
+      return [...rows.values()]
+        .filter(
+          (row) =>
+            row.googleSub === googleSub &&
+            row.anchorDay >= from &&
+            row.anchorDay <= to,
+        )
+        .sort((a, b) => a.occurrenceKey.localeCompare(b.occurrenceKey))
+        .map((row) => ({ ...row }))
+    },
+    async insertIfAbsent(record) {
+      const key = id(record.googleSub, record.occurrenceKey)
+      if (!rows.has(key)) rows.set(key, { ...record })
+    },
+    async remove(googleSub, occurrenceKey) {
+      rows.delete(id(googleSub, occurrenceKey))
     },
   }
 

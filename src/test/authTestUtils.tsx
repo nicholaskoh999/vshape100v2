@@ -5,6 +5,7 @@ import { vi } from 'vitest'
 import { routes } from '@/app/router/router'
 import { AuthProvider } from '@/features/auth/AuthProvider'
 import type { SessionState } from '@/features/auth/api'
+import { createTodayServer, type TodayServer } from './todayApiTestUtils'
 
 export const testUser = {
   email: 'person@example.com',
@@ -29,21 +30,31 @@ function jsonResponse(body: unknown): Response {
 }
 
 /**
- * Stub `fetch` for the auth endpoints. `sessionResponse` may be a value or a
+ * Stub `fetch` for the app's own endpoints. `session` may be a value or a
  * promise, which lets a test hold the bootstrap open and assert that nothing
  * protected has rendered yet.
+ *
+ * Today completions are served by an in-memory stand-in so the real client,
+ * hook and engine all run; pass your own via `today` to seed saved
+ * completions or to make requests fail.
  */
 export function mockAuthFetch(options: {
   session: SessionState | Promise<SessionState>
   onLogout?: () => void
+  today?: TodayServer
 }) {
-  const handler: FetchHandler = async (url) => {
+  const today = options.today ?? createTodayServer()
+
+  const handler: FetchHandler = async (url, init) => {
     if (url.startsWith('/api/auth/session')) {
       return jsonResponse(await options.session)
     }
     if (url.startsWith('/api/auth/logout')) {
       options.onLogout?.()
       return jsonResponse({ authenticated: false })
+    }
+    if (url.startsWith('/api/today/completions')) {
+      return today.handle(url, init)
     }
     throw new Error(`Unexpected fetch in test: ${url}`)
   }

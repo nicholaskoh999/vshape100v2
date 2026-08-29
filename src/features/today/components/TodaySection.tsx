@@ -8,6 +8,8 @@ export function TodaySection({
   title,
   entries,
   onToggle,
+  pendingKeys,
+  disabled = false,
   tone = 'default',
   listClassName,
   className,
@@ -16,6 +18,8 @@ export function TodaySection({
   title: string
   entries: TodayEntry[]
   onToggle: (key: string) => void
+  pendingKeys: ReadonlySet<string>
+  disabled?: boolean
   tone?: 'default' | 'alert'
   listClassName?: string
   className?: string
@@ -48,7 +52,13 @@ export function TodaySection({
 
       <ul className={cn('flex flex-col gap-2', listClassName)}>
         {entries.map((entry) => (
-          <TodayItemRow key={entry.key} entry={entry} onToggle={onToggle} />
+          <TodayItemRow
+            key={entry.key}
+            entry={entry}
+            onToggle={onToggle}
+            pending={pendingKeys.has(entry.key)}
+            disabled={disabled}
+          />
         ))}
       </ul>
     </section>

@@ -1,45 +1,42 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 
-import { buildAgenda } from './model/engine'
+import { buildAgenda, completionDayRange } from './model/engine'
 import { groupByStatus } from './model/ordering'
 import { useTodayClock } from './useTodayClock'
+import { useTodayCompletions } from './useTodayCompletions'
 
 /**
- * Completion memory for the current session.
+ * Today, wired up: live clock → persisted completions → pure engine →
+ * grouped view model.
  *
- * ROUND 03 SCOPE: this lives in React state and nowhere else. No
- * localStorage, no sessionStorage, no IndexedDB, no cookies, no API, no D1.
- * A refresh clears it, and that is the accepted limitation for this round —
- * real persistence arrives later. Do not "temporarily" back this with
- * storage; a half-real store is worse than an honestly empty one.
- */
-function useCompletionMemory() {
-  const [completed, setCompleted] = useState<ReadonlySet<string>>(() => new Set<string>())
-
-  const toggle = useCallback((key: string) => {
-    setCompleted((previous) => {
-      const next = new Set(previous)
-      if (!next.delete(key)) next.add(key)
-      return next
-    })
-  }, [])
-
-  return { completed, toggle }
-}
-
-/**
- * Today, wired up: live clock → pure engine → grouped view model.
- *
- * The clock is the only impure part. Everything the UI renders is derived by
- * `buildAgenda`, so a minute boundary and a completion flow through exactly
- * the same recompute.
+ * The clock and the network are the only impure parts. Everything the UI
+ * renders is derived by `buildAgenda`, so a minute boundary, a hydration and
+ * a completion all flow through exactly the same recompute — the server only
+ * ever supplies *which* occurrence keys are done, never a Today status.
  */
 export function useToday() {
   const now = useTodayClock()
-  const { completed, toggle } = useCompletionMemory()
 
-  const agenda = useMemo(() => buildAgenda(now, completed), [now, completed])
+  // Only the day matters for hydration, so this is stable between clock ticks
+  // and shifts exactly once when the local calendar day changes.
+  const range = useMemo(() => completionDayRange(now), [now])
+  const completions = useTodayCompletions(range)
+
+  const agenda = useMemo(
+    () => buildAgenda(now, completions.completed),
+    [now, completions.completed],
+  )
   const groups = useMemo(() => groupByStatus(agenda.entries), [agenda])
 
-  return { now, agenda, groups, toggle }
+  return {
+    now,
+    agenda,
+    groups,
+    toggle: completions.toggle,
+    hydration: completions.hydration,
+    pending: completions.pending,
+    failure: completions.failure,
+    retryHydration: completions.retryHydration,
+    dismissFailure: completions.dismissFailure,
+  }
 }

@@ -22,11 +22,15 @@ export function TodayHero({
   nowMinutes,
   onToggle,
   routeSummary,
+  pending = false,
+  disabled = false,
 }: {
   entry: TodayEntry | null
   nowMinutes: number
   onToggle: (key: string) => void
   routeSummary: string
+  pending?: boolean
+  disabled?: boolean
 }) {
   if (!entry) {
     return (
@@ -118,7 +122,13 @@ export function TodayHero({
       </div>
 
       <div className="relative mt-5 flex flex-col gap-2 sm:flex-row sm:items-center">
-        <CompleteButton entry={entry} onToggle={onToggle} className="w-full sm:w-auto" />
+        <CompleteButton
+          entry={entry}
+          onToggle={onToggle}
+          pending={pending}
+          disabled={disabled}
+          className="w-full sm:w-auto"
+        />
         {entry.item.to && (
           <Link to={entry.item.to} className="rounded-control">
             <motion.span

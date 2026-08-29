@@ -40,9 +40,13 @@ const iconTone: Record<TodayStatus, string> = {
 export function TodayItemRow({
   entry,
   onToggle,
+  pending = false,
+  disabled = false,
 }: {
   entry: TodayEntry
   onToggle: (key: string) => void
+  pending?: boolean
+  disabled?: boolean
 }) {
   const Icon = itemIcons[entry.item.icon]
   const done = entry.completed
@@ -126,7 +130,12 @@ export function TodayItemRow({
         {entry.item.to && !done && (
           <ChevronRight className="size-4 shrink-0 text-ink-faint" aria-hidden="true" />
         )}
-        <CompleteToggle entry={entry} onToggle={onToggle} />
+        <CompleteToggle
+          entry={entry}
+          onToggle={onToggle}
+          pending={pending}
+          disabled={disabled}
+        />
       </div>
     </motion.li>
   )

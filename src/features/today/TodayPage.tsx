@@ -4,6 +4,7 @@ import { EmptyShell } from '@/components/ui/EmptyShell'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { TodayHero } from './components/TodayHero'
 import { TodaySection } from './components/TodaySection'
+import { TodayStatusNotice } from './components/TodayStatusNotice'
 import { useToday } from './useToday'
 
 const FOUNDATION_DAY_1 = new Date(2026, 7, 31) // 2026-08-31 local time
@@ -42,7 +43,28 @@ function ClockChip({ now }: { now: Date }) {
  * wrapper, so both layouts share one set of DOM nodes.
  */
 export function TodayPage() {
-  const { now, agenda, groups, toggle } = useToday()
+  const {
+    now,
+    agenda,
+    groups,
+    toggle,
+    hydration,
+    pending,
+    failure,
+    retryHydration,
+    dismissFailure,
+  } = useToday()
+
+  // Completing something before saved progress has loaded would be acting on
+  // state we have not read yet, so the controls wait for hydration.
+  const controlsDisabled = hydration !== 'ready'
+
+  const failureMessage = failure
+    ? `Couldn’t ${failure.action === 'complete' ? 'save' : 'undo'} “${
+        agenda.entries.find((entry) => entry.key === failure.key)?.item.title ??
+        'that item'
+      }”. Please try again.`
+    : null
 
   const day = foundationDay(now)
   const dateLabel = now.toLocaleDateString('en-GB', {
@@ -70,6 +92,13 @@ export function TodayPage() {
         actions={<ClockChip now={now} />}
       />
 
+      <TodayStatusNotice
+        hydration={hydration}
+        failureMessage={failureMessage}
+        onRetry={retryHydration}
+        onDismiss={dismissFailure}
+      />
+
       <div className="flex flex-col gap-5 xl:grid xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] xl:items-start xl:gap-6">
         {/* Schedule column */}
         <div className="contents xl:flex xl:flex-col xl:gap-5">
@@ -79,14 +108,24 @@ export function TodayPage() {
               nowMinutes={agenda.nowMinutes}
               onToggle={toggle}
               routeSummary={agenda.route.summary}
+              pending={hero ? pending.has(hero.key) : false}
+              disabled={controlsDisabled}
             />
-            <TodaySection title="Also now" entries={alsoNow} onToggle={toggle} />
+            <TodaySection
+              title="Also now"
+              entries={alsoNow}
+              onToggle={toggle}
+              pendingKeys={pending}
+              disabled={controlsDisabled}
+            />
           </div>
 
           <TodaySection
             title="Up next"
             entries={upNext}
             onToggle={toggle}
+            pendingKeys={pending}
+            disabled={controlsDisabled}
             className="order-3 xl:order-none"
           />
 
@@ -94,6 +133,8 @@ export function TodayPage() {
             title="Later today"
             entries={groups.LATER}
             onToggle={toggle}
+            pendingKeys={pending}
+            disabled={controlsDisabled}
             className="order-4 xl:order-none"
             listClassName="md:grid md:grid-cols-2 md:items-start xl:grid-cols-1"
           />
@@ -105,6 +146,8 @@ export function TodayPage() {
             title="Needs attention"
             entries={groups.LATE}
             onToggle={toggle}
+            pendingKeys={pending}
+            disabled={controlsDisabled}
             tone="alert"
             className="order-2 xl:order-none"
           />
@@ -113,6 +156,8 @@ export function TodayPage() {
             title="Done earlier"
             entries={groups.DONE_EARLIER}
             onToggle={toggle}
+            pendingKeys={pending}
+            disabled={controlsDisabled}
             className="order-5 xl:order-none"
           />
 

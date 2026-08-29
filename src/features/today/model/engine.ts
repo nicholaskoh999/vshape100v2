@@ -123,6 +123,17 @@ function timeStatus(entry: TodayEntry, nowMinutes: number): TodayStatus {
  * soften the rule for the *current* day — an unfinished item whose time has
  * passed today is still LATE and still prominent.
  */
+/**
+ * The anchor days Today can display for `now`: the reference day, plus the
+ * previous day, which is the only day whose occurrences can still be running
+ * past local midnight. Stable for the whole calendar day, so persisted
+ * completions are fetched once per day rather than on every clock tick.
+ */
+export function completionDayRange(now: Date): { from: string; to: string } {
+  const today = startOfLocalDay(now)
+  return { from: dayKey(addDays(today, -1)), to: dayKey(today) }
+}
+
 export function buildAgenda(
   now: Date,
   completed: ReadonlySet<string> = EMPTY_COMPLETED,

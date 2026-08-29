@@ -1,4 +1,4 @@
-import { act, screen, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -50,6 +50,10 @@ function user() {
 async function renderToday() {
   const router = renderApp('/today')
   await screen.findByRole('heading', { name: 'Today', level: 1 })
+  // Completion controls stay held until saved progress has loaded.
+  await waitFor(() =>
+    expect(screen.queryByText(/Loading your saved progress/)).not.toBeInTheDocument(),
+  )
   return router
 }
 
@@ -103,12 +107,15 @@ describe('Today — manual completion', () => {
     const person = user()
 
     await person.click(screen.getByRole('button', { name: 'Complete Gym training' }))
+    await screen.findByRole('region', { name: 'Done earlier' })
     expect(region('Done earlier').getByText('Gym training')).toBeInTheDocument()
 
     await person.click(
       region('Done earlier').getByRole('button', { name: 'Undo Gym training' }),
     )
-    expect(screen.queryByRole('region', { name: 'Done earlier' })).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: 'Done earlier' })).not.toBeInTheDocument(),
+    )
     expect(screen.getByRole('heading', { name: 'Gym training', level: 2 })).toBeInTheDocument()
   })
 
@@ -119,6 +126,7 @@ describe('Today — manual completion', () => {
     expect(toggle).toHaveAttribute('aria-pressed', 'false')
 
     await user().click(toggle)
+    await screen.findByRole('region', { name: 'Done earlier' })
     expect(
       region('Done earlier').getByRole('button', { name: 'Undo Gym training' }),
     ).toHaveAttribute('aria-pressed', 'true')
@@ -129,7 +137,7 @@ describe('Today — manual completion', () => {
     await renderToday()
     await user().click(screen.getByRole('button', { name: 'Complete Gym training' }))
     expect(
-      screen.getByRole('heading', { name: 'Shower + rest', level: 2 }),
+      await screen.findByRole('heading', { name: 'Shower + rest', level: 2 }),
     ).toBeInTheDocument()
   })
 
@@ -139,14 +147,16 @@ describe('Today — manual completion', () => {
     expect(region('Needs attention').getByText('Gym training')).toBeInTheDocument()
 
     await user().click(screen.getByRole('button', { name: 'Complete Gym training' }))
+    await screen.findByRole('region', { name: 'Done earlier' })
     expect(region('Done earlier').getByText('Gym training')).toBeInTheDocument()
     expect(region('Needs attention').queryByText('Gym training')).not.toBeInTheDocument()
   })
 
-  it('keeps completion in memory only — no browser storage is written', async () => {
+  it('never uses browser storage — the server is the only store', async () => {
     setNow(2026, 8, 7, 20, 45)
     await renderToday()
     await user().click(screen.getByRole('button', { name: 'Complete Gym training' }))
+    await screen.findByRole('region', { name: 'Done earlier' })
 
     expect(setItem).not.toHaveBeenCalled()
     expect(window.localStorage.length).toBe(0)
@@ -222,6 +232,7 @@ describe('Today — live time recomputation', () => {
     setNow(2026, 8, 7, 20, 29)
     await renderToday()
     await user().click(screen.getByRole('button', { name: 'Complete Dinner + Netflix' }))
+    await screen.findByRole('region', { name: 'Done earlier' })
 
     tick(62)
 
