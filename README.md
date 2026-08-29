@@ -2,7 +2,7 @@
 
 Today-first personal daily training system. Foundation 100 runs 2026-08-31 → 2026-12-08 and continues after Day 100.
 
-Target domain: `vshape100v2.nkmwei.de`
+Target domain: `vshapev2.nkmwei.de`
 
 ## Current state — Round 02
 
@@ -49,7 +49,7 @@ Authorized redirect URIs:
 | Environment | Redirect URI |
 | --- | --- |
 | Local dev | `http://localhost:5173/api/auth/google/callback` |
-| Production | `https://vshape100v2.nkmwei.de/api/auth/google/callback` |
+| Production | `https://vshapev2.nkmwei.de/api/auth/google/callback` |
 
 The callback URI is derived from `APP_ORIGIN`, so it must match exactly.
 

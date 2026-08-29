@@ -24,7 +24,7 @@ const rows = [
     icon: Info,
     label: 'App',
     value: 'v2 · Round 02',
-    note: 'Foundation shell — vshape100v2.nkmwei.de',
+    note: 'Foundation shell — vshapev2.nkmwei.de',
   },
 ]
 

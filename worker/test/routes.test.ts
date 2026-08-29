@@ -10,7 +10,7 @@ const DAY = 24 * 60 * 60 * 1000
 const THIRTY_DAYS_SECONDS = 30 * 24 * 60 * 60
 const START = Date.UTC(2026, 8, 1)
 
-const HTTPS_ORIGIN = 'https://vshape100v2.nkmwei.de'
+const HTTPS_ORIGIN = 'https://vshapev2.nkmwei.de'
 
 function makeEnv(db: D1Database, appOrigin = HTTPS_ORIGIN): Env {
   return { DB: db, ASSETS: {} as Fetcher, APP_ORIGIN: appOrigin }

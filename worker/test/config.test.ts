@@ -46,10 +46,10 @@ describe('loadConfig', () => {
 
   it('derives the callback URI from APP_ORIGIN', () => {
     const config = loadConfig(
-      { ...baseEnv, APP_ORIGIN: 'https://vshape100v2.nkmwei.de' } as Env,
+      { ...baseEnv, APP_ORIGIN: 'https://vshapev2.nkmwei.de' } as Env,
       url,
     )
-    expect(config.redirectUri).toBe('https://vshape100v2.nkmwei.de/api/auth/google/callback')
+    expect(config.redirectUri).toBe('https://vshapev2.nkmwei.de/api/auth/google/callback')
     expect(config.secureCookies).toBe(true)
   })
 

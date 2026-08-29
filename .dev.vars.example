@@ -15,5 +15,5 @@ ALLOWED_GOOGLE_EMAILS=you@example.com
 # Origin the app is served from. Determines the OAuth redirect URI and
 # whether session cookies are marked Secure.
 #   local:      http://localhost:5173
-#   production: https://vshape100v2.nkmwei.de
+#   production: https://vshapev2.nkmwei.de
 APP_ORIGIN=http://localhost:5173
