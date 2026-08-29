@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/Card'
 import { IntensityBadge } from '@/components/ui/IntensityBadge'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { listItemVariants, listVariants, press } from '@/design/motion'
+import { exercisePath } from './navigation'
 import { getSession } from './sessions'
 
 /** Nested shell: /training/:session */
@@ -43,7 +44,10 @@ export function TrainingSessionPage() {
       >
         {session.exercises.map((exercise, index) => (
           <motion.li key={`${exercise.id}-${index}`} variants={listItemVariants}>
-            <Link to={`/exercises/${exercise.id}`} className="block rounded-card">
+            <Link
+              to={exercisePath(exercise.id, session.id)}
+              className="block rounded-card"
+            >
               <motion.div {...press}>
                 <Card className="flex items-center gap-4 p-4 transition-colors duration-150 hover:border-edge-strong">
                   <span

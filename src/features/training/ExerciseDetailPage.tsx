@@ -1,15 +1,22 @@
 import { ArrowLeft, ImageOff } from 'lucide-react'
 import { Link } from 'react-router'
-import { useParams } from 'react-router'
+import { useParams, useSearchParams } from 'react-router'
 
 import { Card } from '@/components/ui/Card'
 import { PageHeader } from '@/components/ui/PageHeader'
+import { ORIGIN_PARAM, resolveExerciseReturn } from './navigation'
 import { getExercise, trainingSessions } from './sessions'
 
 /** Nested shell: /exercises/:id */
 export function ExerciseDetailPage() {
   const { id } = useParams()
+  const [searchParams] = useSearchParams()
   const found = getExercise(id)
+
+  // The return target comes from the session that opened this exercise, never
+  // from the exercise itself — the same exercise sits in several days. The raw
+  // value is validated before it can become a link (see ./navigation).
+  const back = resolveExerciseReturn(searchParams.get(ORIGIN_PARAM))
 
   const appearances = found
     ? trainingSessions.filter((session) =>
@@ -20,11 +27,12 @@ export function ExerciseDetailPage() {
   return (
     <>
       <Link
-        to="/training"
+        to={back.to}
+        aria-label={`Back to ${back.label}`}
         className="mb-4 inline-flex items-center gap-1.5 rounded-control text-[13px] font-semibold text-ink-faint transition-colors duration-150 hover:text-offwhite"
       >
         <ArrowLeft className="size-4" aria-hidden="true" />
-        Training
+        {back.label}
       </Link>
 
       <PageHeader
