@@ -155,6 +155,41 @@ describe('Today — manual completion', () => {
   })
 })
 
+describe('Today — a moment is a fixed point', () => {
+  it('makes the 17:30 marker and the 17:30 interval current together', async () => {
+    setNow(2026, 8, 7, 17, 30)
+    await renderToday()
+    expect(screen.getByRole('heading', { name: 'Back home', level: 2 })).toBeInTheDocument()
+    expect(region('Also now').getByText('Cook dinner + shower')).toBeInTheDocument()
+    // Earlier items are overdue, but neither 17:30 item is.
+    const late = region('Needs attention')
+    expect(late.getByText('Wake up')).toBeInTheDocument()
+    expect(late.queryByText('Back home')).not.toBeInTheDocument()
+    expect(late.queryByText('Cook dinner + shower')).not.toBeInTheDocument()
+  })
+
+  it('leaves the marker LATE at 17:31 while the interval stays current', async () => {
+    setNow(2026, 8, 7, 17, 31)
+    await renderToday()
+    expect(
+      screen.getByRole('heading', { name: 'Cook dinner + shower', level: 2 }),
+    ).toBeInTheDocument()
+    expect(region('Needs attention').getByText('Back home')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Also now' })).not.toBeInTheDocument()
+  })
+
+  it('turns a passed moment LATE one minute later, live', async () => {
+    setNow(2026, 8, 7, 7, 30)
+    await renderToday()
+    expect(screen.getByRole('heading', { name: 'Wake up', level: 2 })).toBeInTheDocument()
+
+    tick(1) // 07:31
+
+    expect(region('Needs attention').getByText('Wake up')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Work', level: 2 })).toBeInTheDocument()
+  })
+})
+
 describe('Today — live time recomputation', () => {
   it('flips the current item at the boundary without a refresh', async () => {
     setNow(2026, 8, 7, 20, 29)
@@ -221,11 +256,9 @@ describe('Today — routes and flexible items', () => {
     expect(screen.getByRole('heading', { name: 'Room reset', level: 2 })).toBeInTheDocument()
     expect(screen.getByText('Evening · 1 hour')).toBeInTheDocument()
     expect(screen.getByText('No alarm')).toBeInTheDocument()
-    // Sunday accepted no exact times, so it contributes no clock range. The
-    // only one on screen belongs to Saturday's 01:00–03:00 block, which
-    // spilled past midnight into Sunday.
-    expect(screen.getAllByText(/^\d{2}:\d{2} – \d{2}:\d{2}$/).map((el) => el.textContent))
-      .toEqual(['01:00 – 03:00'])
+    // Sunday accepted no exact times, and by the evening nothing is left over
+    // from Saturday, so no clock range appears anywhere on the page.
+    expect(screen.queryByText(/^\d{2}:\d{2} – \d{2}:\d{2}$/)).not.toBeInTheDocument()
   })
 
   it('shows a second simultaneous item rather than hiding it', async () => {
@@ -234,12 +267,33 @@ describe('Today — routes and flexible items', () => {
     expect(region('Also now').getByText('Free time / Netflix / rest')).toBeInTheDocument()
   })
 
-  it("marks Saturday's leftovers as yesterday's, not Sunday's", async () => {
+  it("shows Saturday's block as yesterday's while it is still running", async () => {
+    setNow(2026, 8, 13, 1, 30) // Sunday 01:30 — Saturday's 01:00–03:00 block
+    await renderToday()
+    expect(
+      screen.getByRole('heading', { name: 'Ready to sleep', level: 2 }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('01:00 – 03:00')).toBeInTheDocument()
+    expect(screen.getByText('from yesterday')).toBeInTheDocument()
+  })
+
+  it("drops Saturday's leftovers from Sunday once they have ended", async () => {
     setNow(2026, 8, 13, 19, 0)
     await renderToday()
-    const late = region('Needs attention')
-    expect(late.getByText('Chill / Netflix / rest')).toBeInTheDocument()
-    expect(late.getAllByText('· yesterday')).toHaveLength(2)
+    for (const gone of ['Chill / Netflix / rest', 'Ready to sleep']) {
+      expect(screen.queryByText(gone)).not.toBeInTheDocument()
+    }
+    expect(screen.queryByText('· yesterday')).not.toBeInTheDocument()
+    expect(screen.queryByText('from yesterday')).not.toBeInTheDocument()
+  })
+
+  it("drops last night's block from Today the moment it ends", async () => {
+    setNow(2026, 8, 8, 0, 30) // Tuesday 00:30 — Monday's block just ended
+    await renderToday()
+    expect(screen.queryByText('from yesterday')).not.toBeInTheDocument()
+    // Tuesday's own 23:30–00:30 block is still ahead, so exactly one remains.
+    expect(screen.getAllByText('23:30 – 00:30')).toHaveLength(1)
+    expect(screen.getByRole('heading', { name: 'Wake up', level: 2 })).toBeInTheDocument()
   })
 
   it("carries the previous day's block past midnight", async () => {

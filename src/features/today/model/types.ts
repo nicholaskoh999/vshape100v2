@@ -26,7 +26,9 @@ export const MINUTES_PER_DAY = 1440
 /**
  * How precisely an item is scheduled.
  *
- * - `moment`   — a fixed point in time, e.g. `07:30 Wake up`.
+ * - `moment`   — a fixed point in time, e.g. `07:30 Wake up`. It occupies
+ *                exactly the minute it is scheduled for: NOW at 07:30, LATE
+ *                at 07:31 if untouched. It is never widened into an interval.
  * - `interval` — a fixed start and end, e.g. `20:30–21:30 Gym training`.
  *                Crossing midnight is just an end past 1440.
  * - `window`   — a *flexible* item. The user never accepted an exact clock
@@ -91,7 +93,8 @@ export type TodayStatus = 'NOW' | 'NEXT' | 'LATER' | 'LATE' | 'DONE_EARLIER'
  *
  * `start`/`end` are normalised to minutes relative to **the reference day's
  * 00:00**, so a spillover instance from yesterday carries negative values
- * (`23:30` yesterday is `-30`).
+ * (`23:30` yesterday is `-30`). A spillover occurrence is present only while
+ * it is still running; once it ends it leaves today's agenda entirely.
  */
 export type TodayEntry = {
   /**

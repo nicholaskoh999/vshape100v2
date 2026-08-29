@@ -33,7 +33,9 @@ Target domain: `vshapev2.nkmwei.de`
 - **Time never completes a task.** The clock only changes how an item looks and
   where it sits; only an explicit tap can finish one
 - Cross-midnight intervals (`23:30–00:30`) and previous-day spillover
-  (Saturday's `01:00–03:00` block seen from Sunday) are modelled, not truncated
+  (Saturday's `01:00–03:00` block seen from Sunday) are modelled, not truncated.
+  A spillover occurrence stays in Today only while it is still running — once
+  it ends it leaves the agenda, because Today is today's actionable list
 - Flexible parts of the weekend are semantic **window** items — the engine never
   invents a clock time that was not accepted
 - Manual complete + undo, **in client memory only** (a refresh clears it — the

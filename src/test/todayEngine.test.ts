@@ -82,10 +82,80 @@ describe('3. during an active item', () => {
     expect(statusOf(at(MONDAY, 20, 45), 'gym-training')).toBe('NOW')
   })
 
-  it('holds a moment until the next thing in the route starts', () => {
-    // 07:30 Wake up has no duration of its own; it holds until Work at 08:00.
-    expect(statusOf(at(MONDAY, 7, 45), 'wake-up')).toBe('NOW')
-    expect(statusOf(at(MONDAY, 8, 0), 'wake-up')).toBe('LATE')
+  it('keeps an interval NOW for its whole span', () => {
+    expect(statusOf(at(MONDAY, 18, 45), 'dinner-netflix')).toBe('NOW')
+    expect(statusOf(at(MONDAY, 20, 29), 'dinner-netflix')).toBe('NOW')
+  })
+})
+
+describe('3b. a moment is a fixed point, not a held slot', () => {
+  it('spans exactly the minute it is scheduled for', () => {
+    const route = routeForDate(at(MONDAY, 12, 0))
+    const wakeUp = route.items.find((item) => item.id === 'wake-up')!
+    expect(itemSpan(wakeUp)).toEqual({ start: 7 * 60 + 30, end: 7 * 60 + 31 })
+  })
+
+  it('is upcoming one minute before', () => {
+    expect(statusOf(at(MONDAY, 7, 29), 'wake-up')).toBe('NEXT')
+  })
+
+  it('is NOW on the exact minute', () => {
+    expect(statusOf(at(MONDAY, 7, 30), 'wake-up')).toBe('NOW')
+  })
+
+  it('is LATE one minute after, when unfinished', () => {
+    expect(statusOf(at(MONDAY, 7, 31), 'wake-up')).toBe('LATE')
+  })
+
+  it('is DONE EARLIER one minute after, when it was ticked', () => {
+    const now = at(MONDAY, 7, 31)
+    expect(statusOf(now, 'wake-up', new Set([keyFor(now, 'wake-up')]))).toBe('DONE_EARLIER')
+  })
+
+  it('never borrows time from the item that follows it', () => {
+    // Work does not start until 08:00, and Wake up does not stretch to meet it.
+    expect(statusOf(at(MONDAY, 7, 45), 'wake-up')).toBe('LATE')
+    expect(statusOf(at(MONDAY, 7, 45), 'work')).toBe('NEXT')
+    expect(idsWithStatus(at(MONDAY, 7, 45), 'NOW')).toEqual([])
+  })
+
+  it('takes part in NEXT selection like any other item', () => {
+    const now = at(MONDAY, 9, 0)
+    expect(statusOf(now, 'work')).toBe('NOW')
+    // Back home and Cook dinner both start at 17:30; the moment is declared
+    // first, so it is the one NEXT and the interval falls to LATER.
+    expect(statusOf(now, 'back-home')).toBe('NEXT')
+    expect(statusOf(now, 'cook-dinner')).toBe('LATER')
+  })
+})
+
+describe('3c. a moment and an interval starting on the same minute', () => {
+  it('makes both NOW at 17:30', () => {
+    const now = at(MONDAY, 17, 30)
+    expect(statusOf(now, 'back-home')).toBe('NOW')
+    expect(statusOf(now, 'cook-dinner')).toBe('NOW')
+    expect(idsWithStatus(now, 'NOW')).toEqual([
+      '2026-09-07:back-home',
+      '2026-09-07:cook-dinner',
+    ])
+  })
+
+  it('leaves the moment LATE at 17:31 while the interval stays NOW', () => {
+    const now = at(MONDAY, 17, 31)
+    expect(statusOf(now, 'back-home')).toBe('LATE')
+    expect(statusOf(now, 'cook-dinner')).toBe('NOW')
+    expect(idsWithStatus(now, 'NOW')).toEqual(['2026-09-07:cook-dinner'])
+  })
+
+  it('keeps the interval NOW to its own end, unaffected by the moment', () => {
+    expect(statusOf(at(MONDAY, 18, 29), 'cook-dinner')).toBe('NOW')
+    expect(statusOf(at(MONDAY, 18, 30), 'cook-dinner')).toBe('LATE')
+  })
+
+  it('has both upcoming at 17:29', () => {
+    const now = at(MONDAY, 17, 29)
+    expect(statusOf(now, 'back-home')).toBe('NEXT')
+    expect(statusOf(now, 'cook-dinner')).toBe('LATER')
   })
 })
 
@@ -243,7 +313,7 @@ describe('12. the 23:30–00:30 cross-midnight interval', () => {
   it('is not truncated at midnight', () => {
     const route = routeForDate(at(MONDAY, 12, 0))
     const sleep = route.items.find((item) => item.id === 'ready-to-sleep')!
-    expect(itemSpan(sleep, route.items)).toEqual({ start: 23 * 60 + 30, end: 24 * 60 + 30 })
+    expect(itemSpan(sleep)).toEqual({ start: 23 * 60 + 30, end: 24 * 60 + 30 })
     expect(timeLabelFor(sleep)).toBe('23:30 – 00:30')
   })
 
@@ -289,10 +359,40 @@ describe('13. previous-day spillover after midnight', () => {
     expect(agenda.entries.filter((entry) => entry.spillover)).toHaveLength(1)
   })
 
-  it('leaves an unfinished spillover visible as LATE once it has ended', () => {
-    const spilled = buildAgenda(at(TUESDAY, 2, 0)).entries.filter((entry) => entry.spillover)
-    expect(spilled).toHaveLength(1)
-    expect(spilled[0].status).toBe('LATE')
+  it('drops the spillover from Today the moment it ends', () => {
+    expect(buildAgenda(at(TUESDAY, 0, 29)).entries.some((entry) => entry.spillover)).toBe(true)
+    expect(buildAgenda(at(TUESDAY, 0, 30)).entries.some((entry) => entry.spillover)).toBe(false)
+    expect(buildAgenda(at(TUESDAY, 2, 0)).entries.some((entry) => entry.spillover)).toBe(false)
+    expect(buildAgenda(at(TUESDAY, 20, 0)).entries.some((entry) => entry.spillover)).toBe(false)
+  })
+
+  it('never leaves an ended spillover behind as LATE', () => {
+    for (const hour of [1, 6, 12, 18, 23]) {
+      const agenda = buildAgenda(at(TUESDAY, hour, 30))
+      expect(agenda.entries.filter((entry) => entry.spillover)).toEqual([])
+    }
+  })
+
+  it("still carries only Tuesday's own items once the spillover is gone", () => {
+    const ids = buildAgenda(at(TUESDAY, 9, 0)).entries.map((entry) => entry.anchorDay)
+    expect(new Set(ids)).toEqual(new Set(['2026-09-08']))
+  })
+})
+
+describe('13b. current-day overdue work is unaffected by the spillover rule', () => {
+  it('keeps unfinished current-day past items LATE all day', () => {
+    const late = buildAgenda(at(TUESDAY, 23, 0))
+      .entries.filter((entry) => entry.status === 'LATE')
+      .map((entry) => entry.item.id)
+    expect(late).toContain('wake-up')
+    expect(late).toContain('work')
+    expect(late).toContain('gym-training')
+  })
+
+  it('still shows today\u2019s own cross-midnight block before it starts', () => {
+    // Tuesday's 23:30-00:30 block belongs to Tuesday and stays all evening.
+    expect(statusOf(at(TUESDAY, 20, 0), 'ready-to-sleep')).toBe('LATER')
+    expect(statusOf(at(TUESDAY, 23, 40), 'ready-to-sleep')).toBe('NOW')
   })
 })
 
@@ -317,10 +417,9 @@ describe('14. transition across calendar midnight', () => {
     expect(spilled.timeLabel).toBe('23:30 – 00:30')
   })
 
-  it('ends the spillover at exactly 00:30', () => {
-    expect(
-      buildAgenda(at(TUESDAY, 0, 30)).entries.find((entry) => entry.spillover)!.status,
-    ).toBe('LATE')
+  it('removes the spillover at exactly 00:30', () => {
+    expect(buildAgenda(at(TUESDAY, 0, 29)).entries.find((entry) => entry.spillover)).toBeDefined()
+    expect(buildAgenda(at(TUESDAY, 0, 30)).entries.find((entry) => entry.spillover)).toBeUndefined()
   })
 })
 
@@ -370,6 +469,29 @@ describe('16. Saturday 01:00–03:00 spillover', () => {
     )!
     expect(chill.status).toBe('NOW')
     expect(chill.routeId).toBe('saturday')
+  })
+
+  it('drops the chill window once its accepted spillover window ends at 01:00', () => {
+    const spilled = (now: Date) =>
+      buildAgenda(now).entries.filter((entry) => entry.spillover).map((e) => e.item.id)
+    expect(spilled(at(SUNDAY, 0, 59))).toEqual(['chill'])
+    // 01:00 hands over from the chill window to the sleep block.
+    expect(spilled(at(SUNDAY, 1, 0))).toEqual(['ready-to-sleep'])
+  })
+
+  it('drops the sleep block from Sunday once it ends at 03:00', () => {
+    const spilled = (now: Date) =>
+      buildAgenda(now).entries.filter((entry) => entry.spillover).map((e) => e.item.id)
+    expect(spilled(at(SUNDAY, 2, 59))).toEqual(['ready-to-sleep'])
+    expect(spilled(at(SUNDAY, 3, 0))).toEqual([])
+    expect(spilled(at(SUNDAY, 12, 0))).toEqual([])
+    expect(spilled(at(SUNDAY, 19, 0))).toEqual([])
+  })
+
+  it('leaves Sunday evening with nothing from Saturday at all', () => {
+    const agenda = buildAgenda(at(SUNDAY, 19, 0))
+    expect(agenda.entries.every((entry) => entry.anchorDay === '2026-09-13')).toBe(true)
+    expect(agenda.entries.every((entry) => entry.routeId === 'sunday')).toBe(true)
   })
 })
 

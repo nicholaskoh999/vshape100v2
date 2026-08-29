@@ -47,38 +47,18 @@ export function minutesOfDay(date: Date): number {
   return date.getHours() * 60 + date.getMinutes()
 }
 
-function declaredStart(item: RoutineItem): number {
-  return item.kind === 'moment' ? item.at : item.start
-}
-
-function declaredEnd(item: RoutineItem): number {
-  return item.kind === 'moment' ? item.at : Math.max(item.start, item.end)
-}
-
 /**
- * The span an item occupies within its own route.
+ * The half-open span `[start, end)` an item occupies within its own route.
  *
- * Intervals and windows carry their own bounds. A `moment` has no duration of
- * its own, so it holds the current slot until the next thing in the route
- * begins — derived from the accepted routine rather than an invented grace
- * period. A moment with nothing after it holds until the route ends.
+ * Intervals and windows carry their own bounds. A `moment` is a genuinely
+ * fixed scheduled point: it occupies exactly the minute it is scheduled for
+ * and nothing more. The clock is minute-aligned, so `07:30 Wake up` is NOW
+ * only during minute 450 — NEXT at 07:29, LATE at 07:31 if untouched. It
+ * never borrows time from the item after it, and there is no grace period.
  */
-export function itemSpan(
-  item: RoutineItem,
-  items: readonly RoutineItem[],
-): { start: number; end: number } {
-  const start = declaredStart(item)
-  if (item.kind !== 'moment') return { start, end: declaredEnd(item) }
-
-  let end = Number.POSITIVE_INFINITY
-  for (const other of items) {
-    const otherStart = declaredStart(other)
-    if (otherStart > start && otherStart < end) end = otherStart
-  }
-  if (end === Number.POSITIVE_INFINITY) {
-    end = Math.max(start, ...items.map(declaredEnd))
-  }
-  return { start, end }
+export function itemSpan(item: RoutineItem): { start: number; end: number } {
+  if (item.kind === 'moment') return { start: item.at, end: item.at + 1 }
+  return { start: item.start, end: Math.max(item.start, item.end) }
 }
 
 type OccurrenceInput = {
@@ -99,7 +79,7 @@ function toEntry({
   spillover,
   order,
 }: OccurrenceInput): TodayEntry {
-  const span = itemSpan(item, route.items)
+  const span = itemSpan(item)
   const anchorDay = dayKey(anchor)
   return {
     key: `${anchorDay}:${item.id}`,
@@ -133,9 +113,15 @@ function timeStatus(entry: TodayEntry, nowMinutes: number): TodayStatus {
  * Resolve the accepted routes into the day's agenda.
  *
  * The reference day contributes every item of its route. The previous day
- * contributes only the occurrences that reach past local midnight, so at
- * Tuesday 00:15 Monday's `23:30–00:30` block is still the current item, and
- * on Sunday at 01:30 Saturday's `01:00–03:00` block is.
+ * contributes a cross-midnight occurrence **only while it is still running**,
+ * so at Tuesday 00:15 Monday's `23:30–00:30` block is the current item and at
+ * Tuesday 00:30 it is gone from Today altogether. Likewise Saturday's
+ * `01:00–03:00` block is NOW on Sunday at 01:30 and absent from 03:00 on.
+ *
+ * Today is today's actionable agenda: a missed item from a previous day is
+ * history, and history belongs to a later persistence round. This does not
+ * soften the rule for the *current* day — an unfinished item whose time has
+ * passed today is still LATE and still prominent.
  */
 export function buildAgenda(
   now: Date,
@@ -151,7 +137,13 @@ export function buildAgenda(
   let order = 0
 
   for (const item of yesterdayRoute.items) {
-    if (itemSpan(item, yesterdayRoute.items).end <= MINUTES_PER_DAY) continue
+    const span = itemSpan(item)
+    // Only occurrences that reach past local midnight can belong to today...
+    if (span.end <= MINUTES_PER_DAY) continue
+    // ...and only for as long as they are actually running.
+    const start = span.start - MINUTES_PER_DAY
+    const end = span.end - MINUTES_PER_DAY
+    if (nowMinutes < start || nowMinutes >= end) continue
     entries.push(
       toEntry({
         item,

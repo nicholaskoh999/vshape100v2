@@ -119,7 +119,7 @@ export function TodayPage() {
           <EmptyShell
             icon={Scale}
             title="Weight check-in"
-            note="Optional daily weight logging lands together with local data storage."
+            note="Optional daily weight check-in comes in a later round."
             className="order-6 xl:order-none"
           />
         </div>
