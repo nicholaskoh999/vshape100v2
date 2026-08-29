@@ -88,7 +88,12 @@ export async function createSession(
 }
 
 export type SessionLookup =
-  | { status: 'valid'; session: SessionRecord }
+  /**
+   * `refreshed` is true only on the request that actually rolled the session
+   * forward. The caller uses it to re-issue the browser cookie with a fresh
+   * Max-Age, so the cookie never expires before the D1 row it points at.
+   */
+  | { status: 'valid'; session: SessionRecord; refreshed: boolean }
   | { status: 'missing' }
   | { status: 'expired' }
   | { status: 'revoked' }
@@ -113,10 +118,14 @@ export async function resolveSession(
   if (shouldRefresh(session, now)) {
     const expiresAt = now + TRUSTED_SESSION_MS
     await store.refresh(sessionHash, now, expiresAt)
-    return { status: 'valid', session: { ...session, lastSeenAt: now, expiresAt } }
+    return {
+      status: 'valid',
+      session: { ...session, lastSeenAt: now, expiresAt },
+      refreshed: true,
+    }
   }
 
-  return { status: 'valid', session }
+  return { status: 'valid', session, refreshed: false }
 }
 
 /** Trusted sessions roll forward, but only near expiry to avoid hot writes. */

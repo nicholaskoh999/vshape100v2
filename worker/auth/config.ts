@@ -51,6 +51,19 @@ export function isAllowedEmail(email: string, allowed: string[]): boolean {
 }
 
 /**
+ * Whether session cookies must carry `Secure`.
+ *
+ * Resolved without requiring Google credentials, so the session and logout
+ * routes keep working (and keep issuing consistent cookie attributes) even
+ * when OAuth configuration is absent.
+ */
+export function resolveSecureCookies(env: Env, requestUrl: URL): boolean {
+  const appOrigin = env.APP_ORIGIN?.trim()
+  if (appOrigin) return appOrigin.startsWith('https://')
+  return requestUrl.protocol === 'https:'
+}
+
+/**
  * Resolve config for a request. `APP_ORIGIN` is preferred so redirect URIs
  * stay stable and predictable; we fall back to the request origin for local
  * development convenience.

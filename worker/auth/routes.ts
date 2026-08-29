@@ -8,7 +8,7 @@
  */
 
 import { safeNextPath } from '../../shared/redirect'
-import { isAllowedEmail, loadConfig, type Env } from './config'
+import { isAllowedEmail, loadConfig, resolveSecureCookies, type Env } from './config'
 import { createD1OAuthStateStore, createD1SessionStore } from './d1Stores'
 import {
   buildAuthorizationUrl,
@@ -166,10 +166,10 @@ export async function handleCallback(request: Request, env: Env): Promise<Respon
 /** GET /api/auth/session — the authoritative answer to "am I signed in?" */
 export async function handleSession(request: Request, env: Env): Promise<Response> {
   const token = readCookie(request.headers.get('Cookie'), SESSION_COOKIE)
+  const secure = resolveSecureCookies(env, new URL(request.url))
   const result = await resolveSession(createD1SessionStore(env.DB), token)
 
   if (result.status !== 'valid') {
-    const secure = new URL(request.url).protocol === 'https:'
     // Clear a cookie that can no longer authenticate, so the browser stops
     // sending it and the login screen can explain an expiry.
     const headers: HeadersInit = token
@@ -181,7 +181,21 @@ export async function handleSession(request: Request, env: Env): Promise<Respons
     )
   }
 
-  return json({ authenticated: true, user: toPublicUser(result.session) })
+  // A trusted session that just rolled forward needs its cookie re-issued
+  // with a matching Max-Age — otherwise the browser would drop the cookie at
+  // the original expiry even though the session is still live in D1. The same
+  // opaque token is reused, so nothing else about the session changes.
+  const headers: HeadersInit = result.refreshed
+    ? {
+        'Set-Cookie': buildSessionCookie(
+          token as string,
+          sessionLifetimeMs(result.session.trusted),
+          secure,
+        ),
+      }
+    : {}
+
+  return json({ authenticated: true, user: toPublicUser(result.session) }, { headers })
 }
 
 /** POST /api/auth/logout — revoke this device only. */
@@ -204,7 +218,7 @@ export async function handleLogout(request: Request, env: Env): Promise<Response
     { authenticated: false },
     {
       headers: {
-        'Set-Cookie': buildClearedSessionCookie(requestUrl.protocol === 'https:'),
+        'Set-Cookie': buildClearedSessionCookie(resolveSecureCookies(env, requestUrl)),
       },
     },
   )

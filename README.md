@@ -94,8 +94,10 @@ No Google tokens, no raw session token, no secrets are ever returned.
   `HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` whenever `APP_ORIGIN` is https.
 - D1 stores `sha256(token)` — a database read cannot be replayed as a login.
 - Trusted: 30 days, rolled forward only within 7 days of expiry, so a normal
-  request does not write to D1.
-- Non-trusted: 24 hours, fixed.
+  request does not write to D1. When it does roll forward, `/api/auth/session`
+  re-issues the same token with a fresh 30-day `Max-Age`, so the cookie never
+  expires before the D1 row it points at.
+- Non-trusted: 24 hours, fixed — never rolled, never re-issued.
 - Logout revokes the row and clears the cookie; it is POST-only and rejects a
   cross-origin `Origin`.
 
