@@ -1,0 +1,13 @@
+// Cloudflare foundation for vshape100 v2.
+// Static Assets only for Round 01 — no Worker code, no D1, no cron, no push.
+// Deployment is NOT performed from the build environment; `wrangler deploy`
+// is reserved for local/desktop verification against the real account.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vshape100v2",
+  "compatibility_date": "2026-08-01",
+  "assets": {
+    // Route every non-asset URL to index.html so React Router owns routing.
+    "not_found_handling": "single-page-application"
+  }
+}

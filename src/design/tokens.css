@@ -1,0 +1,130 @@
+@import 'tailwindcss';
+
+/* ------------------------------------------------------------------ */
+/* VShape100 v2 design tokens                                          */
+/* Brand palette is locked — see 01_ACCEPTED_STATE. Roughly:           */
+/*   70% deep neutral · 20% electric blue · 10% sport accents          */
+/* ------------------------------------------------------------------ */
+
+@theme {
+  /* Brand palette (locked) */
+  --color-navy: #0b1220;
+  --color-surface: #121a2b;
+  --color-blue: #2f6bff;
+  --color-lime: #b7f34a;
+  --color-coral: #ff6b5e;
+  --color-cyan: #39d5e8;
+  --color-purple: #9b6cff;
+  --color-offwhite: #f7f9fc;
+  --color-mutedgrey: #8491a3;
+
+  /* Neutral ramp derived from navy/surface for layering */
+  --color-surface-raised: #182338;
+  --color-surface-overlay: #1e2b44;
+  --color-edge: #223050;
+  --color-edge-strong: #2c3d63;
+
+  /* Text roles */
+  --color-ink: #f7f9fc;
+  --color-ink-dim: #b9c3d4;
+  --color-ink-faint: #8491a3;
+
+  /* Semantic tokens (locked direction) */
+  --color-hard: #ff6b5e; /* HARD sessions */
+  --color-light-day: #39d5e8; /* LIGHT sessions */
+  --color-pump: #9b6cff; /* PUMP sessions */
+  --color-holiday: #9b6cff; /* Holiday mode */
+  --color-energy: #b7f34a; /* energy / progress / completed feedback */
+  --color-completed: #3ecf6e; /* green-family completed state */
+  --color-late: #f5a623; /* amber-family late / needs attention */
+
+  /* Type */
+  --font-sans: 'Outfit Variable', ui-sans-serif, system-ui, -apple-system,
+    'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+
+  /* Radii — soft, sporty, not bubbly */
+  --radius-card: 1.25rem;
+  --radius-control: 0.875rem;
+
+  /* Motion durations (single source shared with motion.ts) */
+  --duration-instant: 100ms;
+  --duration-fast: 180ms;
+  --duration-base: 280ms;
+  --duration-slow: 420ms;
+
+  /* Motion easings */
+  --ease-out-quart: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out-soft: cubic-bezier(0.45, 0, 0.2, 1);
+
+  /* Shadows tuned for a dark ground */
+  --shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.03) inset,
+    0 8px 24px -12px rgb(0 0 0 / 0.6);
+  --shadow-pop: 0 12px 40px -12px rgb(0 0 0 / 0.7);
+}
+
+/* ------------------------------------------------------------------ */
+/* Base                                                                */
+/* ------------------------------------------------------------------ */
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-navy);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* Subtle brand ambience behind everything — restrained, no heavy glow */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(60rem 40rem at 85% -10%, rgb(47 107 255 / 0.12), transparent 60%),
+    radial-gradient(50rem 36rem at -15% 110%, rgb(57 213 232 / 0.05), transparent 60%);
+}
+
+/* Visible focus for keyboard users, calm for pointer users */
+:focus-visible {
+  outline: 2px solid var(--color-blue);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+::selection {
+  background: rgb(47 107 255 / 0.4);
+}
+
+/* Mobile safe areas (viewport-fit=cover) */
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* Reduced motion: kill non-essential animation globally.               */
+/* Motion-for-React honors this too via MotionConfig reducedMotion.     */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

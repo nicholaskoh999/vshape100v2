@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">VShape100 v2 App Icon</title>
+  <desc id="desc">Geometric V mark with upward progress accent.</desc>
+  <rect width="512" height="512" rx="112" fill="#0B1220"/>
+  <path d="M116 148 L236 372 Q256 410 276 372 L396 148"
+        fill="none"
+        stroke="#2F6BFF"
+        stroke-width="72"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+  <path d="M362 150 L414 122 L401 180"
+        fill="none"
+        stroke="#B7F34A"
+        stroke-width="28"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+</svg>
