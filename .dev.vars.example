@@ -1,0 +1,19 @@
+# Local development configuration for the Worker.
+#
+# Copy to `.dev.vars` and fill in real values. `.dev.vars` is git-ignored and
+# must never be committed. In production these are Wrangler secrets, set
+# locally with `wrangler secret put <NAME>` — not stored in this repo.
+
+# Google OAuth 2.0 / OIDC "Web application" client.
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+
+# Comma-separated list of Google accounts allowed to sign in.
+# Foundation is single-user: normally exactly one address.
+ALLOWED_GOOGLE_EMAILS=you@example.com
+
+# Origin the app is served from. Determines the OAuth redirect URI and
+# whether session cookies are marked Secure.
+#   local:      http://localhost:5173
+#   production: https://vshape100v2.nkmwei.de
+APP_ORIGIN=http://localhost:5173

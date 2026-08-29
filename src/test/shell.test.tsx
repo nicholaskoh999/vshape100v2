@@ -1,13 +1,21 @@
-import { render, screen, within } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { createMemoryRouter, RouterProvider } from 'react-router'
+import { afterEach, beforeEach, vi } from 'vitest'
 
-import { routes } from '@/app/router/router'
+import { authenticatedSession, mockAuthFetch, renderApp } from './authTestUtils'
+
+// Round 02 put every app route behind the auth guard, so the shell tests now
+// run as a signed-in user. Auth behaviour itself is covered in auth.test.tsx.
+beforeEach(() => {
+  mockAuthFetch({ session: authenticatedSession })
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 function renderAt(path: string) {
-  const router = createMemoryRouter(routes, { initialEntries: [path] })
-  render(<RouterProvider router={router} />)
-  return router
+  return renderApp(path)
 }
 
 describe('routing', () => {
@@ -16,6 +24,13 @@ describe('routing', () => {
     expect(
       await screen.findByRole('heading', { name: 'Today' }),
     ).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/today')
+  })
+
+  it('keeps /login outside the guarded shell', async () => {
+    const router = renderAt('/login')
+    await screen.findByRole('heading', { name: 'Today' })
+    // An authenticated visitor is moved off the login screen.
     expect(router.state.location.pathname).toBe('/today')
   })
 
@@ -81,7 +96,7 @@ describe('mobile bottom navigation', () => {
   it('opens the More sheet with Achievements and Settings', async () => {
     const user = userEvent.setup()
     renderAt('/today')
-    await user.click(screen.getByRole('button', { name: /More/ }))
+    await user.click(await screen.findByRole('button', { name: /More/ }))
     const dialog = await screen.findByRole('dialog')
     expect(
       within(dialog).getByRole('link', { name: /Achievements/ }),
@@ -94,7 +109,7 @@ describe('mobile bottom navigation', () => {
   it('navigates to Settings from the More sheet', async () => {
     const user = userEvent.setup()
     const router = renderAt('/today')
-    await user.click(screen.getByRole('button', { name: /More/ }))
+    await user.click(await screen.findByRole('button', { name: /More/ }))
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('link', { name: /Settings/ }))
     expect(router.state.location.pathname).toBe('/settings')

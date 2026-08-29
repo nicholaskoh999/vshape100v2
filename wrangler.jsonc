@@ -1,13 +1,32 @@
-// Cloudflare foundation for vshape100 v2.
-// Static Assets only for Round 01 — no Worker code, no D1, no cron, no push.
-// Deployment is NOT performed from the build environment; `wrangler deploy`
-// is reserved for local/desktop verification against the real account.
+// Cloudflare configuration for vshape100 v2.
+//
+// Round 02 adds a Worker (auth API) in front of Static Assets, plus a D1
+// binding used ONLY for authentication data (oauth_states, auth_sessions).
+//
+// Deployment is NOT performed from the build environment. `wrangler deploy`,
+// production D1 creation, production migrations and production secrets are
+// reserved for local/desktop verification against the real account.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "vshape100v2",
+  "main": "worker/index.ts",
   "compatibility_date": "2026-08-01",
   "assets": {
-    // Route every non-asset URL to index.html so React Router owns routing.
+    "binding": "ASSETS",
+    // Route every non-API, non-asset URL to index.html so React Router owns routing.
     "not_found_handling": "single-page-application"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "vshape100v2-auth",
+      // Placeholder only. The real database_id is filled in locally after
+      // `wrangler d1 create vshape100v2-auth`. No production D1 exists yet.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "observability": {
+    "enabled": true
   }
 }

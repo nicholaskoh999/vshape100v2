@@ -7,12 +7,15 @@ import { createRoot } from 'react-dom/client'
 import { RouterProvider } from 'react-router'
 
 import { router } from '@/app/router/router'
+import { AuthProvider } from '@/features/auth/AuthProvider'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     {/* reducedMotion="user" makes every Motion animation honor the OS setting */}
     <MotionConfig reducedMotion="user">
-      <RouterProvider router={router} />
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
     </MotionConfig>
   </StrictMode>,
 )
