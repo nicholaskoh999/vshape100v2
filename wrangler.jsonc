@@ -11,6 +11,14 @@
   "name": "vshape100v2",
   "main": "worker/index.ts",
   "compatibility_date": "2026-08-01",
+  // Production hostname. A Worker Custom Domain makes Cloudflare provision the
+  // DNS record and certificate itself, so no manual CNAME is involved.
+  "routes": [
+    {
+      "pattern": "vshapev2.nkmwei.de",
+      "custom_domain": true
+    }
+  ],
   "assets": {
     "binding": "ASSETS",
     // Route every non-API, non-asset URL to index.html so React Router owns routing.
@@ -20,9 +28,8 @@
     {
       "binding": "DB",
       "database_name": "vshape100v2-auth",
-      // Placeholder only. The real database_id is filled in locally after
-      // `wrangler d1 create vshape100v2-auth`. No production D1 exists yet.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      // Created with `wrangler d1 create vshape100v2-auth` (Round 02.5, APAC).
+      "database_id": "783552ce-60e0-4685-86e1-19885cff1de9",
       "migrations_dir": "migrations"
     }
   ],
