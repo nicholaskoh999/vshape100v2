@@ -4,12 +4,27 @@ import { Link } from 'react-router'
 import { Card } from '@/components/ui/Card'
 import { EmptyShell } from '@/components/ui/EmptyShell'
 import { PageHeader } from '@/components/ui/PageHeader'
+import type { HolidayStatus } from '@/features/calendar/useHolidays'
 import { foundationStatus } from '@/features/progress/foundation'
 import { localDateOf } from '@shared/localDate'
 import { TodayHero } from './components/TodayHero'
 import { TodaySection } from './components/TodaySection'
 import { TodayStatusNotice } from './components/TodayStatusNotice'
 import { useToday } from './useToday'
+
+/**
+ * The day's mode, for the header.
+ *
+ * Until the Holiday state is known the agenda is built from an empty Holiday
+ * set, so `agenda.route.label` would read "Home Mode" on a day that may turn
+ * out to be exempt. The body is already neutral while the mode is unknown; the
+ * header has to be too, or it states a resolved mode we do not have.
+ */
+function dayModeLabel(status: HolidayStatus, routeLabel: string): string {
+  if (status === 'loading') return 'Checking day mode'
+  if (status === 'error') return 'Day mode unavailable'
+  return routeLabel
+}
 
 /**
  * The Foundation eyebrow.
@@ -98,7 +113,7 @@ export function TodayPage() {
       <PageHeader
         eyebrow={foundationEyebrow(now)}
         title="Today"
-        subline={`${dateLabel} · ${agenda.route.label}`}
+        subline={`${dateLabel} · ${dayModeLabel(holidayStatus, agenda.route.label)}`}
         actions={<ClockChip now={now} />}
       />
 

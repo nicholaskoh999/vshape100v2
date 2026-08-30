@@ -48,6 +48,11 @@ function mainText() {
   return document.querySelector('main')?.textContent ?? ''
 }
 
+/** The header subline, which names the day's mode. */
+function headerText() {
+  return document.querySelector('main header')?.textContent ?? ''
+}
+
 /* ------------------------------------------------------------------ */
 /* 1. Home is unchanged                                                */
 /* ------------------------------------------------------------------ */
@@ -426,6 +431,107 @@ describe('6. when the day mode cannot be read', () => {
 
     await waitFor(() => expect(holidayCard()).not.toBeNull())
     expect(mainText()).toMatch(/Holiday · Exempt/)
+    errors.mockRestore()
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* 7. The header never claims a mode it does not have                  */
+/* ------------------------------------------------------------------ */
+
+describe('7. the header day mode', () => {
+  it('says it is checking while the mode is unknown', async () => {
+    const release = server.holdReads()
+    renderApp('/today')
+    await screen.findByRole('heading', { level: 1, name: 'Today' })
+
+    expect(document.querySelector('[data-today-checking]')).not.toBeNull()
+    expect(headerText()).toContain('Checking day mode')
+    // The agenda is built from an empty Holiday set while unknown, so this is
+    // exactly where a resolved label would leak through.
+    expect(headerText()).not.toContain('Home Mode')
+    expect(headerText()).not.toContain('Holiday')
+    // The accepted labels are 'Home Mode', 'Chill route', 'Recovery route'
+    // and 'Holiday' — none of them may appear while the mode is unknown.
+    expect(headerText()).not.toContain('Chill route')
+    expect(headerText()).not.toContain('Recovery route')
+    release()
+  })
+
+  it('does not claim a resolved mode on a Saturday whose mode is unknown', async () => {
+    // 2026-09-05 is a Saturday, whose accepted route label is 'Chill route'.
+    vi.setSystemTime(new Date(2026, 8, 5, 10, 0))
+    const release = server.holdReads()
+    renderApp('/today')
+    await screen.findByRole('heading', { level: 1, name: 'Today' })
+
+    expect(headerText()).toContain('Checking day mode')
+    expect(headerText()).not.toContain('Chill route')
+    release()
+  })
+
+  it('says the mode is unavailable when the read fails', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    server.failReads()
+
+    renderApp('/today')
+    await screen.findByRole('heading', { level: 1, name: 'Today' })
+    await waitFor(() =>
+      expect(document.querySelector('[data-today-holiday-error]')).not.toBeNull(),
+    )
+
+    expect(screen.getByRole('button', { name: /Try again/ })).toBeInTheDocument()
+    expect(headerText()).toContain('Day mode unavailable')
+    expect(headerText()).not.toContain('Home Mode')
+    expect(headerText()).not.toContain('Holiday')
+    errors.mockRestore()
+  })
+
+  it('shows Home Mode once the read confirms there is no Holiday', async () => {
+    await renderToday()
+    await waitFor(() => expect(headerText()).toContain('Home Mode'))
+
+    expect(headerText()).not.toContain('Checking day mode')
+    expect(headerText()).not.toContain('Day mode unavailable')
+  })
+
+  it('shows Holiday once the read confirms one', async () => {
+    server.seed(holiday('h1', '2026-09-10'))
+    await renderToday()
+
+    await waitFor(() => expect(holidayCard()).not.toBeNull())
+    expect(headerText()).toContain('Holiday')
+    expect(headerText()).not.toContain('Home Mode')
+    expect(headerText()).not.toContain('Checking day mode')
+  })
+
+  it('shows the real weekend labels once resolved', async () => {
+    vi.setSystemTime(new Date(2026, 8, 5, 10, 0))
+    await renderToday()
+    await waitFor(() => expect(headerText()).toContain('Chill route'))
+    cleanup()
+
+    // 2026-09-06 is a Sunday.
+    vi.setSystemTime(new Date(2026, 8, 6, 10, 0))
+    await renderToday()
+    await waitFor(() => expect(headerText()).toContain('Recovery route'))
+  })
+
+  it('recovers to a real label after a retry', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    server.failReads()
+
+    renderApp('/today')
+    await screen.findByRole('heading', { level: 1, name: 'Today' })
+    await screen.findByRole('button', { name: /Try again/ })
+    expect(headerText()).toContain('Day mode unavailable')
+
+    await userEvent
+      .setup({ advanceTimers: vi.advanceTimersByTime })
+      .click(screen.getByRole('button', { name: /Try again/ }))
+
+    await waitFor(() => expect(headerText()).toContain('Home Mode'))
+    expect(headerText()).not.toContain('Day mode unavailable')
     errors.mockRestore()
   })
 })
