@@ -1,6 +1,6 @@
-import { Bell, Home, Info, Loader2, LogOut } from 'lucide-react'
+import { Bell, ChevronRight, Dumbbell, Home, Info, Loader2, LogOut } from 'lucide-react'
 import { motion } from 'motion/react'
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 
 import { Card } from '@/components/ui/Card'
 import { PageHeader } from '@/components/ui/PageHeader'
@@ -72,6 +72,34 @@ export function SettingsPage() {
             </Card>
           </motion.div>
         )}
+
+        <motion.div variants={listItemVariants}>
+          {/*
+            Exercise Library — the one place canonical exercise media is
+            edited. Exercise Detail links to the same editor rather than
+            carrying a second one.
+          */}
+          <Link
+            to="/settings/exercises"
+            className="block rounded-card"
+            aria-label="Exercise Library"
+          >
+            <motion.div {...press}>
+              <Card className="flex items-center gap-4 px-5 py-4 transition-colors duration-150 hover:border-edge-strong">
+                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-surface-overlay text-ink-dim">
+                  <Dumbbell className="size-5" aria-hidden="true" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold text-offwhite">Exercise Library</p>
+                  <p className="mt-0.5 truncate text-[13px] text-ink-faint">
+                    Set the demo media each exercise shows everywhere.
+                  </p>
+                </div>
+                <ChevronRight className="size-5 shrink-0 text-ink-faint" aria-hidden="true" />
+              </Card>
+            </motion.div>
+          </Link>
+        </motion.div>
 
         <motion.div variants={listItemVariants}>
           <Card className="divide-y divide-edge">

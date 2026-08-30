@@ -5,6 +5,7 @@ import { vi } from 'vitest'
 import { routes } from '@/app/router/router'
 import { AuthProvider } from '@/features/auth/AuthProvider'
 import type { SessionState } from '@/features/auth/api'
+import { createMediaServer, type MediaServer } from './exerciseMediaApiTestUtils'
 import { createTodayServer, type TodayServer } from './todayApiTestUtils'
 
 export const testUser = {
@@ -34,16 +35,18 @@ function jsonResponse(body: unknown): Response {
  * promise, which lets a test hold the bootstrap open and assert that nothing
  * protected has rendered yet.
  *
- * Today completions are served by an in-memory stand-in so the real client,
- * hook and engine all run; pass your own via `today` to seed saved
- * completions or to make requests fail.
+ * Today completions and canonical exercise media are served by in-memory
+ * stand-ins so the real client, hooks and engine all run; pass your own via
+ * `today` / `media` to seed saved state or to make requests fail.
  */
 export function mockAuthFetch(options: {
   session: SessionState | Promise<SessionState>
   onLogout?: () => void
   today?: TodayServer
+  media?: MediaServer
 }) {
   const today = options.today ?? createTodayServer()
+  const media = options.media ?? createMediaServer()
 
   const handler: FetchHandler = async (url, init) => {
     if (url.startsWith('/api/auth/session')) {
@@ -55,6 +58,9 @@ export function mockAuthFetch(options: {
     }
     if (url.startsWith('/api/today/completions')) {
       return today.handle(url, init)
+    }
+    if (url.startsWith('/api/exercise-media')) {
+      return media.handle(url, init)
     }
     throw new Error(`Unexpected fetch in test: ${url}`)
   }

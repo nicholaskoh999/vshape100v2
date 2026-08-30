@@ -1,6 +1,7 @@
 /**
  * Minimal in-memory stand-in for D1, covering exactly the statements the
- * Worker issues against `auth_sessions` and `today_completions`.
+ * Worker issues against `auth_sessions`, `today_completions` and
+ * `exercise_media`.
  *
  * Route-level tests use this so the real handler, the real D1 mapping layer
  * and the real rules all run together.
@@ -26,18 +27,79 @@ type CompletionRow = {
   completed_at: number
 }
 
+type MediaRow = {
+  google_sub: string
+  exercise_id: string
+  media_type: string
+  media_url: string
+  media_alt: string
+  updated_at: number
+}
+
 /** `google_sub` + `occurrence_key` — the table's primary key. */
 function completionId(googleSub: string, occurrenceKey: string): string {
   return `${googleSub}\u0000${occurrenceKey}`
 }
 
+/** `google_sub` + `exercise_id` — the exercise_media primary key. */
+function mediaId(googleSub: string, exerciseId: string): string {
+  return `${googleSub}\u0000${exerciseId}`
+}
+
 export function createFakeD1() {
   const sessions = new Map<string, SessionRow>()
   const completions = new Map<string, CompletionRow>()
+  const media = new Map<string, MediaRow>()
   /** Set to make every `today_completions` statement throw, as D1 would. */
   let completionsFailure: Error | null = null
+  /** Set to make every `exercise_media` statement throw, as D1 would. */
+  let mediaFailure: Error | null = null
 
   function execute(sql: string, args: unknown[]) {
+    if (sql.includes('exercise_media')) {
+      if (mediaFailure) throw mediaFailure
+
+      if (sql.includes('SELECT') && sql.includes('AND exercise_id = ?')) {
+        const [google_sub, exercise_id] = args as [string, string]
+        return media.get(mediaId(google_sub, exercise_id)) ?? null
+      }
+
+      if (sql.includes('SELECT')) {
+        const [google_sub] = args as [string]
+        return [...media.values()]
+          .filter((row) => row.google_sub === google_sub)
+          .sort((a, b) =>
+            a.updated_at === b.updated_at
+              ? a.exercise_id.localeCompare(b.exercise_id)
+              : b.updated_at - a.updated_at,
+          )
+      }
+
+      if (sql.includes('INSERT INTO exercise_media')) {
+        const [google_sub, exercise_id, media_type, media_url, media_alt, updated_at] =
+          args as [string, string, string, string, string, number]
+        // ON CONFLICT DO UPDATE: the one row for this account + exercise is
+        // replaced, never duplicated.
+        media.set(mediaId(google_sub, exercise_id), {
+          google_sub,
+          exercise_id,
+          media_type,
+          media_url,
+          media_alt,
+          updated_at,
+        })
+        return null
+      }
+
+      if (sql.includes('DELETE FROM exercise_media')) {
+        const [google_sub, exercise_id] = args as [string, string]
+        media.delete(mediaId(google_sub, exercise_id))
+        return null
+      }
+
+      throw new Error(`fakeD1 received an unexpected statement: ${sql}`)
+    }
+
     if (sql.includes('today_completions')) {
       if (completionsFailure) throw completionsFailure
 
@@ -158,8 +220,12 @@ export function createFakeD1() {
     db: { prepare } as unknown as D1Database,
     sessions,
     completions,
+    media,
     breakCompletions(error = new Error('D1 unavailable')) {
       completionsFailure = error
+    },
+    breakMedia(error = new Error('D1 unavailable')) {
+      mediaFailure = error
     },
   }
 }

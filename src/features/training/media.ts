@@ -1,9 +1,10 @@
 /**
  * Exercise media contract.
  *
- * Round 06 establishes how exercise media is *rendered*; the real media
- * library is not populated yet, so nothing in the app supplies a source and
- * every exercise currently resolves to the no-media fallback.
+ * Round 06 established how exercise media is *rendered*. Round 07 adds where
+ * a source comes from: one canonical record per exercise identity, saved by
+ * the account and loaded from D1. An exercise with no record still resolves
+ * to the no-media fallback.
  *
  * `kind` is carried even though GIFs and images both go through the browser
  * image pipeline today. Keeping the distinction typed is what lets a later
@@ -11,7 +12,11 @@
  * reshaping every call site.
  */
 
-export type ExerciseMediaKind = 'gif' | 'image'
+// The kind union lives in shared/exerciseMedia.ts, which the Worker validates
+// against too — one definition, so client and server cannot drift apart on
+// what a media kind is.
+export type { ExerciseMediaKind } from '@shared/exerciseMedia'
+import type { ExerciseMediaKind } from '@shared/exerciseMedia'
 
 export type ExerciseMediaSource = {
   kind: ExerciseMediaKind

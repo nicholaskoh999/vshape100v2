@@ -279,11 +279,15 @@ describe('exercise detail integration', () => {
     renderApp('/exercises/lat-pulldown?from=monday')
     await screen.findByRole('heading', { name: 'Lat Pulldown' })
 
+    // Round 07: the page asks the server for this exercise's canonical media
+    // first, so the fallback is the *settled* state rather than the immediate
+    // one. Waiting is the assertion — a synchronous read would sometimes catch
+    // the honest loading frame instead.
+    await screen.findByText('Media coming soon')
     expect(
       document.querySelector('[data-media-state]')?.getAttribute('data-media-state'),
     ).toBe('empty')
-    expect(screen.getByText('Media coming soon')).toBeInTheDocument()
-    // No media URL exists in V2 yet, so nothing is fetched or rendered.
+    // The account has set no media for it, so nothing is rendered.
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
   })
 
@@ -293,7 +297,7 @@ describe('exercise detail integration', () => {
 
     const back = screen.getByRole('link', { name: 'Back to Monday' })
     expect(back).toHaveAttribute('href', '/training/monday')
-    expect(screen.getByText('Media coming soon')).toBeInTheDocument()
+    expect(await screen.findByText('Media coming soon')).toBeInTheDocument()
   })
 
   it('keeps the direct-open fallback alongside the media slot', async () => {
@@ -304,7 +308,7 @@ describe('exercise detail integration', () => {
       'href',
       '/training',
     )
-    expect(screen.getByText('Media coming soon')).toBeInTheDocument()
+    expect(await screen.findByText('Media coming soon')).toBeInTheDocument()
   })
 
   it('keeps the hostile-origin fallback safe', async () => {

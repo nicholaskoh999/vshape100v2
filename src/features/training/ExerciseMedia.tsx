@@ -17,13 +17,43 @@ import type { ExerciseMediaSource } from './media'
  */
 type LoadState = 'loading' | 'ready' | 'error'
 
+/**
+ * How the *source* was obtained, when the caller resolves it asynchronously.
+ *
+ * Round 06 only had to render a source it was handed. Round 07 fetches the
+ * canonical record from D1 first, and "we have not heard back yet" is not the
+ * same thing as "this exercise has no media" — showing the permanent
+ * "Media coming soon" during a load would state something untrue. Callers
+ * that already have their source simply omit this and nothing changes.
+ */
+export type ExerciseMediaResolution = 'loading' | 'ready' | 'error'
+
 export function ExerciseMedia({
   media,
+  resolution = 'ready',
   className,
 }: {
   media: ExerciseMediaSource | null | undefined
+  resolution?: ExerciseMediaResolution
   className?: string
 }) {
+  if (resolution === 'loading') {
+    return (
+      <Frame state="loading" className={className}>
+        <Skeleton />
+        <span className="sr-only">Loading current media</span>
+      </Frame>
+    )
+  }
+
+  if (resolution === 'error') {
+    return (
+      <Frame state="error" className={className}>
+        <Fallback label="Media unavailable" />
+      </Frame>
+    )
+  }
+
   if (!media) {
     return (
       <Frame state="empty" className={className}>

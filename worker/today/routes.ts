@@ -8,18 +8,19 @@
  * Every route requires the existing app-owned session. The account is always
  * the `google_sub` on that session — the client never supplies an identity,
  * and one is never read from a body, query string or header.
+ *
+ * Session handling, the same-origin guard, the JSON envelope and the rolling
+ * Set-Cookie propagation now live in ../http/authenticated, shared with the
+ * exercise media API. The rules are the accepted Round 04 ones, unchanged.
  */
 
-import { resolveSecureCookies, type Env } from '../auth/config'
-import { createD1SessionStore } from '../auth/d1Stores'
+import type { Env } from '../auth/config'
 import {
-  buildClearedSessionCookie,
-  buildSessionCookie,
-  readCookie,
-  resolveSession,
-  sessionLifetimeMs,
-  SESSION_COOKIE,
-} from '../auth/session'
+  isCrossOrigin,
+  json,
+  requireAccount,
+  withSessionHeaders,
+} from '../http/authenticated'
 import {
   completeOccurrence,
   listCompletions,
@@ -34,27 +35,6 @@ import { createD1CompletionStore } from './d1Store'
 const PREFIX = '/api/today/'
 const COLLECTION = '/api/today/completions'
 
-function json(body: unknown, init: ResponseInit = {}): Response {
-  return new Response(JSON.stringify(body), {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-      // Per-account state must never be cached by a proxy or the browser.
-      'Cache-Control': 'no-store',
-      ...(init.headers ?? {}),
-    },
-  })
-}
-
-/**
- * Same-origin guard for state-changing requests — the same rule the existing
- * logout route applies, so this API does not introduce a weaker model.
- */
-function isCrossOrigin(request: Request): boolean {
-  const origin = request.headers.get('Origin')
-  return origin !== null && origin !== new URL(request.url).origin
-}
-
 /** The public shape of one completion. No identity is echoed back. */
 function toPublicCompletion(record: CompletionRecord) {
   return {
@@ -62,67 +42,6 @@ function toPublicCompletion(record: CompletionRecord) {
     anchorDay: record.anchorDay,
     completedAt: record.completedAt,
   }
-}
-
-/**
- * Resolve the caller. Returns the account key plus any headers the session
- * resolution produced, or the 401 to send back. Identity is derived here and
- * nowhere else.
- *
- * `resolveSession` rolls a trusted session forward in D1 once it is near
- * expiry. When it does, the browser cookie must be re-issued with a matching
- * Max-Age — otherwise the cookie would expire before the D1 row it points at.
- * That is the accepted Round 02 rolling-session rule, and it applies to every
- * authenticated route, not only `/api/auth/session`.
- */
-async function requireAccount(
-  request: Request,
-  env: Env,
-): Promise<{ googleSub: string; headers: HeadersInit } | { response: Response }> {
-  const token = readCookie(request.headers.get('Cookie'), SESSION_COOKIE)
-  const secure = resolveSecureCookies(env, new URL(request.url))
-  const result = await resolveSession(createD1SessionStore(env.DB), token)
-
-  if (result.status !== 'valid') {
-    // Clear a cookie that can no longer authenticate, so the browser stops
-    // sending it — the same thing `/api/auth/session` does.
-    const headers: HeadersInit = token
-      ? { 'Set-Cookie': buildClearedSessionCookie(secure) }
-      : {}
-    return {
-      response: json(
-        { error: 'unauthenticated', reason: result.status === 'missing' ? null : result.status },
-        { status: 401, headers },
-      ),
-    }
-  }
-
-  const headers: HeadersInit = result.refreshed
-    ? {
-        // The same opaque token, with a Max-Age matching the rolled lifetime.
-        'Set-Cookie': buildSessionCookie(
-          token as string,
-          sessionLifetimeMs(result.session.trusted),
-          secure,
-        ),
-      }
-    : {}
-
-  return { googleSub: result.session.googleSub, headers }
-}
-
-/** Attach the session headers to a response without rebuilding its body. */
-function withSessionHeaders(response: Response, headers: HeadersInit): Response {
-  const entries = Object.entries(headers as Record<string, string>)
-  if (entries.length === 0) return response
-
-  const merged = new Headers(response.headers)
-  for (const [name, value] of entries) merged.set(name, value)
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers: merged,
-  })
 }
 
 /** GET /api/today/completions?from=&to= */

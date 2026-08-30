@@ -6,6 +6,8 @@ import { LoginPage } from '@/features/auth/LoginPage'
 import { RequireAuth } from '@/features/auth/RequireAuth'
 import { CalendarPage } from '@/features/calendar/CalendarPage'
 import { ProgressPage } from '@/features/progress/ProgressPage'
+import { ExerciseLibraryPage } from '@/features/settings/ExerciseLibraryPage'
+import { ExerciseMediaEditorPage } from '@/features/settings/ExerciseMediaEditorPage'
 import { SettingsPage } from '@/features/settings/SettingsPage'
 import { TodayPage } from '@/features/today/TodayPage'
 import { ExerciseDetailPage } from '@/features/training/ExerciseDetailPage'
@@ -37,6 +39,8 @@ export const routes = [
           { path: '/calendar', element: <CalendarPage /> },
           { path: '/achievements', element: <AchievementsPage /> },
           { path: '/settings', element: <SettingsPage /> },
+          { path: '/settings/exercises', element: <ExerciseLibraryPage /> },
+          { path: '/settings/exercises/:id', element: <ExerciseMediaEditorPage /> },
           { path: '*', element: <NotFoundPage /> },
         ],
       },

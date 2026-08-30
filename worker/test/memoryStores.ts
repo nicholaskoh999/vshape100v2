@@ -5,6 +5,10 @@
  * a raw session token never reaches storage.
  */
 
+import type {
+  ExerciseMediaRecord,
+  ExerciseMediaStore,
+} from '../exerciseMedia/media'
 import type { OAuthStateRecord, OAuthStateStore } from '../auth/oauthState'
 import type { SessionRecord, SessionStore } from '../auth/session'
 import type { CompletionRecord, CompletionStore } from '../today/completions'
@@ -82,6 +86,43 @@ export function createMemoryCompletionStore() {
     },
     async remove(googleSub, occurrenceKey) {
       rows.delete(id(googleSub, occurrenceKey))
+    },
+  }
+
+  return { store, rows }
+}
+
+/**
+ * Canonical exercise media, keyed exactly as the table is: one row per
+ * (account, exercise identity). No session ever enters the key.
+ */
+export function createMemoryExerciseMediaStore() {
+  const rows = new Map<string, ExerciseMediaRecord>()
+
+  const key = (googleSub: string, exerciseId: string) =>
+    `${googleSub}\u0000${exerciseId}`
+
+  const store: ExerciseMediaStore = {
+    async list(googleSub) {
+      return [...rows.values()]
+        .filter((row) => row.googleSub === googleSub)
+        .sort((a, b) =>
+          a.updatedAt === b.updatedAt
+            ? a.exerciseId.localeCompare(b.exerciseId)
+            : b.updatedAt - a.updatedAt,
+        )
+        .map((row) => ({ ...row }))
+    },
+    async find(googleSub, exerciseId) {
+      const row = rows.get(key(googleSub, exerciseId))
+      return row ? { ...row } : null
+    },
+    async upsert(record) {
+      // Replace, never append: the canonical invariant.
+      rows.set(key(record.googleSub, record.exerciseId), { ...record })
+    },
+    async remove(googleSub, exerciseId) {
+      rows.delete(key(googleSub, exerciseId))
     },
   }
 
