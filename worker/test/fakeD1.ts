@@ -45,6 +45,7 @@ type OccurrenceRow = {
   google_sub: string
   workout_date: string
   session_id: string
+  snapshot_id: string
   session_day_snapshot: string
   session_focus_snapshot: string
   session_intensity_snapshot: string
@@ -56,6 +57,7 @@ type WorkoutSetRow = {
   google_sub: string
   workout_date: string
   session_id: string
+  snapshot_id: string
   exercise_order: number
   set_index: number
   exercise_id_snapshot: string
@@ -110,42 +112,14 @@ export function createFakeD1() {
     if (sql.includes('workout_sets')) {
       if (workoutFailure) throw workoutFailure
 
-      if (sql.includes('SELECT') && sql.includes('AND exercise_order = ?')) {
-        const [google_sub, workout_date, session_id, exercise_order, set_index] = args as [
-          string,
-          string,
-          string,
-          number,
-          number,
-        ]
-        return (
-          workoutSets.get(
-            workoutSetId(google_sub, workout_date, session_id, exercise_order, set_index),
-          ) ?? null
-        )
-      }
-
-      if (sql.includes('SELECT')) {
-        const [google_sub, workout_date, session_id] = args as [string, string, string]
-        return [...workoutSets.values()]
-          .filter(
-            (row) =>
-              row.google_sub === google_sub &&
-              row.workout_date === workout_date &&
-              row.session_id === session_id,
-          )
-          .sort((a, b) =>
-            a.exercise_order === b.exercise_order
-              ? a.set_index - b.set_index
-              : a.exercise_order - b.exercise_order,
-          )
-      }
-
+      // Checked before the SELECT branch: the guarded insert is itself an
+      // INSERT ... SELECT, so matching on 'SELECT' first would misroute it.
       if (sql.includes('INSERT INTO workout_sets')) {
         const [
           google_sub,
           workout_date,
           session_id,
+          snapshot_id,
           exercise_order,
           set_index,
           exercise_id_snapshot,
@@ -160,25 +134,28 @@ export function createFakeD1() {
           actual_load_unit,
           actual_result,
           updated_at,
+          // The WHERE EXISTS guard's own bindings.
+          guard_sub,
+          guard_date,
+          guard_session,
+          guard_snapshot,
         ] = args as [
-          string,
-          string,
-          string,
-          number,
-          number,
-          string,
-          string,
-          string,
-          string | null,
-          string,
-          string,
-          number,
-          string,
-          number | null,
-          string | null,
-          number | null,
-          number,
+          string, string, string, string, number, number,
+          string, string, string, string | null, string, string, number,
+          string, number | null, string | null, number | null, number,
+          string, string, string, string,
         ]
+
+        // WHERE EXISTS (the occurrence carrying THIS snapshot's token).
+        // A losing Start's token is not in the table, so the statement
+        // inserts nothing — at any position, including ones the winner
+        // never occupied.
+        const owner = occurrences.get(occurrenceId(guard_sub, guard_date, guard_session))
+        if (!owner || owner.snapshot_id !== guard_snapshot) return null
+
+        // The composite foreign key, enforced structurally.
+        if (owner.snapshot_id !== snapshot_id) return null
+
         const id = workoutSetId(google_sub, workout_date, session_id, exercise_order, set_index)
         // ON CONFLICT DO NOTHING: the first snapshot wins, so a later Start
         // cannot rewrite it.
@@ -187,6 +164,7 @@ export function createFakeD1() {
             google_sub,
             workout_date,
             session_id,
+            snapshot_id,
             exercise_order,
             set_index,
             exercise_id_snapshot,
@@ -233,7 +211,7 @@ export function createFakeD1() {
         const id = workoutSetId(google_sub, workout_date, session_id, exercise_order, set_index)
         const row = workoutSets.get(id)
         // Only the live logging columns are assignable — the snapshot columns
-        // are not part of this statement at all.
+        // and the ownership token are not part of this statement at all.
         if (row) {
           workoutSets.set(id, {
             ...row,
@@ -245,6 +223,41 @@ export function createFakeD1() {
           })
         }
         return null
+      }
+
+      if (sql.includes('AND exercise_order = ?')) {
+        const [google_sub, workout_date, session_id, exercise_order, set_index] = args as [
+          string,
+          string,
+          string,
+          number,
+          number,
+        ]
+        return (
+          workoutSets.get(
+            workoutSetId(google_sub, workout_date, session_id, exercise_order, set_index),
+          ) ?? null
+        )
+      }
+
+      if (sql.includes('SELECT')) {
+        const [google_sub, workout_date, session_id] = args as [string, string, string]
+        // JOIN workout_occurrences ON ... AND o.snapshot_id = s.snapshot_id
+        const owner = occurrences.get(occurrenceId(google_sub, workout_date, session_id))
+        if (!owner) return []
+        return [...workoutSets.values()]
+          .filter(
+            (row) =>
+              row.google_sub === google_sub &&
+              row.workout_date === workout_date &&
+              row.session_id === session_id &&
+              row.snapshot_id === owner.snapshot_id,
+          )
+          .sort((a, b) =>
+            a.exercise_order === b.exercise_order
+              ? a.set_index - b.set_index
+              : a.exercise_order - b.exercise_order,
+          )
       }
 
       throw new Error(`fakeD1 received an unexpected statement: ${sql}`)
@@ -263,19 +276,25 @@ export function createFakeD1() {
           google_sub,
           workout_date,
           session_id,
+          snapshot_id,
           session_day_snapshot,
           session_focus_snapshot,
           session_intensity_snapshot,
           started_at,
           updated_at,
-        ] = args as [string, string, string, string, string, string, number, number]
+        ] = args as [
+          string, string, string, string, string, string, string, number, number,
+        ]
         const id = occurrenceId(google_sub, workout_date, session_id)
         // ON CONFLICT DO NOTHING: one occurrence per account + date + session.
+        // This is what decides the winner of a concurrent first Start —
+        // exactly one attempt's token reaches the table.
         if (!occurrences.has(id)) {
           occurrences.set(id, {
             google_sub,
             workout_date,
             session_id,
+            snapshot_id,
             session_day_snapshot,
             session_focus_snapshot,
             session_intensity_snapshot,
@@ -462,12 +481,36 @@ export function createFakeD1() {
     return statement
   }
 
-  // D1 runs a batch as one transaction. The stand-in runs the statements in
-  // order, which is what the Start path depends on.
+  /** Set to hold every batch until released, so a race can be forced. */
+  let batchGate: Promise<void> | null = null
+  /** D1 has a single writer: batches commit one at a time, never interleaved. */
+  let writeChain: Promise<void> = Promise.resolve()
+
+  /**
+   * D1 runs a batch as one transaction against a single writer.
+   *
+   * Both properties matter for the Start claim: the statements of one batch
+   * are never interleaved with another's, and each batch sees the committed
+   * result of the batches before it. Without that, a guarded insert could
+   * read a stale occurrence.
+   */
   async function batch(statements: { run: () => Promise<unknown> }[]) {
-    const results = []
-    for (const statement of statements) results.push(await statement.run())
-    return results
+    if (batchGate) await batchGate
+
+    const previous = writeChain
+    let finished!: () => void
+    writeChain = new Promise<void>((resolve) => {
+      finished = resolve
+    })
+    await previous
+
+    try {
+      const results = []
+      for (const statement of statements) results.push(await statement.run())
+      return results
+    } finally {
+      finished()
+    }
   }
 
   return {
@@ -485,6 +528,23 @@ export function createFakeD1() {
     },
     breakWorkouts(error = new Error('D1 unavailable')) {
       workoutFailure = error
+    },
+    /**
+     * Hold every batch until the returned function is called.
+     *
+     * Lets a test drive two first Starts past their "is it started?" read and
+     * into persistence before either commits — the window the ownership token
+     * exists to close. Held batches resume in the order they arrived.
+     */
+    holdBatches() {
+      let release!: () => void
+      batchGate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      return () => {
+        batchGate = null
+        release()
+      }
     },
   }
 }

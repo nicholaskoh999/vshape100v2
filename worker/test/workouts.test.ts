@@ -227,6 +227,272 @@ describe('historical snapshot immutability', () => {
 })
 
 /* ------------------------------------------------------------------ */
+/* Concurrent first Start                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Two first Starts, neither having seen the other.
+ *
+ * The payloads are deliberately different shapes, and EACH holds set positions
+ * the other does not:
+ *
+ *   A only: (2,0)
+ *   B only: (0,2) (0,3) (1,1) (1,2)
+ *
+ * so whichever loses has rows that would not collide with the winner's. Under
+ * a plain per-row ON CONFLICT those rows would have inserted underneath the
+ * winner's occurrence and produced a hybrid workout.
+ */
+const RACE_A: WorkoutStartInput = {
+  day: 'Monday',
+  focus: 'Winner A focus',
+  intensity: 'HARD',
+  exercises: [
+    {
+      exerciseId: 'lat-pulldown',
+      name: 'Lat Pulldown A',
+      prescription: '2 × 10–12',
+      equipment: 'BAND 20kg',
+      resultKind: 'reps',
+      loadMode: 'kg',
+      perSide: false,
+      setCount: 2,
+    },
+    {
+      exerciseId: 'face-pull',
+      name: 'Face Pull A',
+      prescription: '1 × 15–20',
+      equipment: 'BAND 10kg',
+      resultKind: 'reps',
+      loadMode: 'kg',
+      perSide: false,
+      setCount: 1,
+    },
+    {
+      exerciseId: 'dead-bug',
+      name: 'Dead Bug A',
+      prescription: '1 × 10 / side',
+      equipment: null,
+      resultKind: 'reps',
+      loadMode: 'none',
+      perSide: true,
+      setCount: 1,
+    },
+  ],
+}
+
+const RACE_B: WorkoutStartInput = {
+  day: 'Monday',
+  focus: 'Winner B focus',
+  intensity: 'PUMP',
+  exercises: [
+    {
+      exerciseId: 'lat-pulldown',
+      name: 'Lat Pulldown B',
+      prescription: '4 × 5–8',
+      equipment: 'DB',
+      resultKind: 'reps',
+      loadMode: 'kg_each',
+      perSide: true,
+      setCount: 4,
+    },
+    {
+      exerciseId: 'plank',
+      name: 'Plank B',
+      prescription: '3 × 30–60s',
+      equipment: null,
+      resultKind: 'seconds',
+      loadMode: 'none',
+      perSide: false,
+      setCount: 3,
+    },
+  ],
+}
+
+/** Every (exerciseOrder, setIndex) a payload would occupy. */
+function keysOf(input: WorkoutStartInput): string[] {
+  return input.exercises.flatMap((exercise, order) =>
+    Array.from({ length: exercise.setCount }, (_unused, index) => `${order}:${index}`),
+  )
+}
+
+/** Let both Starts finish their pre-read and park in persistence. */
+async function flushMicrotasks(times = 30) {
+  for (let i = 0; i < times; i += 1) await Promise.resolve()
+}
+
+/**
+ * Drive two first Starts so both observe "not started" before either persists.
+ * `first` is the one that reaches persistence first, and therefore wins.
+ */
+async function raceStarts(first: WorkoutStartInput, second: WorkoutStartInput) {
+  const { store, db } = makeStore()
+
+  // Record what each Start saw when it asked whether the workout existed.
+  const observed: (string | null)[] = []
+  const recording: WorkoutStore = {
+    ...store,
+    async findOccurrence(googleSub, workoutDate, sessionId) {
+      const found = await store.findOccurrence(googleSub, workoutDate, sessionId)
+      observed.push(found ? found.snapshotId : null)
+      return found
+    },
+  }
+
+  const release = db.holdBatches()
+  const firstStart = startWorkout(
+    recording,
+    ACCOUNT_A,
+    DATE,
+    'monday',
+    first,
+    1_000,
+    'snapshot-first',
+  )
+  const secondStart = startWorkout(
+    recording,
+    ACCOUNT_A,
+    DATE,
+    'monday',
+    second,
+    2_000,
+    'snapshot-second',
+  )
+
+  await flushMicrotasks()
+  release()
+  const [firstResult, secondResult] = await Promise.all([firstStart, secondStart])
+
+  return { store, db, observed, firstResult, secondResult }
+}
+
+/** Assert the stored workout is EXACTLY `winner` and carries nothing of `loser`. */
+async function expectExactly(
+  store: WorkoutStore,
+  db: ReturnType<typeof createFakeD1>,
+  winner: WorkoutStartInput,
+  loser: WorkoutStartInput,
+) {
+  expect(db.occurrences.size).toBe(1)
+
+  const log = await readWorkout(store, ACCOUNT_A, DATE, 'monday')
+  expect(log).not.toBeNull()
+  const stored = log!
+
+  // The session header is the winner's, with no column taken from the loser.
+  expect(stored.occurrence.focus).toBe(winner.focus)
+  expect(stored.occurrence.intensity).toBe(winner.intensity)
+
+  const winnerKeys = keysOf(winner)
+  const loserOnly = keysOf(loser).filter((key) => !winnerKeys.includes(key))
+  // The premise of the test: the loser really did hold positions of its own.
+  expect(loserOnly.length).toBeGreaterThan(0)
+
+  // Exact set count, exact orders, exact indexes.
+  expect(stored.sets).toHaveLength(winnerKeys.length)
+  expect(stored.sets.map((set) => `${set.exerciseOrder}:${set.setIndex}`)).toEqual(
+    winnerKeys,
+  )
+  expect(db.workoutSets.size).toBe(winnerKeys.length)
+
+  // Not one loser-only position exists, in the read or in the raw table.
+  const rawKeys = [...db.workoutSets.values()].map(
+    (row) => `${row.exercise_order}:${row.set_index}`,
+  )
+  for (const key of loserOnly) expect(rawKeys).not.toContain(key)
+
+  // Every set snapshot belongs to the same winner — no mixed columns.
+  for (const set of stored.sets) {
+    const exercise = winner.exercises[set.exerciseOrder]
+    expect(set.exerciseId).toBe(exercise.exerciseId)
+    expect(set.exerciseName).toBe(exercise.name)
+    expect(set.prescription).toBe(exercise.prescription)
+    expect(set.equipment).toBe(exercise.equipment)
+    expect(set.resultKind).toBe(exercise.resultKind)
+    expect(set.loadMode).toBe(exercise.loadMode)
+    expect(set.perSide).toBe(exercise.perSide)
+    // And to the same Start, by ownership token.
+    expect(set.snapshotId).toBe(stored.occurrence.snapshotId)
+  }
+
+  return stored
+}
+
+describe('concurrent first start', () => {
+  it('lets both Starts observe an unstarted workout before either persists', async () => {
+    const { observed } = await raceStarts(RACE_A, RACE_B)
+    // The window the ownership token exists to close was genuinely open.
+    expect(observed.slice(0, 2)).toEqual([null, null])
+  })
+
+  it('stores exactly the winning payload when A reaches persistence first', async () => {
+    const { store, db } = await raceStarts(RACE_A, RACE_B)
+    const stored = await expectExactly(store, db, RACE_A, RACE_B)
+
+    expect(stored.occurrence.snapshotId).toBe('snapshot-first')
+    expect(stored.sets).toHaveLength(4)
+  })
+
+  it('stores exactly the winning payload when B reaches persistence first', async () => {
+    const { store, db } = await raceStarts(RACE_B, RACE_A)
+    const stored = await expectExactly(store, db, RACE_B, RACE_A)
+
+    expect(stored.occurrence.snapshotId).toBe('snapshot-first')
+    expect(stored.sets).toHaveLength(7)
+  })
+
+  it('reports exactly one Start as the creator', async () => {
+    const { firstResult, secondResult } = await raceStarts(RACE_A, RACE_B)
+    expect([firstResult.created, secondResult.created]).toEqual([true, false])
+  })
+
+  it('gives both callers the same coherent winning snapshot', async () => {
+    const { firstResult, secondResult } = await raceStarts(RACE_A, RACE_B)
+
+    // The loser is told the truth: the workout that exists, not the one it sent.
+    expect(secondResult.occurrence.focus).toBe(RACE_A.focus)
+    expect(secondResult.occurrence.snapshotId).toBe(firstResult.occurrence.snapshotId)
+    expect(secondResult.sets).toHaveLength(firstResult.sets.length)
+    expect(secondResult.sets.map((set) => set.exerciseName)).toEqual(
+      firstResult.sets.map((set) => set.exerciseName),
+    )
+    // Neither caller is holding a hybrid.
+    for (const result of [firstResult, secondResult]) {
+      for (const set of result.sets) {
+        expect(set.snapshotId).toBe(result.occurrence.snapshotId)
+      }
+    }
+  })
+
+  it('writes nothing at all for the losing Start', async () => {
+    const { db } = await raceStarts(RACE_A, RACE_B)
+    const tokens = new Set([...db.workoutSets.values()].map((row) => row.snapshot_id))
+    // One token across every stored row: the loser contributed no history.
+    expect([...tokens]).toEqual(['snapshot-first'])
+  })
+
+  it('leaves the raced workout logging normally afterwards', async () => {
+    const { store, db } = await raceStarts(RACE_A, RACE_B)
+
+    const outcome = await applySetUpdate(store, ACCOUNT_A, DATE, 'monday', 0, 0, {
+      action: 'complete',
+      result: 11,
+      load: { value: 20, unit: 'kg' },
+    })
+    expect(outcome.ok).toBe(true)
+
+    // And a later ordinary Start still resumes the winner rather than
+    // reopening the race.
+    const resumed = await startWorkout(store, ACCOUNT_A, DATE, 'monday', RACE_B)
+    expect(resumed.created).toBe(false)
+    expect(resumed.occurrence.focus).toBe(RACE_A.focus)
+    expect(resumed.sets).toHaveLength(4)
+    expect(resumed.sets[0].result).toBe(11)
+    expect(db.workoutSets.size).toBe(4)
+  })
+})
+
+/* ------------------------------------------------------------------ */
 /* Isolation                                                           */
 /* ------------------------------------------------------------------ */
 

@@ -27,6 +27,16 @@
 -- updates them — so a later Start on the same occurrence returns the original
 -- snapshot instead of rewriting history.
 --
+-- ONE WORKOUT COMES FROM EXACTLY ONE START. `snapshot_id` is the ownership
+-- token that makes that structural rather than hoped for. The first Start to
+-- commit writes the occurrence with its own token; every set row carries the
+-- token of the Start that produced it, and the foreign key below points at the
+-- occurrence's (account, date, session, TOKEN). A second Start racing the first
+-- loses the occurrence insert to the primary key, so its token is nowhere in
+-- workout_occurrences — and therefore not one of its set rows can attach,
+-- however many positions it holds that the winner does not. A hybrid workout
+-- made of two Start payloads is not representable in this schema.
+--
 -- No binary media is stored here. No progression, calibration or suggested
 -- load is stored or computed: those are later rounds.
 
@@ -39,6 +49,10 @@ CREATE TABLE IF NOT EXISTS workout_occurrences (
     CHECK (workout_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
   -- Training session slug, e.g. 'monday'.
   session_id   TEXT NOT NULL CHECK (length(session_id) > 0),
+  -- Ownership token of the Start that created this workout. Distinct per Start
+  -- attempt, generated server-side. It is an identity, not a clock: the winner
+  -- is decided by the primary key below, never by comparing timestamps.
+  snapshot_id  TEXT NOT NULL CHECK (length(snapshot_id) > 0),
 
   -- Historical copies of the session header, frozen at Start.
   session_day_snapshot       TEXT NOT NULL CHECK (length(session_day_snapshot) > 0),
@@ -49,14 +63,23 @@ CREATE TABLE IF NOT EXISTS workout_occurrences (
   updated_at INTEGER NOT NULL,
 
   -- One workout per account per local date per session. A second Start is the
-  -- same workout, never a duplicate occurrence.
-  PRIMARY KEY (google_sub, workout_date, session_id)
+  -- same workout, never a duplicate occurrence. This is also what decides the
+  -- winner of a concurrent first Start: exactly one insert can succeed.
+  PRIMARY KEY (google_sub, workout_date, session_id),
+  -- The parent key the set rows point at. Implied by the primary key, and
+  -- declared because SQLite requires a UNIQUE parent for a composite foreign
+  -- key that includes the ownership token.
+  UNIQUE (google_sub, workout_date, session_id, snapshot_id)
 );
 
 CREATE TABLE IF NOT EXISTS workout_sets (
   google_sub   TEXT NOT NULL,
   workout_date TEXT NOT NULL,
   session_id   TEXT NOT NULL,
+  -- The token of the Start that produced this row. A set can only exist while
+  -- it matches the occurrence's token, which is what stops a losing Start's
+  -- rows from attaching to the winner's workout.
+  snapshot_id  TEXT NOT NULL,
 
   -- Position within the session, 0-based. This is what keeps repeated
   -- canonical exercises apart: two Lat Pulldown entries in one session would
@@ -106,8 +129,10 @@ CREATE TABLE IF NOT EXISTS workout_sets (
 
   PRIMARY KEY (google_sub, workout_date, session_id, exercise_order, set_index),
 
-  FOREIGN KEY (google_sub, workout_date, session_id)
-    REFERENCES workout_occurrences (google_sub, workout_date, session_id)
+  -- The ownership constraint. The token is part of the key, so a row may only
+  -- exist under the occurrence that the SAME Start created.
+  FOREIGN KEY (google_sub, workout_date, session_id, snapshot_id)
+    REFERENCES workout_occurrences (google_sub, workout_date, session_id, snapshot_id)
     ON DELETE CASCADE
 );
 

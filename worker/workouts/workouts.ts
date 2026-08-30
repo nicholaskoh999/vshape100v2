@@ -10,6 +10,14 @@
  * request rewrites them. A second Start on the same occurrence is a resume: it
  * returns what was stored, even if the caller sent a newer prescription.
  *
+ * That invariant has to survive two Starts running at once, which a read-then-
+ * write check cannot guarantee on its own: both can read "not started" before
+ * either writes. So each Start mints an ownership token, and the store writes
+ * a set row only while that token is the one on the stored occurrence. The
+ * winner is decided by the occurrence's primary key — one insert succeeds — and
+ * the loser then writes nothing at all, rather than sprinkling its extra set
+ * positions into the winner's workout.
+ *
  * Validation lives in shared/workoutLog.ts, which the React set controls use
  * too. This module owns the storage boundary and the operations; it never
  * talks to D1 and never touches HTTP, matching today/completions.ts and
@@ -31,6 +39,8 @@ export type WorkoutOccurrenceRecord = {
   googleSub: string
   workoutDate: string
   sessionId: string
+  /** Ownership token of the Start that created this workout. */
+  snapshotId: string
   /** Historical copies, frozen when the workout was started. */
   day: string
   focus: string
@@ -43,6 +53,8 @@ export type WorkoutSetRecord = {
   googleSub: string
   workoutDate: string
   sessionId: string
+  /** The token of the Start that produced this row. */
+  snapshotId: string
   exerciseOrder: number
   setIndex: number
   /** Historical copies, frozen when the workout was started. */
@@ -87,9 +99,12 @@ export interface WorkoutStore {
   ): Promise<WorkoutSetRecord[]>
 
   /**
-   * Insert the occurrence and its sets, leaving anything already stored
-   * untouched. Insert-only by contract: this is what makes Start idempotent
-   * and keeps the first snapshot authoritative.
+   * Insert the occurrence and its sets as one all-or-nothing claim.
+   *
+   * Insert-only by contract, and ownership-gated: a set row is written only
+   * while the stored occurrence carries this snapshot's token. A Start that
+   * loses the occurrence insert therefore writes zero set rows, including at
+   * positions the winner never occupied.
    */
   insertOccurrence(
     occurrence: WorkoutOccurrenceRecord,
@@ -120,11 +135,22 @@ export interface WorkoutStore {
 /* Snapshot construction                                               */
 /* ------------------------------------------------------------------ */
 
+/**
+ * A fresh ownership token for one Start attempt.
+ *
+ * It only has to be distinct per attempt — the winner is decided by the
+ * occurrence's primary key, never by comparing tokens or clocks.
+ */
+export function newSnapshotId(): string {
+  return crypto.randomUUID()
+}
+
 /** Build the rows a first Start would store. Pure: nothing is written here. */
 export function buildSnapshot(
   googleSub: string,
   workoutDate: string,
   sessionId: string,
+  snapshotId: string,
   input: WorkoutStartInput,
   now: number,
 ): WorkoutLog {
@@ -132,6 +158,7 @@ export function buildSnapshot(
     googleSub,
     workoutDate,
     sessionId,
+    snapshotId,
     day: input.day,
     focus: input.focus,
     intensity: input.intensity,
@@ -146,6 +173,7 @@ export function buildSnapshot(
         googleSub,
         workoutDate,
         sessionId,
+        snapshotId,
         exerciseOrder,
         setIndex,
         exerciseId: exercise.exerciseId,
@@ -193,8 +221,13 @@ export type StartResult = WorkoutLog & { created: boolean }
  * Idempotent by design. When the occurrence already exists nothing is written
  * at all and the stored snapshot is returned — a caller sending a newer
  * prescription cannot rewrite the history of a workout that is already
- * underway. The insert is also insert-only, so two concurrent Starts leave
- * exactly one snapshot and both callers read the winner's.
+ * underway.
+ *
+ * The pre-read is an optimisation, not the safety mechanism. Two concurrent
+ * first Starts can both see "not started"; correctness comes from the write
+ * itself. Each attempt mints a token, the occurrence's primary key lets exactly
+ * one attempt's token be stored, and the store writes set rows only under that
+ * stored token. The loser writes nothing and reads back the winner.
  */
 export async function startWorkout(
   store: WorkoutStore,
@@ -203,11 +236,12 @@ export async function startWorkout(
   sessionId: string,
   input: WorkoutStartInput,
   now: number = Date.now(),
+  snapshotId: string = newSnapshotId(),
 ): Promise<StartResult> {
   const existing = await readWorkout(store, googleSub, workoutDate, sessionId)
   if (existing) return { ...existing, created: false }
 
-  const snapshot = buildSnapshot(googleSub, workoutDate, sessionId, input, now)
+  const snapshot = buildSnapshot(googleSub, workoutDate, sessionId, snapshotId, input, now)
   await store.insertOccurrence(snapshot.occurrence, snapshot.sets)
 
   // Re-read rather than trusting the values just sent: if another request won
@@ -218,7 +252,9 @@ export async function startWorkout(
     // storage failure rather than inventing a workout.
     throw new Error('workout occurrence could not be read back after insert')
   }
-  return { ...stored, created: stored.occurrence.startedAt === now }
+  // Whether this attempt created the workout is answered by whose token is
+  // stored — a fact, not a timestamp comparison.
+  return { ...stored, created: stored.occurrence.snapshotId === snapshotId }
 }
 
 export type SetOutcome =

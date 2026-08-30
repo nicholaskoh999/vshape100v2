@@ -5,10 +5,29 @@
  * prepared with bound values; no part of any statement is built from user
  * input.
  *
- * The Start path writes the occurrence and every expected set in one
- * `db.batch`, which D1 runs as a single transaction: a workout is never left
- * half-created. Both inserts are ON CONFLICT DO NOTHING, never DO UPDATE, so
- * a repeat Start cannot rewrite a stored snapshot.
+ * THE FIRST-WRITER-WINS CLAIM.
+ *
+ * `insertOccurrence` is the one place a workout's history is created, and it
+ * has to be safe when two first Starts run at once — which they can, on
+ * separate isolates, with neither having seen the other's write. It is written
+ * so that a losing Start stores nothing at all:
+ *
+ *   1. The occurrence INSERT is ON CONFLICT DO NOTHING. Its primary key means
+ *      exactly one concurrent Start can put its `snapshot_id` in the table.
+ *   2. Every set INSERT is `INSERT ... SELECT ... WHERE EXISTS (the occurrence
+ *      row carrying THIS snapshot's token)`. For the loser that subquery is
+ *      false, so each statement inserts zero rows — including at exercise/set
+ *      positions the winner never occupied, which is exactly the case a plain
+ *      per-row ON CONFLICT would have let through.
+ *   3. The whole thing is one `db.batch`, so it commits as a single
+ *      transaction against D1's single writer, and the guard in (2) is
+ *      evaluated against committed state rather than a stale read.
+ *   4. The composite foreign key on (account, date, session, snapshot_id)
+ *      backs this up structurally: a set row whose token is not the stored
+ *      occurrence's cannot exist even if a future caller bypassed (2).
+ *
+ * None of this depends on timing, on a process-local lock, or on comparing
+ * timestamps — a lock inside one isolate would not be seen by another.
  */
 
 import {
@@ -25,6 +44,7 @@ type OccurrenceRow = {
   google_sub: string
   workout_date: string
   session_id: string
+  snapshot_id: string
   session_day_snapshot: string
   session_focus_snapshot: string
   session_intensity_snapshot: string
@@ -36,6 +56,7 @@ type SetRow = {
   google_sub: string
   workout_date: string
   session_id: string
+  snapshot_id: string
   exercise_order: number
   set_index: number
   exercise_id_snapshot: string
@@ -57,6 +78,7 @@ function toOccurrence(row: OccurrenceRow): WorkoutOccurrenceRecord {
     googleSub: row.google_sub,
     workoutDate: row.workout_date,
     sessionId: row.session_id,
+    snapshotId: row.snapshot_id,
     day: row.session_day_snapshot,
     focus: row.session_focus_snapshot,
     intensity: row.session_intensity_snapshot,
@@ -77,6 +99,7 @@ function toSet(row: SetRow): WorkoutSetRecord {
     googleSub: row.google_sub,
     workoutDate: row.workout_date,
     sessionId: row.session_id,
+    snapshotId: row.snapshot_id,
     exerciseOrder: row.exercise_order,
     setIndex: row.set_index,
     exerciseId: row.exercise_id_snapshot,
@@ -94,14 +117,35 @@ function toSet(row: SetRow): WorkoutSetRecord {
   }
 }
 
-const OCCURRENCE_COLUMNS = `google_sub, workout_date, session_id,
+const OCCURRENCE_COLUMNS = `google_sub, workout_date, session_id, snapshot_id,
   session_day_snapshot, session_focus_snapshot, session_intensity_snapshot,
   started_at, updated_at`
 
-const SET_COLUMNS = `google_sub, workout_date, session_id, exercise_order, set_index,
-  exercise_id_snapshot, exercise_name_snapshot, prescription_snapshot,
-  equipment_snapshot, result_kind_snapshot, load_mode_snapshot, per_side_snapshot,
-  status, actual_load_value, actual_load_unit, actual_result, updated_at`
+const SET_COLUMN_NAMES = [
+  'google_sub',
+  'workout_date',
+  'session_id',
+  'snapshot_id',
+  'exercise_order',
+  'set_index',
+  'exercise_id_snapshot',
+  'exercise_name_snapshot',
+  'prescription_snapshot',
+  'equipment_snapshot',
+  'result_kind_snapshot',
+  'load_mode_snapshot',
+  'per_side_snapshot',
+  'status',
+  'actual_load_value',
+  'actual_load_unit',
+  'actual_result',
+  'updated_at',
+] as const
+
+const SET_COLUMNS = SET_COLUMN_NAMES.join(', ')
+/** The same columns qualified for the ownership join in `listSets`. */
+const SET_COLUMNS_QUALIFIED = SET_COLUMN_NAMES.map((name) => `s.${name}`).join(', ')
+const SET_PLACEHOLDERS = SET_COLUMN_NAMES.map(() => '?').join(', ')
 
 export function createD1WorkoutStore(db: D1Database): WorkoutStore {
   return {
@@ -119,12 +163,21 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
     },
 
     async listSets(googleSub, workoutDate, sessionId) {
+      // Joined on the ownership token, so a read can only ever return the sets
+      // of the Start that owns the stored occurrence. The foreign key already
+      // makes a foreign-token row impossible; this makes the read provably
+      // coherent without depending on that.
       const result = await db
         .prepare(
-          `SELECT ${SET_COLUMNS}
-             FROM workout_sets
-            WHERE google_sub = ? AND workout_date = ? AND session_id = ?
-            ORDER BY exercise_order, set_index`,
+          `SELECT ${SET_COLUMNS_QUALIFIED}
+             FROM workout_sets s
+             JOIN workout_occurrences o
+               ON  o.google_sub   = s.google_sub
+               AND o.workout_date = s.workout_date
+               AND o.session_id   = s.session_id
+               AND o.snapshot_id  = s.snapshot_id
+            WHERE s.google_sub = ? AND s.workout_date = ? AND s.session_id = ?
+            ORDER BY s.exercise_order, s.set_index`,
         )
         .bind(googleSub, workoutDate, sessionId)
         .all<SetRow>()
@@ -133,20 +186,20 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
     },
 
     async insertOccurrence(occurrence, sets) {
-      // ON CONFLICT DO NOTHING on both tables is the historical invariant in
-      // SQL: a second Start writes nothing at all, so the original snapshot
-      // survives regardless of what the caller sent this time.
       const statements = [
+        // One concurrent Start wins this insert; the others no-op, leaving
+        // their token nowhere in the table.
         db
           .prepare(
             `INSERT INTO workout_occurrences (${OCCURRENCE_COLUMNS})
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT (google_sub, workout_date, session_id) DO NOTHING`,
           )
           .bind(
             occurrence.googleSub,
             occurrence.workoutDate,
             occurrence.sessionId,
+            occurrence.snapshotId,
             occurrence.day,
             occurrence.focus,
             occurrence.intensity,
@@ -156,8 +209,16 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
         ...sets.map((set) =>
           db
             .prepare(
+              // Guarded insert: the row is written only while the stored
+              // occurrence carries THIS snapshot's token. A losing Start
+              // inserts nothing here, at any position.
               `INSERT INTO workout_sets (${SET_COLUMNS})
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               SELECT ${SET_PLACEHOLDERS}
+                WHERE EXISTS (
+                      SELECT 1 FROM workout_occurrences
+                       WHERE google_sub = ? AND workout_date = ?
+                         AND session_id = ? AND snapshot_id = ?
+                )
                ON CONFLICT (google_sub, workout_date, session_id, exercise_order, set_index)
                DO NOTHING`,
             )
@@ -165,6 +226,7 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
               set.googleSub,
               set.workoutDate,
               set.sessionId,
+              set.snapshotId,
               set.exerciseOrder,
               set.setIndex,
               set.exerciseId,
@@ -179,12 +241,17 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
               set.loadUnit,
               set.result,
               set.updatedAt,
+              // The guard's own bindings.
+              set.googleSub,
+              set.workoutDate,
+              set.sessionId,
+              set.snapshotId,
             ),
         ),
       ]
 
-      // One batch = one transaction, so the occurrence and its sets appear
-      // together or not at all.
+      // One batch = one transaction, so the claim above is evaluated and
+      // committed as a unit against D1's single writer.
       await db.batch(statements)
     },
 
@@ -203,8 +270,9 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
     },
 
     async updateSet(record) {
-      // Only the live logging columns are assignable. The snapshot columns are
-      // not in this statement at all, so no code path can rewrite history.
+      // Only the live logging columns are assignable. The snapshot columns and
+      // the ownership token are not in this statement at all, so no code path
+      // can rewrite history or re-home a set.
       await db
         .prepare(
           `UPDATE workout_sets
