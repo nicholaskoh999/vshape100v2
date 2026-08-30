@@ -10,9 +10,16 @@
  * and one is never read from a body, query string or header.
  */
 
-import type { Env } from '../auth/config'
+import { resolveSecureCookies, type Env } from '../auth/config'
 import { createD1SessionStore } from '../auth/d1Stores'
-import { readCookie, resolveSession, SESSION_COOKIE } from '../auth/session'
+import {
+  buildClearedSessionCookie,
+  buildSessionCookie,
+  readCookie,
+  resolveSession,
+  sessionLifetimeMs,
+  SESSION_COOKIE,
+} from '../auth/session'
 import {
   completeOccurrence,
   listCompletions,
@@ -58,26 +65,64 @@ function toPublicCompletion(record: CompletionRecord) {
 }
 
 /**
- * Resolve the caller. Returns the account key, or the 401 to send back.
- * Identity is derived here and nowhere else.
+ * Resolve the caller. Returns the account key plus any headers the session
+ * resolution produced, or the 401 to send back. Identity is derived here and
+ * nowhere else.
+ *
+ * `resolveSession` rolls a trusted session forward in D1 once it is near
+ * expiry. When it does, the browser cookie must be re-issued with a matching
+ * Max-Age — otherwise the cookie would expire before the D1 row it points at.
+ * That is the accepted Round 02 rolling-session rule, and it applies to every
+ * authenticated route, not only `/api/auth/session`.
  */
 async function requireAccount(
   request: Request,
   env: Env,
-): Promise<{ googleSub: string } | { response: Response }> {
+): Promise<{ googleSub: string; headers: HeadersInit } | { response: Response }> {
   const token = readCookie(request.headers.get('Cookie'), SESSION_COOKIE)
+  const secure = resolveSecureCookies(env, new URL(request.url))
   const result = await resolveSession(createD1SessionStore(env.DB), token)
 
   if (result.status !== 'valid') {
+    // Clear a cookie that can no longer authenticate, so the browser stops
+    // sending it — the same thing `/api/auth/session` does.
+    const headers: HeadersInit = token
+      ? { 'Set-Cookie': buildClearedSessionCookie(secure) }
+      : {}
     return {
       response: json(
         { error: 'unauthenticated', reason: result.status === 'missing' ? null : result.status },
-        { status: 401 },
+        { status: 401, headers },
       ),
     }
   }
 
-  return { googleSub: result.session.googleSub }
+  const headers: HeadersInit = result.refreshed
+    ? {
+        // The same opaque token, with a Max-Age matching the rolled lifetime.
+        'Set-Cookie': buildSessionCookie(
+          token as string,
+          sessionLifetimeMs(result.session.trusted),
+          secure,
+        ),
+      }
+    : {}
+
+  return { googleSub: result.session.googleSub, headers }
+}
+
+/** Attach the session headers to a response without rebuilding its body. */
+function withSessionHeaders(response: Response, headers: HeadersInit): Response {
+  const entries = Object.entries(headers as Record<string, string>)
+  if (entries.length === 0) return response
+
+  const merged = new Headers(response.headers)
+  for (const [name, value] of entries) merged.set(name, value)
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: merged,
+  })
 }
 
 /** GET /api/today/completions?from=&to= */
@@ -136,6 +181,11 @@ export async function handleTodayRequest(
   const { pathname } = new URL(request.url)
   if (!pathname.startsWith(PREFIX)) return null
 
+  // Any Set-Cookie the session resolution produced has to survive every exit
+  // path below, including the error one: once D1 has rolled the session
+  // forward, `refreshed` will not be true again for weeks.
+  let sessionHeaders: HeadersInit = {}
+
   try {
     const isCollection = pathname === COLLECTION
     const isItem = pathname.startsWith(`${COLLECTION}/`)
@@ -151,18 +201,32 @@ export async function handleTodayRequest(
 
     const account = await requireAccount(request, env)
     if ('response' in account) return account.response
+    sessionHeaders = account.headers
 
     const store = createD1CompletionStore(env.DB)
 
-    if (isCollection) return await handleList(request, store, account.googleSub)
+    if (isCollection) {
+      return withSessionHeaders(
+        await handleList(request, store, account.googleSub),
+        sessionHeaders,
+      )
+    }
 
     const rawKey = pathname.slice(COLLECTION.length + 1)
-    if (rawKey === '') return json({ error: 'invalid_occurrence_key' }, { status: 400 })
-    return await handleMutate(request, store, account.googleSub, rawKey)
+    if (rawKey === '') {
+      return withSessionHeaders(
+        json({ error: 'invalid_occurrence_key' }, { status: 400 }),
+        sessionHeaders,
+      )
+    }
+    return withSessionHeaders(
+      await handleMutate(request, store, account.googleSub, rawKey),
+      sessionHeaders,
+    )
   } catch (error) {
     // A storage failure is reported as a controlled error. Nothing internal,
     // and no identity, ever reaches the browser.
     console.error('today request failed', error)
-    return json({ error: 'server_error' }, { status: 500 })
+    return json({ error: 'server_error' }, { status: 500, headers: sessionHeaders })
   }
 }
