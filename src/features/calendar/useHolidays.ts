@@ -32,9 +32,19 @@ type Loaded = { id: string; holidays: HolidayRecord[] }
 export function useHolidays(span: { from: string; to: string } | null): HolidayState {
   const [retries, setRetries] = useState(0)
 
+  // Keyed on the span's VALUES, not the object's identity. Today rebuilds its
+  // range object on every clock tick, so depending on identity would refetch
+  // once a minute and flick the status back to "unknown" — which now hides the
+  // routine. The dates are what actually decide the request.
+  const from = span?.from ?? null
+  const to = span?.to ?? null
+
   const attempt = useMemo(
-    () => ({ span, id: `${span?.from ?? ''}..${span?.to ?? ''}#${retries}` }),
-    [span, retries],
+    () => ({
+      span: from !== null && to !== null ? { from, to } : null,
+      id: `${from ?? ''}..${to ?? ''}#${retries}`,
+    }),
+    [from, to, retries],
   )
 
   const [loaded, setLoaded] = useState<Loaded | null>(null)
@@ -43,7 +53,7 @@ export function useHolidays(span: { from: string; to: string } | null): HolidayS
   const matched = loaded?.id === attempt.id
 
   // No span means nothing to fetch — a settled empty state, not a spinner.
-  const status: HolidayStatus = !span
+  const status: HolidayStatus = !attempt.span
     ? 'ready'
     : matched
       ? 'ready'

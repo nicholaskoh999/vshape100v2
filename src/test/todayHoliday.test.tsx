@@ -2,8 +2,11 @@ import { cleanup, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { buildAgenda } from '@/features/today/model/engine'
+import userEvent from '@testing-library/user-event'
+
 import { authenticatedSession, mockAuthFetch, renderApp } from './authTestUtils'
 import { createHolidayServer, holiday, type HolidayServer } from './holidayApiTestUtils'
+import { createTodayServer } from './todayApiTestUtils'
 
 /**
  * Round 11 — Holiday Mode on Today.
@@ -278,20 +281,151 @@ describe('4. Foundation is unaffected by Holiday', () => {
 })
 
 /* ------------------------------------------------------------------ */
-/* 5. Loading                                                          */
+/* 5. Unknown is neither Home nor Holiday                              */
 /* ------------------------------------------------------------------ */
 
-describe('5. before holidays have loaded', () => {
-  it('does not invent a Holiday that is not stored', async () => {
+describe('5. while the day mode is unknown', () => {
+  it('does not claim the day is a Holiday', async () => {
     const release = server.holdReads()
     server.seed(holiday('h1', '2026-09-10'))
 
     renderApp('/today')
     await screen.findByRole('heading', { level: 1, name: 'Today' })
-    // The normal route shows first; a Holiday is only claimed once read.
-    expect(holidayCard()).toBeNull()
 
+    expect(holidayCard()).toBeNull()
+    expect(mainText()).not.toMatch(/Holiday · Exempt/)
     release()
+  })
+
+  it('does not render the normal routine either', async () => {
+    const release = server.holdReads()
+    renderApp('/today')
+    await screen.findByRole('heading', { level: 1, name: 'Today' })
+
+    // The routine would put real pressure on a day that may be exempt.
+    const text = mainText()
+    expect(text).not.toMatch(/gym training/i)
+    expect(text).not.toMatch(/needs attention/i)
+    expect(text).not.toMatch(/up next/i)
+    release()
+  })
+
+  it('shows a neutral checking state instead', async () => {
+    const release = server.holdReads()
+    renderApp('/today')
+    await screen.findByRole('heading', { level: 1, name: 'Today' })
+
+    expect(document.querySelector('[data-today-checking]')).not.toBeNull()
+    expect(screen.getByText(/Checking whether today is a Holiday/)).toBeInTheDocument()
+    release()
+  })
+
+  it('exposes no completion controls, so Today cannot be mutated', async () => {
+    const todayServer = createTodayServer()
+    cleanup()
+    server = createHolidayServer()
+    mockAuthFetch({ session: authenticatedSession, holidays: server, today: todayServer })
+
+    const release = server.holdReads()
+    renderApp('/today')
+    await screen.findByRole('heading', { level: 1, name: 'Today' })
+
+    // Nothing to press...
+    expect(
+      screen.queryAllByRole('button', { name: /^Complete / }),
+    ).toHaveLength(0)
+    expect(screen.queryAllByRole('button', { name: /^Undo / })).toHaveLength(0)
+    // ...and nothing was written.
+    expect(todayServer.calls.every((call) => call.method === 'GET')).toBe(true)
+    release()
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* 6. A failed read is not Home                                         */
+/* ------------------------------------------------------------------ */
+
+describe('6. when the day mode cannot be read', () => {
+  it('does not fall back to the normal routine', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    server.failReads()
+
+    renderApp('/today')
+    await screen.findByRole('heading', { level: 1, name: 'Today' })
+    await waitFor(() =>
+      expect(document.querySelector('[data-today-holiday-error]')).not.toBeNull(),
+    )
+
+    const text = mainText()
+    expect(text).not.toMatch(/gym training/i)
+    expect(text).not.toMatch(/needs attention/i)
+    expect(holidayCard()).toBeNull()
+    errors.mockRestore()
+  })
+
+  it('says so and offers a retry', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    server.failReads()
+
+    renderApp('/today')
+    await screen.findByRole('heading', { level: 1, name: 'Today' })
+
+    expect(
+      await screen.findByText(/Could not check whether today is a Holiday/),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Try again/ })).toBeInTheDocument()
+    errors.mockRestore()
+  })
+
+  it('exposes no completion controls while the mode is unknown', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    server.failReads()
+
+    renderApp('/today')
+    await screen.findByRole('heading', { level: 1, name: 'Today' })
+    await waitFor(() =>
+      expect(document.querySelector('[data-today-holiday-error]')).not.toBeNull(),
+    )
+
+    expect(screen.queryAllByRole('button', { name: /^Complete / })).toHaveLength(0)
+    errors.mockRestore()
+  })
+
+  it('retry resolves to the normal Home routine when there is no Holiday', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    server.failReads()
+
+    renderApp('/today')
+    await screen.findByRole('heading', { level: 1, name: 'Today' })
+    await screen.findByRole('button', { name: /Try again/ })
+
+    await userEvent
+      .setup({ advanceTimers: vi.advanceTimersByTime })
+      .click(screen.getByRole('button', { name: /Try again/ }))
+
+    await waitFor(() =>
+      expect(document.querySelector('[data-today-holiday-error]')).toBeNull(),
+    )
+    expect(holidayCard()).toBeNull()
+    expect(mainText()).toContain('Home Mode')
+    errors.mockRestore()
+  })
+
+  it('retry resolves to the Holiday state when today is a Holiday', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    server.seed(holiday('h1', '2026-09-10'))
+    server.failReads()
+
+    renderApp('/today')
+    await screen.findByRole('heading', { level: 1, name: 'Today' })
+    await screen.findByRole('button', { name: /Try again/ })
+
+    await userEvent
+      .setup({ advanceTimers: vi.advanceTimersByTime })
+      .click(screen.getByRole('button', { name: /Try again/ }))
+
     await waitFor(() => expect(holidayCard()).not.toBeNull())
+    expect(mainText()).toMatch(/Holiday · Exempt/)
+    errors.mockRestore()
   })
 })

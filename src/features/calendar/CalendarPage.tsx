@@ -206,7 +206,11 @@ export function CalendarPage() {
                 days={days}
                 today={today}
                 selection={selection}
-                loading={status === 'loading'}
+                // Until the read lands, the month's Holiday state is unknown.
+                // The cells are shown as unknown and are not actionable, so a
+                // day is never presented as confirmed Training/Chill/Recovery
+                // and no Holiday can be drawn against a month we cannot see.
+                resolved={status === 'ready'}
                 onDayClick={handleDayClick}
               />
             )}
@@ -220,7 +224,9 @@ export function CalendarPage() {
             selection={selection}
             editing={editing}
             anchorPending={anchor !== null}
-            busy={busy}
+            // Saving against a month we cannot see could silently overlap a
+            // Holiday that is already there.
+            busy={busy || status !== 'ready'}
             feedback={feedback}
             onSave={handleSave}
             onDelete={handleDelete}
@@ -280,29 +286,31 @@ function MonthButton({
   )
 }
 
-const TYPE_STYLES: Record<DayType, string> = {
+const TYPE_STYLES: Record<DayType | 'unknown', string> = {
   training: 'text-ink-dim',
   saturday: 'text-cyan',
   sunday: 'text-purple',
   // Holiday is the override, so it is the only one with a filled surface.
   holiday: 'bg-holiday/20 text-holiday',
+  // Not a day type — the state before we know one.
+  unknown: 'text-ink-faint',
 }
 
 function MonthGrid({
   days,
   today,
   selection,
-  loading,
+  resolved,
   onDayClick,
 }: {
   days: CalendarDay[]
   today: string
   selection: { start: string; end: string } | null
-  loading: boolean
+  resolved: boolean
   onDayClick: (day: CalendarDay) => void
 }) {
   return (
-    <div data-calendar-grid className={cn(loading && 'opacity-60')}>
+    <div data-calendar-grid data-resolved={resolved} className={cn(!resolved && 'opacity-60')}>
       <div className="mb-1 grid grid-cols-7 gap-1">
         {WEEKDAY_LABELS.map((label) => (
           <div
@@ -318,28 +326,33 @@ function MonthGrid({
         {days.map((day) => {
           const selected =
             selection !== null && day.date >= selection.start && day.date <= selection.end
+          const shown = resolved ? day.type : 'unknown'
           return (
             <motion.button
               key={day.date}
               type="button"
               role="gridcell"
               onClick={() => onDayClick(day)}
-              aria-label={`${day.date} · ${DAY_TYPE_LABEL[day.type]}`}
+              disabled={!resolved}
+              aria-label={
+                resolved ? `${day.date} · ${DAY_TYPE_LABEL[day.type]}` : `${day.date} · Checking`
+              }
               aria-selected={selected}
               data-day={day.date}
-              data-day-type={day.type}
+              data-day-type={shown}
               whileTap={press.whileTap}
               transition={press.transition}
               className={cn(
                 'flex aspect-square min-w-0 flex-col items-center justify-center rounded-control border text-[13px] font-bold transition-colors duration-150',
                 day.inMonth ? 'border-edge' : 'border-transparent opacity-40',
-                TYPE_STYLES[day.type],
+                TYPE_STYLES[shown],
                 selected && 'border-blue bg-blue/15 text-offwhite',
                 day.date === today && !selected && 'border-blue/60',
+                !resolved && 'cursor-progress',
               )}
             >
               <span className="tabular-nums">{day.dayOfMonth}</span>
-              {day.type === 'holiday' && (
+              {shown === 'holiday' && (
                 <span aria-hidden="true" className="mt-0.5 text-[9px] font-extrabold uppercase">
                   Hol
                 </span>
@@ -349,7 +362,7 @@ function MonthGrid({
         })}
       </div>
 
-      {loading && (
+      {!resolved && (
         <p role="status" className="mt-3 flex items-center gap-2 text-[12px] font-semibold text-ink-faint">
           <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
           Loading your calendar…

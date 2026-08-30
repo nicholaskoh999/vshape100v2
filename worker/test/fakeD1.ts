@@ -120,6 +120,8 @@ export function createFakeD1() {
   let workoutFailure: Error | null = null
   /** Set to make every `holiday_overrides` statement throw, as D1 would. */
   let holidayFailure: Error | null = null
+  /** Set to hold every Holiday write, so a race can be forced. */
+  let holidayGate: Promise<void> | null = null
 
   /** Sets that belong to an occurrence — the ownership join, in the stand-in. */
   function ownedSets(row: OccurrenceRow) {
@@ -141,13 +143,90 @@ export function createFakeD1() {
     if (sql.includes('holiday_overrides')) {
       if (holidayFailure) throw holidayFailure
 
-      if (sql.includes('SELECT') && sql.includes('AND id = ?')) {
+      /** Inclusive intersection, the same test the real statements use. */
+      const overlapping = (
+        google_sub: string,
+        start: string,
+        end: string,
+        excludeId?: string,
+      ) =>
+        [...holidays.values()].some(
+          (row) =>
+            row.google_sub === google_sub &&
+            row.id !== excludeId &&
+            row.start_date <= end &&
+            row.end_date >= start,
+        )
+
+      // Writes are matched BEFORE the reads: both conditional statements
+      // contain a SELECT (and the UPDATE contains `AND id = ?`), so matching
+      // on those first would misroute them.
+      if (sql.includes('INSERT INTO holiday_overrides')) {
+        const [
+          id,
+          google_sub,
+          start_date,
+          end_date,
+          created_at,
+          updated_at,
+          guard_sub,
+          guard_end,
+          guard_start,
+        ] = args as [string, string, string, string, number, number, string, string, string]
+
+        // WHERE NOT EXISTS (anything of this account intersecting the range).
+        // Evaluated inside the statement, so a losing concurrent create writes
+        // nothing rather than racing past a stale check.
+        if (overlapping(guard_sub, guard_start, guard_end)) return 0
+
+        holidays.set(holidayId(google_sub, id), {
+          id,
+          google_sub,
+          start_date,
+          end_date,
+          created_at,
+          updated_at,
+        })
+        return 1
+      }
+
+      if (sql.includes('UPDATE holiday_overrides')) {
+        const [
+          start_date,
+          end_date,
+          updated_at,
+          google_sub,
+          id,
+          guard_sub,
+          guard_id,
+          guard_end,
+          guard_start,
+        ] = args as [string, string, number, string, string, string, string, string, string]
+
+        const key = holidayId(google_sub, id)
+        const row = holidays.get(key)
+        // Ownership is part of the statement: an id that is not this
+        // account's simply matches nothing.
+        if (!row) return 0
+        // The record being edited is excluded, so re-shaping it over its own
+        // days is never a conflict with itself.
+        if (overlapping(guard_sub, guard_start, guard_end, guard_id)) return 0
+
+        holidays.set(key, { ...row, start_date, end_date, updated_at })
+        return 1
+      }
+
+      if (sql.includes('DELETE FROM holiday_overrides')) {
+        const [google_sub, id] = args as [string, string]
+        return holidays.delete(holidayId(google_sub, id)) ? 1 : 0
+      }
+
+      if (sql.includes('AND id = ?')) {
         const [google_sub, id] = args as [string, string]
         return holidays.get(holidayId(google_sub, id)) ?? null
       }
 
       if (sql.includes('SELECT')) {
-        // Inclusive-range intersection: start_date <= to AND end_date >= from.
         const [google_sub, to, from] = args as [string, string, string]
         return [...holidays.values()]
           .filter(
@@ -165,53 +244,9 @@ export function createFakeD1() {
           })
       }
 
-      if (sql.includes('INSERT INTO holiday_overrides')) {
-        const [id, google_sub, start_date, end_date, created_at, updated_at] = args as [
-          string,
-          string,
-          string,
-          string,
-          number,
-          number,
-        ]
-        holidays.set(holidayId(google_sub, id), {
-          id,
-          google_sub,
-          start_date,
-          end_date,
-          created_at,
-          updated_at,
-        })
-        return null
-      }
-
-      if (sql.includes('UPDATE holiday_overrides')) {
-        const [start_date, end_date, updated_at, google_sub, id] = args as [
-          string,
-          string,
-          number,
-          string,
-          string,
-        ]
-        const key = holidayId(google_sub, id)
-        const row = holidays.get(key)
-        // Only the dates move; identity and created_at are not assignable.
-        if (row) holidays.set(key, { ...row, start_date, end_date, updated_at })
-        return row ? 1 : 0
-      }
-
-      if (sql.includes('DELETE FROM holiday_overrides')) {
-        const [google_sub, id] = args as [string, string]
-        // The account key is part of the lookup, so another account's record
-        // is simply not there to delete.
-        return holidays.delete(holidayId(google_sub, id)) ? 1 : 0
-      }
-
       throw new Error(`fakeD1 received an unexpected statement: ${sql}`)
     }
 
-    // Checked before the generic workout_sets branch: both history statements
-    // name that table too, and would otherwise be misrouted.
     if (sql.includes('LEFT JOIN workout_sets')) {
       if (workoutFailure) throw workoutFailure
 
@@ -622,6 +657,28 @@ export function createFakeD1() {
             return { results: (execute(sql, args) ?? []) as T[], success: true }
           },
           async run() {
+            // D1 has a single writer, so statements commit one at a time. The
+            // gate lets a test park two of them mid-flight and release them in
+            // order, which is the window a check-then-write would lose.
+            if (holidayGate && sql.includes('holiday_overrides')) {
+              await holidayGate
+              const previous = writeChain
+              let finished!: () => void
+              writeChain = new Promise<void>((resolve) => {
+                finished = resolve
+              })
+              await previous
+              try {
+                const gated = execute(sql, args)
+                return {
+                  success: true,
+                  meta: { changes: typeof gated === 'number' ? gated : 0 },
+                }
+              } finally {
+                finished()
+              }
+            }
+
             const result = execute(sql, args)
             // D1 reports affected rows; the Holiday delete uses it to tell
             // "removed" from "was never yours to remove".
@@ -687,6 +744,23 @@ export function createFakeD1() {
     },
     breakHolidays(error = new Error('D1 unavailable')) {
       holidayFailure = error
+    },
+    /**
+     * Hold every Holiday write until the returned function is called.
+     *
+     * Lets a test drive two mutations past their decision point and into
+     * persistence before either commits — the window the conditional writes
+     * exist to close. Released writes run one at a time, in arrival order.
+     */
+    holdHolidayWrites() {
+      let release!: () => void
+      holidayGate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      return () => {
+        holidayGate = null
+        release()
+      }
     },
     /**
      * Hold every batch until the returned function is called.

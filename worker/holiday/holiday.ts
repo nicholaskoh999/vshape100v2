@@ -39,10 +39,29 @@ export interface HolidayStore {
 
   find(googleSub: string, id: string): Promise<HolidayRow | null>
 
-  insert(row: HolidayRow): Promise<void>
+  /**
+   * Insert ONLY if the range overlaps nothing this account already has.
+   *
+   * The non-overlap test must happen inside the write itself. A preceding
+   * SELECT cannot enforce it: two concurrent requests can both read "no
+   * conflict" and then both insert. Returns whether the row was written.
+   */
+  insertIfFree(row: HolidayRow): Promise<boolean>
 
-  /** Update only the dates of an existing owned record. */
-  update(googleSub: string, id: string, input: HolidayInput, updatedAt: number): Promise<void>
+  /**
+   * Update the dates of an owned record ONLY if the new range overlaps no
+   * OTHER record of this account. Same reasoning as above; the record being
+   * edited is excluded so re-shaping it is never a conflict with itself.
+   *
+   * Returns whether the row was written — false means either "not owned" or
+   * "would overlap", which the caller distinguishes afterwards.
+   */
+  updateIfFree(
+    googleSub: string,
+    id: string,
+    input: HolidayInput,
+    updatedAt: number,
+  ): Promise<boolean>
 
   /** Delete when present and owned. Returns whether a row was removed. */
   remove(googleSub: string, id: string): Promise<boolean>
@@ -54,8 +73,18 @@ export function newHolidayId(): string {
 }
 
 export type HolidaySaved = { ok: true; record: HolidayRecord }
-/** Ranges never merge, so an overlap is reported rather than absorbed. */
-export type HolidayConflict = { ok: false; reason: 'conflict'; conflict: HolidayRecord }
+/**
+ * Ranges never merge, so an overlap is reported rather than absorbed.
+ *
+ * `conflict` is the range that blocked the write, looked up after the fact for
+ * the message. It can be null if that record was itself removed in between —
+ * the refusal is still correct, only its description is unavailable.
+ */
+export type HolidayConflict = {
+  ok: false
+  reason: 'conflict'
+  conflict: HolidayRecord | null
+}
 
 /** Create can only succeed or clash — there is no record to miss. */
 export type CreateOutcome = HolidaySaved | HolidayConflict
@@ -93,6 +122,11 @@ export async function listHolidays(
  * Refuses to overlap an existing range rather than merging into it. Merging
  * would silently change a range the user did not edit, and would make a later
  * "delete this Holiday" ambiguous.
+ *
+ * There is deliberately NO overlap check before the write. The store's insert
+ * carries the condition itself, so two concurrent creates cannot both pass a
+ * check and then both write. The lookup below runs only on the failure path,
+ * purely to name the range that blocked it.
  */
 export async function createHoliday(
   store: HolidayStore,
@@ -101,10 +135,6 @@ export async function createHoliday(
   now: number = Date.now(),
   id: string = newHolidayId(),
 ): Promise<CreateOutcome> {
-  const neighbours = await store.listOverlapping(googleSub, input.startDate, input.endDate)
-  const conflict = findHolidayConflict(input, neighbours.map(toRecord))
-  if (conflict) return { ok: false, reason: 'conflict', conflict }
-
   const row: HolidayRow = {
     googleSub,
     id,
@@ -113,8 +143,21 @@ export async function createHoliday(
     createdAt: now,
     updatedAt: now,
   }
-  await store.insert(row)
-  return { ok: true, record: toRecord(row) }
+
+  if (await store.insertIfFree(row)) return { ok: true, record: toRecord(row) }
+
+  return { ok: false, reason: 'conflict', conflict: await describeConflict(store, googleSub, input) }
+}
+
+/** The stored range that blocked a write, for the message. Never authoritative. */
+async function describeConflict(
+  store: HolidayStore,
+  googleSub: string,
+  input: HolidayInput,
+  excludeId?: string,
+): Promise<HolidayRecord | null> {
+  const neighbours = await store.listOverlapping(googleSub, input.startDate, input.endDate)
+  return findHolidayConflict(input, neighbours.map(toRecord), excludeId)
 }
 
 /**
@@ -130,25 +173,32 @@ export async function updateHoliday(
   input: HolidayInput,
   now: number = Date.now(),
 ): Promise<UpdateOutcome> {
+  // The write carries both conditions — ownership AND non-overlap — so no
+  // check here could be raced past.
+  const written = await store.updateIfFree(googleSub, id, input, now)
+
+  // Ownership is part of the statement, so another account's id is simply not
+  // written and reads back as absent.
   const existing = await store.find(googleSub, id)
-  // A record belonging to someone else is simply not found: ownership is part
-  // of the lookup, so another account's id can never be edited or probed.
+
+  if (written) {
+    return {
+      ok: true,
+      record: {
+        id,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      },
+    }
+  }
+
   if (!existing) return { ok: false, reason: 'not_found' }
-
-  const neighbours = await store.listOverlapping(googleSub, input.startDate, input.endDate)
-  const conflict = findHolidayConflict(input, neighbours.map(toRecord), id)
-  if (conflict) return { ok: false, reason: 'conflict', conflict }
-
-  await store.update(googleSub, id, input, now)
   return {
-    ok: true,
-    record: {
-      id,
-      startDate: input.startDate,
-      endDate: input.endDate,
-      createdAt: existing.createdAt,
-      updatedAt: now,
-    },
+    ok: false,
+    reason: 'conflict',
+    conflict: await describeConflict(store, googleSub, input, id),
   }
 }
 

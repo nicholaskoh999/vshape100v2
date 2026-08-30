@@ -1,4 +1,4 @@
-import { CalendarRange, Dumbbell, Palmtree, Scale } from 'lucide-react'
+import { CalendarRange, Dumbbell, Loader2, Palmtree, RefreshCw, Scale } from 'lucide-react'
 import { Link } from 'react-router'
 
 import { Card } from '@/components/ui/Card'
@@ -66,6 +66,8 @@ export function TodayPage() {
     failure,
     retryHydration,
     dismissFailure,
+    holidayStatus,
+    retryHolidays,
   } = useToday()
 
   // Completing something before saved progress has loaded would be acting on
@@ -100,9 +102,19 @@ export function TodayPage() {
         actions={<ClockChip now={now} />}
       />
 
-      {agenda.holiday && <HolidayToday />}
+      {/*
+        Whether today is a Holiday is a fact we may not have yet. Until the
+        answer is known the normal routine is NOT rendered: showing it would
+        put the day's pressure on a day that may be exempt, and would expose
+        completion controls for a routine that may not apply. "Unknown" is
+        neither Home nor Holiday, and is shown as itself.
+      */}
+      {holidayStatus === 'loading' && <TodayChecking />}
+      {holidayStatus === 'error' && <TodayHolidayError onRetry={retryHolidays} />}
 
-      {!agenda.holiday && (
+      {holidayStatus === 'ready' && agenda.holiday && <HolidayToday />}
+
+      {holidayStatus === 'ready' && !agenda.holiday && (
       <>
       <TodayStatusNotice
         hydration={hydration}
@@ -184,6 +196,54 @@ export function TodayPage() {
       </>
       )}
     </>
+  )
+}
+
+/** The day's mode is not known yet, so neither mode is presented. */
+function TodayChecking() {
+  return (
+    <Card className="p-5">
+      {/* Card does not forward extra props, so the marker lives here. */}
+      <div data-today-checking>
+      <p
+        role="status"
+        className="flex items-center gap-2 text-[13px] font-semibold text-ink-dim"
+      >
+        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+        Checking whether today is a Holiday…
+      </p>
+      </div>
+    </Card>
+  )
+}
+
+/**
+ * The day's mode could not be read.
+ *
+ * Falling back to the normal routine would be a guess that puts real pressure
+ * on a day that may be exempt, so the routine stays hidden and the failure is
+ * shown instead.
+ */
+function TodayHolidayError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <Card className="p-5">
+      {/* Card does not forward extra props, so the marker lives here. */}
+      <div data-today-holiday-error>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p role="alert" className="text-[13px] font-semibold text-coral">
+          Could not check whether today is a Holiday. Nothing has been lost.
+        </p>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="inline-flex items-center gap-1.5 rounded-control border border-edge-strong px-3.5 py-2 text-[13px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite"
+        >
+          <RefreshCw className="size-4" aria-hidden="true" />
+          Try again
+        </button>
+      </div>
+      </div>
+    </Card>
   )
 }
 

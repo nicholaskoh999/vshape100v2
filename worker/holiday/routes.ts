@@ -97,8 +97,13 @@ async function handleCreate(
   const outcome = await createHoliday(store, googleSub, parsed.value)
   if (!outcome.ok) {
     // Ranges never merge, so an overlap is reported rather than absorbed.
+    // The blocking range is looked up after the refusal, so it can be absent
+    // if that record was itself removed in between. The refusal still stands.
     return json(
-      { error: 'holiday_conflict', conflict: toPublicHoliday(outcome.conflict) },
+      {
+        error: 'holiday_conflict',
+        conflict: outcome.conflict ? toPublicHoliday(outcome.conflict) : null,
+      },
       { status: 409 },
     )
   }
@@ -129,8 +134,13 @@ async function handleUpdate(
     if (outcome.reason === 'not_found') {
       return json({ error: 'holiday_not_found' }, { status: 404 })
     }
+    // The blocking range is looked up after the refusal, so it can be absent
+    // if that record was itself removed in between. The refusal still stands.
     return json(
-      { error: 'holiday_conflict', conflict: toPublicHoliday(outcome.conflict) },
+      {
+        error: 'holiday_conflict',
+        conflict: outcome.conflict ? toPublicHoliday(outcome.conflict) : null,
+      },
       { status: 409 },
     )
   }

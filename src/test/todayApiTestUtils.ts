@@ -17,6 +17,8 @@ export type TodayServer = {
   failMutations: (count?: number) => void
   /** Hold every write until the returned function is called. */
   hold: () => () => void
+  /** Hold every read until the returned function is called. */
+  holdReads: () => () => void
   handle: (url: string, init?: RequestInit) => Promise<Response>
 }
 
@@ -36,6 +38,7 @@ export function createTodayServer(initial: string[] = []): TodayServer {
   let hydrationFailures = 0
   let mutationFailures = 0
   let gate: Promise<void> | null = null
+  let readGate: Promise<void> | null = null
 
   async function handle(url: string, init?: RequestInit): Promise<Response> {
     const method = init?.method ?? 'GET'
@@ -45,6 +48,7 @@ export function createTodayServer(initial: string[] = []): TodayServer {
     calls.push({ method, key, url })
 
     if (method === 'GET') {
+      if (readGate) await readGate
       if (hydrationFailures > 0) {
         hydrationFailures -= 1
         return jsonResponse({ error: 'server_error' }, 500)
@@ -93,6 +97,16 @@ export function createTodayServer(initial: string[] = []): TodayServer {
     },
     failMutations: (count = 1) => {
       mutationFailures = count
+    },
+    holdReads: () => {
+      let release!: () => void
+      readGate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      return () => {
+        readGate = null
+        release()
+      }
     },
     hold: () => {
       let release!: () => void

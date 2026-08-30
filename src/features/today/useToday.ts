@@ -52,6 +52,9 @@ export function useToday() {
     failure: completions.failure,
     retryHydration: completions.retryHydration,
     dismissFailure: completions.dismissFailure,
+    // Whether the day's Holiday state is known yet. Until it is, the page must
+    // not present the normal routine — see TodayPage.
     holidayStatus: holidays.status,
+    retryHolidays: holidays.reload,
   }
 }

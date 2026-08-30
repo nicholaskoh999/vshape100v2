@@ -169,6 +169,63 @@ describe('3. load states', () => {
     await waitFor(() => expect(screen.queryByText(/Loading your calendar/)).toBeNull())
   })
 
+  it('does not present unknown days as confirmed Training, Chill or Recovery', async () => {
+    const release = server.holdReads()
+    renderApp('/calendar')
+    await screen.findByRole('heading', { level: 1, name: 'Calendar' })
+
+    // A weekday, a Saturday and a Sunday are all merely "unknown" until the
+    // month's Holiday state has been read.
+    for (const date of ['2026-09-10', '2026-09-05', '2026-09-06']) {
+      expect(typeOf(date), date).toBe('unknown')
+    }
+    expect(document.querySelectorAll('[data-day-type="training"]')).toHaveLength(0)
+    expect(document.querySelectorAll('[data-day-type="saturday"]')).toHaveLength(0)
+    expect(cell('2026-09-10')).toHaveAttribute('aria-label', '2026-09-10 · Checking')
+    release()
+  })
+
+  it('is not actionable while the month state is unknown', async () => {
+    const release = server.holdReads()
+    renderApp('/calendar')
+    await screen.findByRole('heading', { level: 1, name: 'Calendar' })
+
+    expect(cell('2026-09-10')).toBeDisabled()
+    // And no Holiday can be drawn against a month we cannot see.
+    expect(document.querySelector('[data-calendar-grid]')).toHaveAttribute(
+      'data-resolved',
+      'false',
+    )
+    release()
+  })
+
+  it('shows real day types once the read lands', async () => {
+    const release = server.holdReads()
+    server.seed(holiday('h1', '2026-09-09'))
+    renderApp('/calendar')
+    await screen.findByRole('heading', { level: 1, name: 'Calendar' })
+    expect(typeOf('2026-09-09')).toBe('unknown')
+
+    release()
+    await waitFor(() => expect(typeOf('2026-09-09')).toBe('holiday'))
+    expect(typeOf('2026-09-10')).toBe('training')
+    expect(typeOf('2026-09-05')).toBe('saturday')
+    expect(cell('2026-09-10')).toBeEnabled()
+  })
+
+  it('shows no false Home month underneath a failed read', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    server.failReads()
+    renderApp('/calendar')
+    await screen.findByRole('heading', { level: 1, name: 'Calendar' })
+    await screen.findByText(/Could not load your calendar/)
+
+    // The grid is withheld entirely rather than shown as a normal month.
+    expect(document.querySelector('[data-calendar-grid]')).toBeNull()
+    expect(document.querySelectorAll('[data-day-type="training"]')).toHaveLength(0)
+    errors.mockRestore()
+  })
+
   it('reports a failed load and recovers on retry', async () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
     server.failReads()

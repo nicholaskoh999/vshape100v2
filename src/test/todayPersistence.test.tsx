@@ -108,14 +108,19 @@ describe('14–15. hydration from the server', () => {
   })
 
   it('holds the completion controls until saved progress has loaded', async () => {
-    const release = server.hold()
+    // holdReads, not hold: the stand-in's `hold` gates writes only, so this
+    // previously relied on catching the first render frame before the read
+    // resolved. Since Round 11 the routine waits for the day's Holiday state,
+    // so that frame is gone — the read is now genuinely held instead, which is
+    // what the test always meant.
+    const release = server.holdReads()
     server.rows.add(MONDAY_GYM)
     setNow(2026, 8, 7, 20, 45)
     renderApp('/today')
     await screen.findByRole('heading', { name: 'Today', level: 1 })
 
     // Nothing is claimed either way while the read is in flight.
-    expect(screen.getByText(/Loading your saved progress/)).toBeInTheDocument()
+    expect(await screen.findByText(/Loading your saved progress/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Complete Gym training' })).toBeDisabled()
 
     release()
