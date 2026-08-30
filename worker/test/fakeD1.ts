@@ -1,7 +1,7 @@
 /**
  * Minimal in-memory stand-in for D1, covering exactly the statements the
- * Worker issues against `auth_sessions`, `today_completions` and
- * `exercise_media`.
+ * Worker issues against `auth_sessions`, `today_completions`,
+ * `exercise_media`, `workout_occurrences` and `workout_sets`.
  *
  * Route-level tests use this so the real handler, the real D1 mapping layer
  * and the real rules all run together.
@@ -41,21 +41,267 @@ function completionId(googleSub: string, occurrenceKey: string): string {
   return `${googleSub}\u0000${occurrenceKey}`
 }
 
+type OccurrenceRow = {
+  google_sub: string
+  workout_date: string
+  session_id: string
+  session_day_snapshot: string
+  session_focus_snapshot: string
+  session_intensity_snapshot: string
+  started_at: number
+  updated_at: number
+}
+
+type WorkoutSetRow = {
+  google_sub: string
+  workout_date: string
+  session_id: string
+  exercise_order: number
+  set_index: number
+  exercise_id_snapshot: string
+  exercise_name_snapshot: string
+  prescription_snapshot: string
+  equipment_snapshot: string | null
+  result_kind_snapshot: string
+  load_mode_snapshot: string
+  per_side_snapshot: number
+  status: string
+  actual_load_value: number | null
+  actual_load_unit: string | null
+  actual_result: number | null
+  updated_at: number
+}
+
 /** `google_sub` + `exercise_id` — the exercise_media primary key. */
 function mediaId(googleSub: string, exerciseId: string): string {
   return `${googleSub}\u0000${exerciseId}`
+}
+
+/** The workout_occurrences primary key. */
+function occurrenceId(googleSub: string, date: string, sessionId: string): string {
+  return [googleSub, date, sessionId].join('\u0000')
+}
+
+/** The workout_sets primary key. */
+function workoutSetId(
+  googleSub: string,
+  date: string,
+  sessionId: string,
+  exerciseOrder: number,
+  setIndex: number,
+): string {
+  return [googleSub, date, sessionId, exerciseOrder, setIndex].join('\u0000')
 }
 
 export function createFakeD1() {
   const sessions = new Map<string, SessionRow>()
   const completions = new Map<string, CompletionRow>()
   const media = new Map<string, MediaRow>()
+  const occurrences = new Map<string, OccurrenceRow>()
+  const workoutSets = new Map<string, WorkoutSetRow>()
   /** Set to make every `today_completions` statement throw, as D1 would. */
   let completionsFailure: Error | null = null
   /** Set to make every `exercise_media` statement throw, as D1 would. */
   let mediaFailure: Error | null = null
+  /** Set to make every workout statement throw, as D1 would. */
+  let workoutFailure: Error | null = null
 
   function execute(sql: string, args: unknown[]) {
+    if (sql.includes('workout_sets')) {
+      if (workoutFailure) throw workoutFailure
+
+      if (sql.includes('SELECT') && sql.includes('AND exercise_order = ?')) {
+        const [google_sub, workout_date, session_id, exercise_order, set_index] = args as [
+          string,
+          string,
+          string,
+          number,
+          number,
+        ]
+        return (
+          workoutSets.get(
+            workoutSetId(google_sub, workout_date, session_id, exercise_order, set_index),
+          ) ?? null
+        )
+      }
+
+      if (sql.includes('SELECT')) {
+        const [google_sub, workout_date, session_id] = args as [string, string, string]
+        return [...workoutSets.values()]
+          .filter(
+            (row) =>
+              row.google_sub === google_sub &&
+              row.workout_date === workout_date &&
+              row.session_id === session_id,
+          )
+          .sort((a, b) =>
+            a.exercise_order === b.exercise_order
+              ? a.set_index - b.set_index
+              : a.exercise_order - b.exercise_order,
+          )
+      }
+
+      if (sql.includes('INSERT INTO workout_sets')) {
+        const [
+          google_sub,
+          workout_date,
+          session_id,
+          exercise_order,
+          set_index,
+          exercise_id_snapshot,
+          exercise_name_snapshot,
+          prescription_snapshot,
+          equipment_snapshot,
+          result_kind_snapshot,
+          load_mode_snapshot,
+          per_side_snapshot,
+          status,
+          actual_load_value,
+          actual_load_unit,
+          actual_result,
+          updated_at,
+        ] = args as [
+          string,
+          string,
+          string,
+          number,
+          number,
+          string,
+          string,
+          string,
+          string | null,
+          string,
+          string,
+          number,
+          string,
+          number | null,
+          string | null,
+          number | null,
+          number,
+        ]
+        const id = workoutSetId(google_sub, workout_date, session_id, exercise_order, set_index)
+        // ON CONFLICT DO NOTHING: the first snapshot wins, so a later Start
+        // cannot rewrite it.
+        if (!workoutSets.has(id)) {
+          workoutSets.set(id, {
+            google_sub,
+            workout_date,
+            session_id,
+            exercise_order,
+            set_index,
+            exercise_id_snapshot,
+            exercise_name_snapshot,
+            prescription_snapshot,
+            equipment_snapshot,
+            result_kind_snapshot,
+            load_mode_snapshot,
+            per_side_snapshot,
+            status,
+            actual_load_value,
+            actual_load_unit,
+            actual_result,
+            updated_at,
+          })
+        }
+        return null
+      }
+
+      if (sql.includes('UPDATE workout_sets')) {
+        const [
+          status,
+          actual_load_value,
+          actual_load_unit,
+          actual_result,
+          updated_at,
+          google_sub,
+          workout_date,
+          session_id,
+          exercise_order,
+          set_index,
+        ] = args as [
+          string,
+          number | null,
+          string | null,
+          number | null,
+          number,
+          string,
+          string,
+          string,
+          number,
+          number,
+        ]
+        const id = workoutSetId(google_sub, workout_date, session_id, exercise_order, set_index)
+        const row = workoutSets.get(id)
+        // Only the live logging columns are assignable — the snapshot columns
+        // are not part of this statement at all.
+        if (row) {
+          workoutSets.set(id, {
+            ...row,
+            status,
+            actual_load_value,
+            actual_load_unit,
+            actual_result,
+            updated_at,
+          })
+        }
+        return null
+      }
+
+      throw new Error(`fakeD1 received an unexpected statement: ${sql}`)
+    }
+
+    if (sql.includes('workout_occurrences')) {
+      if (workoutFailure) throw workoutFailure
+
+      if (sql.includes('SELECT')) {
+        const [google_sub, workout_date, session_id] = args as [string, string, string]
+        return occurrences.get(occurrenceId(google_sub, workout_date, session_id)) ?? null
+      }
+
+      if (sql.includes('INSERT INTO workout_occurrences')) {
+        const [
+          google_sub,
+          workout_date,
+          session_id,
+          session_day_snapshot,
+          session_focus_snapshot,
+          session_intensity_snapshot,
+          started_at,
+          updated_at,
+        ] = args as [string, string, string, string, string, string, number, number]
+        const id = occurrenceId(google_sub, workout_date, session_id)
+        // ON CONFLICT DO NOTHING: one occurrence per account + date + session.
+        if (!occurrences.has(id)) {
+          occurrences.set(id, {
+            google_sub,
+            workout_date,
+            session_id,
+            session_day_snapshot,
+            session_focus_snapshot,
+            session_intensity_snapshot,
+            started_at,
+            updated_at,
+          })
+        }
+        return null
+      }
+
+      if (sql.includes('UPDATE workout_occurrences')) {
+        const [updated_at, google_sub, workout_date, session_id] = args as [
+          number,
+          string,
+          string,
+          string,
+        ]
+        const id = occurrenceId(google_sub, workout_date, session_id)
+        const row = occurrences.get(id)
+        if (row) occurrences.set(id, { ...row, updated_at })
+        return null
+      }
+
+      throw new Error(`fakeD1 received an unexpected statement: ${sql}`)
+    }
+
     if (sql.includes('exercise_media')) {
       if (mediaFailure) throw mediaFailure
 
@@ -216,16 +462,29 @@ export function createFakeD1() {
     return statement
   }
 
+  // D1 runs a batch as one transaction. The stand-in runs the statements in
+  // order, which is what the Start path depends on.
+  async function batch(statements: { run: () => Promise<unknown> }[]) {
+    const results = []
+    for (const statement of statements) results.push(await statement.run())
+    return results
+  }
+
   return {
-    db: { prepare } as unknown as D1Database,
+    db: { prepare, batch } as unknown as D1Database,
     sessions,
     completions,
     media,
+    occurrences,
+    workoutSets,
     breakCompletions(error = new Error('D1 unavailable')) {
       completionsFailure = error
     },
     breakMedia(error = new Error('D1 unavailable')) {
       mediaFailure = error
+    },
+    breakWorkouts(error = new Error('D1 unavailable')) {
+      workoutFailure = error
     },
   }
 }

@@ -1,0 +1,351 @@
+/**
+ * Workout logging HTTP surface.
+ *
+ *   GET    /api/workouts/:date/:sessionId
+ *   POST   /api/workouts/:date/:sessionId/start
+ *   PUT    /api/workouts/:date/:sessionId/sets/:exerciseOrder/:setIndex
+ *   DELETE /api/workouts/:date/:sessionId/sets/:exerciseOrder/:setIndex
+ *
+ * Every route requires the existing app-owned session. The account is always
+ * the `google_sub` on that session — the client never supplies an identity,
+ * and one is never read from a body, query string or header. A body field
+ * called `googleSub` is simply not part of any accepted payload, so sending
+ * one changes nothing.
+ *
+ * Session handling, the same-origin guard, the JSON envelope and the rolling
+ * Set-Cookie propagation come from ../http/authenticated, shared with Today
+ * and exercise media, so there is exactly one copy of that algorithm in the
+ * Worker.
+ */
+
+import type { Env } from '../auth/config'
+import {
+  isCrossOrigin,
+  json,
+  requireAccount,
+  withSessionHeaders,
+} from '../http/authenticated'
+import { createD1WorkoutStore } from './d1Store'
+import {
+  applySetUpdate,
+  parseExerciseOrder,
+  parseSessionId,
+  parseSetIndex,
+  parseSetUpdate,
+  parseStartInput,
+  parseWorkoutDate,
+  readWorkout,
+  startWorkout,
+  summariseSets,
+  undoSet,
+  type WorkoutLog,
+  type WorkoutOccurrenceRecord,
+  type WorkoutSetRecord,
+  type WorkoutStore,
+} from './workouts'
+
+const PREFIX = '/api/workouts/'
+
+/* ------------------------------------------------------------------ */
+/* Public shapes — no identity is ever echoed back                     */
+/* ------------------------------------------------------------------ */
+
+function toPublicOccurrence(record: WorkoutOccurrenceRecord) {
+  return {
+    date: record.workoutDate,
+    sessionId: record.sessionId,
+    day: record.day,
+    focus: record.focus,
+    intensity: record.intensity,
+    startedAt: record.startedAt,
+    updatedAt: record.updatedAt,
+  }
+}
+
+function toPublicSet(record: WorkoutSetRecord) {
+  return {
+    exerciseOrder: record.exerciseOrder,
+    setIndex: record.setIndex,
+    exerciseId: record.exerciseId,
+    exerciseName: record.exerciseName,
+    prescription: record.prescription,
+    equipment: record.equipment,
+    resultKind: record.resultKind,
+    loadMode: record.loadMode,
+    perSide: record.perSide,
+    status: record.status,
+    load:
+      record.loadValue === null || record.loadUnit === null
+        ? null
+        : { value: record.loadValue, unit: record.loadUnit },
+    result: record.result,
+    updatedAt: record.updatedAt,
+  }
+}
+
+function toPublicLog(log: WorkoutLog) {
+  return {
+    occurrence: toPublicOccurrence(log.occurrence),
+    sets: log.sets.map(toPublicSet),
+    progress: summariseSets(log.sets),
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Handlers                                                            */
+/* ------------------------------------------------------------------ */
+
+/** GET /api/workouts/:date/:sessionId */
+async function handleRead(
+  store: WorkoutStore,
+  googleSub: string,
+  date: string,
+  sessionId: string,
+): Promise<Response> {
+  const log = await readWorkout(store, googleSub, date, sessionId)
+  // A workout that has not been started is an honest null, not a 404: the
+  // session exists, the account simply has not begun it. This is what lets the
+  // client tell "not started" from "still loading" without guessing.
+  return json(
+    log === null
+      ? { date, sessionId, occurrence: null, sets: [], progress: null }
+      : { date, sessionId, ...toPublicLog(log) },
+  )
+}
+
+/** POST /api/workouts/:date/:sessionId/start */
+async function handleStart(
+  request: Request,
+  store: WorkoutStore,
+  googleSub: string,
+  date: string,
+  sessionId: string,
+): Promise<Response> {
+  let body: unknown
+  try {
+    body = await request.json()
+  } catch {
+    return json({ error: 'invalid_json' }, { status: 400 })
+  }
+
+  const parsed = parseStartInput(body)
+  if (!parsed.ok) {
+    return json({ error: 'invalid_start', field: parsed.field }, { status: 400 })
+  }
+
+  const result = await startWorkout(store, googleSub, date, sessionId, parsed.value)
+  // 200 for a resume, 201 for a workout this request actually created.
+  return json(
+    { date, sessionId, created: result.created, ...toPublicLog(result) },
+    { status: result.created ? 201 : 200 },
+  )
+}
+
+/** Map a rules-level refusal onto a controlled response. */
+function setFailure(reason: 'not_found' | 'load_not_applicable' | 'load_unit_mismatch') {
+  if (reason === 'not_found') return json({ error: 'set_not_found' }, { status: 404 })
+  return json({ error: reason }, { status: 400 })
+}
+
+/** PUT /api/workouts/:date/:sessionId/sets/:exerciseOrder/:setIndex */
+async function handleSetUpdate(
+  request: Request,
+  store: WorkoutStore,
+  googleSub: string,
+  date: string,
+  sessionId: string,
+  exerciseOrder: number,
+  setIndex: number,
+): Promise<Response> {
+  let body: unknown
+  try {
+    body = await request.json()
+  } catch {
+    return json({ error: 'invalid_json' }, { status: 400 })
+  }
+
+  const parsed = parseSetUpdate(body)
+  if (!parsed.ok) {
+    return json({ error: 'invalid_set', field: parsed.field }, { status: 400 })
+  }
+
+  const outcome = await applySetUpdate(
+    store,
+    googleSub,
+    date,
+    sessionId,
+    exerciseOrder,
+    setIndex,
+    parsed.value,
+  )
+  if (!outcome.ok) return setFailure(outcome.reason)
+  return json({ date, sessionId, set: toPublicSet(outcome.record) })
+}
+
+/** DELETE /api/workouts/:date/:sessionId/sets/:exerciseOrder/:setIndex */
+async function handleSetUndo(
+  store: WorkoutStore,
+  googleSub: string,
+  date: string,
+  sessionId: string,
+  exerciseOrder: number,
+  setIndex: number,
+): Promise<Response> {
+  const outcome = await undoSet(
+    store,
+    googleSub,
+    date,
+    sessionId,
+    exerciseOrder,
+    setIndex,
+  )
+  if (!outcome.ok) return setFailure(outcome.reason)
+  return json({ date, sessionId, set: toPublicSet(outcome.record) })
+}
+
+/* ------------------------------------------------------------------ */
+/* Routing                                                             */
+/* ------------------------------------------------------------------ */
+
+/** Decode one path segment, or null when it is not valid percent-encoding. */
+function decodeSegment(raw: string): string | null {
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Route the workout API. Returns null when the request is not ours, so the
+ * Worker can fall through to static assets.
+ */
+export async function handleWorkoutRequest(
+  request: Request,
+  env: Env,
+): Promise<Response | null> {
+  const { pathname } = new URL(request.url)
+  if (!pathname.startsWith(PREFIX)) return null
+
+  // Any Set-Cookie the session resolution produced has to survive every exit
+  // path below, including the error one: once D1 has rolled the session
+  // forward, `refreshed` will not be true again for weeks.
+  let sessionHeaders: HeadersInit = {}
+
+  try {
+    const segments = pathname.slice(PREFIX.length).split('/')
+    const method = request.method
+
+    // /:date/:sessionId, /:date/:sessionId/start,
+    // /:date/:sessionId/sets/:exerciseOrder/:setIndex — nothing else exists.
+    const isRead = segments.length === 2
+    const isStart = segments.length === 3 && segments[2] === 'start'
+    const isSet = segments.length === 5 && segments[2] === 'sets'
+    if (!isRead && !isStart && !isSet) {
+      return json({ error: 'not_found' }, { status: 404 })
+    }
+
+    if (isRead && method !== 'GET') {
+      return json({ error: 'method_not_allowed' }, { status: 405 })
+    }
+    if (isStart && method !== 'POST') {
+      return json({ error: 'method_not_allowed' }, { status: 405 })
+    }
+    if (isSet && method !== 'PUT' && method !== 'DELETE') {
+      return json({ error: 'method_not_allowed' }, { status: 405 })
+    }
+
+    const account = await requireAccount(request, env)
+    if ('response' in account) return account.response
+    sessionHeaders = account.headers
+
+    // Every write is state-changing, so it carries the same same-origin guard
+    // the logout route, Today and the media API apply. Reads are not guarded,
+    // matching those APIs.
+    if (method !== 'GET' && isCrossOrigin(request)) {
+      return withSessionHeaders(json({ error: 'forbidden' }, { status: 403 }), sessionHeaders)
+    }
+
+    const rawDate = decodeSegment(segments[0])
+    const date = rawDate === null ? null : parseWorkoutDate(rawDate)
+    if (!date) {
+      return withSessionHeaders(
+        json({ error: 'invalid_workout_date' }, { status: 400 }),
+        sessionHeaders,
+      )
+    }
+
+    const rawSession = decodeSegment(segments[1])
+    const sessionId = rawSession === null ? null : parseSessionId(rawSession)
+    if (!sessionId) {
+      return withSessionHeaders(
+        json({ error: 'invalid_session_id' }, { status: 400 }),
+        sessionHeaders,
+      )
+    }
+
+    const store = createD1WorkoutStore(env.DB)
+
+    if (isRead) {
+      return withSessionHeaders(
+        await handleRead(store, account.googleSub, date, sessionId),
+        sessionHeaders,
+      )
+    }
+
+    if (isStart) {
+      return withSessionHeaders(
+        await handleStart(request, store, account.googleSub, date, sessionId),
+        sessionHeaders,
+      )
+    }
+
+    const exerciseOrder = parseExerciseOrder(segments[3])
+    if (exerciseOrder === null) {
+      return withSessionHeaders(
+        json({ error: 'invalid_exercise_order' }, { status: 400 }),
+        sessionHeaders,
+      )
+    }
+
+    const setIndex = parseSetIndex(segments[4])
+    if (setIndex === null) {
+      return withSessionHeaders(
+        json({ error: 'invalid_set_index' }, { status: 400 }),
+        sessionHeaders,
+      )
+    }
+
+    if (method === 'PUT') {
+      return withSessionHeaders(
+        await handleSetUpdate(
+          request,
+          store,
+          account.googleSub,
+          date,
+          sessionId,
+          exerciseOrder,
+          setIndex,
+        ),
+        sessionHeaders,
+      )
+    }
+
+    return withSessionHeaders(
+      await handleSetUndo(
+        store,
+        account.googleSub,
+        date,
+        sessionId,
+        exerciseOrder,
+        setIndex,
+      ),
+      sessionHeaders,
+    )
+  } catch (error) {
+    // A storage failure is reported as a controlled error. Nothing internal,
+    // and no identity, ever reaches the browser.
+    console.error('workout request failed', error)
+    return json({ error: 'server_error' }, { status: 500, headers: sessionHeaders })
+  }
+}

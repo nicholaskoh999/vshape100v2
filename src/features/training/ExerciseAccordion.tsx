@@ -8,6 +8,21 @@ import { listItemVariants, listVariants, press, tween } from '@/design/motion'
 import { cn } from '@/lib/utils'
 import { exercisePath } from './navigation'
 import type { SessionExercise, TrainingSession } from './sessions'
+import type { WorkoutSet } from './workoutApi'
+import { WorkoutSetList, type WorkoutSetListProps } from './WorkoutSetList'
+
+/**
+ * Everything the expanded panel needs to log sets. Absent until the workout
+ * has been started, so the accordion stays exactly the accepted prescription
+ * view until there is something real to log against.
+ */
+export type AccordionLogging = Pick<
+  WorkoutSetListProps,
+  'busySet' | 'onComplete' | 'onSkip' | 'onUndo'
+> & {
+  /** Every set of the workout, in performance order. */
+  sets: WorkoutSet[]
+}
 
 /**
  * The in-session exercise list.
@@ -21,8 +36,18 @@ import type { SessionExercise, TrainingSession } from './sessions'
  * different prescriptions — Monday's Lat Pulldown is `4 × 10–15 · BAND 20kg`
  * while Thursday's is `4 × 10–15` with no equipment — so a slug lookup would
  * quietly show the wrong day's numbers.
+ *
+ * The same rule governs logging: sets are matched by their position in this
+ * session (`exercise_order`), never by canonical slug, so Monday's Lat
+ * Pulldown cannot pick up Wednesday's log.
  */
-export function ExerciseAccordion({ session }: { session: TrainingSession }) {
+export function ExerciseAccordion({
+  session,
+  logging,
+}: {
+  session: TrainingSession
+  logging?: AccordionLogging
+}) {
   // Local, deliberately ephemeral: nothing here needs to survive a refresh,
   // so there is no URL state and no storage.
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null)
@@ -44,6 +69,7 @@ export function ExerciseAccordion({ session }: { session: TrainingSession }) {
           onToggle={() =>
             setExpandedIndex((current) => (current === index ? null : index))
           }
+          logging={logging}
         />
       ))}
     </motion.ol>
@@ -56,12 +82,14 @@ function ExerciseRow({
   sessionId,
   expanded,
   onToggle,
+  logging,
 }: {
   exercise: SessionExercise
   index: number
   sessionId: string
   expanded: boolean
   onToggle: () => void
+  logging?: AccordionLogging
 }) {
   const reduceMotion = useReducedMotion()
   // Unique per row: only one session renders at a time and `index` is unique
@@ -70,6 +98,11 @@ function ExerciseRow({
   const panelId = `exercise-panel-${sessionId}-${index}`
 
   const summary = `${exercise.sets}${exercise.equipment ? ` · ${exercise.equipment}` : ''}`
+
+  // Matched on exercise_order — this row's position in this session — so a
+  // repeated canonical exercise never picks up another occurrence's sets.
+  const sets = logging?.sets.filter((set) => set.exerciseOrder === index) ?? []
+  const resolved = sets.filter((set) => set.status !== 'pending').length
 
   return (
     <motion.li variants={listItemVariants}>
@@ -104,6 +137,12 @@ function ExerciseRow({
             <p className="mt-0.5 text-[13px] text-ink-faint">{summary}</p>
           </div>
 
+          {sets.length > 0 && (
+            <span className="shrink-0 text-[12px] font-bold text-ink-faint">
+              {resolved}/{sets.length}
+            </span>
+          )}
+
           <motion.span
             aria-hidden="true"
             animate={{ rotate: expanded ? 180 : 0 }}
@@ -134,6 +173,16 @@ function ExerciseRow({
                     <Detail label="Equipment" value={exercise.equipment} />
                   )}
                 </dl>
+
+                {logging && (
+                  <WorkoutSetList
+                    sets={sets}
+                    busySet={logging.busySet}
+                    onComplete={logging.onComplete}
+                    onSkip={logging.onSkip}
+                    onUndo={logging.onUndo}
+                  />
+                )}
 
                 <Link
                   to={exercisePath(exercise.id, sessionId)}
