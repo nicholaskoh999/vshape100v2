@@ -93,10 +93,64 @@ export function createWorkoutServer(): WorkoutServer {
 
   async function handle(url: string, init?: RequestInit): Promise<Response> {
     const method = init?.method ?? 'GET'
-    const [path] = url.split('?')
+    const [path, search] = url.split('?')
     calls.push({ method, url })
 
     const segments = path.slice(BASE.length + 1).split('/')
+
+    // GET /api/workouts/history?limit=N — read-only reporting.
+    if (segments.length === 1 && segments[0] === 'history') {
+      if (readGate) await readGate
+      if (readFailures > 0) {
+        readFailures -= 1
+        return jsonResponse({ error: 'server_error' }, 500)
+      }
+
+      const raw = new URLSearchParams(search ?? '').get('limit')
+      let limit = 20
+      if (raw !== null && raw !== '') {
+        const value = Number(raw)
+        if (!Number.isInteger(value) || value < 1 || value > 50) {
+          return jsonResponse({ error: 'invalid_limit' }, 400)
+        }
+        limit = value
+      }
+
+      const all = [...workouts.values()].sort((a, b) => {
+        if (a.occurrence.date !== b.occurrence.date) {
+          return b.occurrence.date.localeCompare(a.occurrence.date)
+        }
+        if (a.occurrence.startedAt !== b.occurrence.startedAt) {
+          return b.occurrence.startedAt - a.occurrence.startedAt
+        }
+        return a.occurrence.sessionId.localeCompare(b.occurrence.sessionId)
+      })
+
+      const everySet = all.flatMap((entry) => entry.sets)
+      const completed = everySet.filter((set) => set.status === 'completed').length
+      const skipped = everySet.filter((set) => set.status === 'skipped').length
+
+      return jsonResponse({
+        limit,
+        workouts: all.slice(0, limit).map((entry) => ({
+          date: entry.occurrence.date,
+          sessionId: entry.occurrence.sessionId,
+          day: entry.occurrence.day,
+          focus: entry.occurrence.focus,
+          intensity: entry.occurrence.intensity,
+          startedAt: entry.occurrence.startedAt,
+          updatedAt: entry.occurrence.updatedAt,
+          progress: summarise(entry.sets),
+        })),
+        totals: {
+          workouts: all.length,
+          sets: everySet.length,
+          completed,
+          skipped,
+          resolved: completed + skipped,
+        },
+      })
+    }
     const [date, sessionId] = segments
     const id = key(date, sessionId)
 

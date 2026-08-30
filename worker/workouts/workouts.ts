@@ -25,6 +25,8 @@
  */
 
 import type {
+  WorkoutHistoryEntry,
+  WorkoutHistoryTotals,
   WorkoutLoadMode,
   WorkoutLoadUnit,
   WorkoutResultKind,
@@ -129,6 +131,17 @@ export interface WorkoutStore {
     sessionId: string,
     updatedAt: number,
   ): Promise<void>
+
+  /**
+   * Recent recorded workouts, newest first, with their set summary.
+   *
+   * Read-only: history never writes, never backfills and never invents a
+   * workout that was not started.
+   */
+  listRecent(googleSub: string, limit: number): Promise<WorkoutHistoryEntry[]>
+
+  /** Totals across everything this account has recorded. */
+  totals(googleSub: string): Promise<WorkoutHistoryTotals>
 }
 
 /* ------------------------------------------------------------------ */
@@ -362,4 +375,27 @@ export async function undoSet(
   await store.updateSet(record)
   await store.touchOccurrence(googleSub, workoutDate, sessionId, now)
   return { ok: true, record }
+}
+
+/* ------------------------------------------------------------------ */
+/* Recorded history                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * What this account has actually recorded.
+ *
+ * Reporting only. It answers "what was logged", never "what was missed" —
+ * a workout that was never started has no row here, and this module does not
+ * consult the training plan to guess that one should have existed.
+ */
+export async function readHistory(
+  store: WorkoutStore,
+  googleSub: string,
+  limit: number,
+): Promise<{ workouts: WorkoutHistoryEntry[]; totals: WorkoutHistoryTotals }> {
+  const [workouts, totals] = await Promise.all([
+    store.listRecent(googleSub, limit),
+    store.totals(googleSub),
+  ])
+  return { workouts, totals }
 }

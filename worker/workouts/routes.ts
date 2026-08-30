@@ -1,6 +1,7 @@
 /**
  * Workout logging HTTP surface.
  *
+ *   GET    /api/workouts/history?limit=N
  *   GET    /api/workouts/:date/:sessionId
  *   POST   /api/workouts/:date/:sessionId/start
  *   PUT    /api/workouts/:date/:sessionId/sets/:exerciseOrder/:setIndex
@@ -29,6 +30,8 @@ import { createD1WorkoutStore } from './d1Store'
 import {
   applySetUpdate,
   parseExerciseOrder,
+  parseHistoryLimit,
+  readHistory,
   parseSessionId,
   parseSetIndex,
   parseSetUpdate,
@@ -94,6 +97,26 @@ function toPublicLog(log: WorkoutLog) {
 /* ------------------------------------------------------------------ */
 /* Handlers                                                            */
 /* ------------------------------------------------------------------ */
+
+/**
+ * GET /api/workouts/history?limit=N
+ *
+ * Read-only reporting of what this account has recorded. It never writes,
+ * never backfills, and never derives a workout that was not started — an
+ * absent workout is simply absent, not a "missed" one.
+ */
+async function handleHistory(
+  request: Request,
+  store: WorkoutStore,
+  googleSub: string,
+): Promise<Response> {
+  const raw = new URL(request.url).searchParams.get('limit')
+  const limit = parseHistoryLimit(raw)
+  if (limit === null) return json({ error: 'invalid_limit' }, { status: 400 })
+
+  const { workouts, totals } = await readHistory(store, googleSub, limit)
+  return json({ limit, workouts, totals })
+}
 
 /** GET /api/workouts/:date/:sessionId */
 async function handleRead(
@@ -236,15 +259,21 @@ export async function handleWorkoutRequest(
     const segments = pathname.slice(PREFIX.length).split('/')
     const method = request.method
 
-    // /:date/:sessionId, /:date/:sessionId/start,
+    // /history, /:date/:sessionId, /:date/:sessionId/start,
     // /:date/:sessionId/sets/:exerciseOrder/:setIndex — nothing else exists.
+    // A single segment was never a route before, so `history` cannot collide
+    // with the date + session shape below.
+    const isHistory = segments.length === 1 && segments[0] === 'history'
     const isRead = segments.length === 2
     const isStart = segments.length === 3 && segments[2] === 'start'
     const isSet = segments.length === 5 && segments[2] === 'sets'
-    if (!isRead && !isStart && !isSet) {
+    if (!isHistory && !isRead && !isStart && !isSet) {
       return json({ error: 'not_found' }, { status: 404 })
     }
 
+    if (isHistory && method !== 'GET') {
+      return json({ error: 'method_not_allowed' }, { status: 405 })
+    }
     if (isRead && method !== 'GET') {
       return json({ error: 'method_not_allowed' }, { status: 405 })
     }
@@ -266,6 +295,17 @@ export async function handleWorkoutRequest(
       return withSessionHeaders(json({ error: 'forbidden' }, { status: 403 }), sessionHeaders)
     }
 
+    const store = createD1WorkoutStore(env.DB)
+
+    // History is account-wide: it carries no date or session segment, so it
+    // must answer before the date/session validation below.
+    if (isHistory) {
+      return withSessionHeaders(
+        await handleHistory(request, store, account.googleSub),
+        sessionHeaders,
+      )
+    }
+
     const rawDate = decodeSegment(segments[0])
     const date = rawDate === null ? null : parseWorkoutDate(rawDate)
     if (!date) {
@@ -283,8 +323,6 @@ export async function handleWorkoutRequest(
         sessionHeaders,
       )
     }
-
-    const store = createD1WorkoutStore(env.DB)
 
     if (isRead) {
       return withSessionHeaders(

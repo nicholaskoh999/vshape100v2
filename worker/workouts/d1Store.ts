@@ -35,6 +35,8 @@ import {
   isLoadUnit,
   isResultKind,
   isSetStatus,
+  type WorkoutHistoryEntry,
+  type WorkoutHistoryTotals,
   type WorkoutOccurrenceRecord,
   type WorkoutSetRecord,
   type WorkoutStore,
@@ -146,6 +148,59 @@ const SET_COLUMNS = SET_COLUMN_NAMES.join(', ')
 /** The same columns qualified for the ownership join in `listSets`. */
 const SET_COLUMNS_QUALIFIED = SET_COLUMN_NAMES.map((name) => `s.${name}`).join(', ')
 const SET_PLACEHOLDERS = SET_COLUMN_NAMES.map(() => '?').join(', ')
+
+/**
+ * The ownership join, shared by every read that spans both tables.
+ *
+ * A set counts towards its occurrence only while it carries that occurrence's
+ * snapshot token — the same rule `listSets` applies, so history can never
+ * report a set that does not belong to the workout it is filed under.
+ */
+const OWNERSHIP_JOIN = `o.google_sub   = s.google_sub
+               AND o.workout_date = s.workout_date
+               AND o.session_id   = s.session_id
+               AND o.snapshot_id  = s.snapshot_id`
+
+type HistoryRow = {
+  workout_date: string
+  session_id: string
+  session_day_snapshot: string
+  session_focus_snapshot: string
+  session_intensity_snapshot: string
+  started_at: number
+  updated_at: number
+  total_sets: number
+  completed_sets: number
+  skipped_sets: number
+}
+
+type TotalsRow = {
+  recorded_workouts: number
+  recorded_sets: number
+  completed_sets: number
+  skipped_sets: number
+}
+
+function toHistoryEntry(row: HistoryRow): WorkoutHistoryEntry {
+  const completed = row.completed_sets ?? 0
+  const skipped = row.skipped_sets ?? 0
+  return {
+    date: row.workout_date,
+    sessionId: row.session_id,
+    day: row.session_day_snapshot,
+    focus: row.session_focus_snapshot,
+    intensity: row.session_intensity_snapshot,
+    startedAt: row.started_at,
+    updatedAt: row.updated_at,
+    progress: {
+      total: row.total_sets ?? 0,
+      completed,
+      skipped,
+      // Traversal only. Kept separate from `completed` all the way out.
+      resolved: completed + skipped,
+    },
+  }
+}
 
 export function createD1WorkoutStore(db: D1Database): WorkoutStore {
   return {
@@ -297,6 +352,67 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
           record.setIndex,
         )
         .run()
+    },
+
+    async listRecent(googleSub, limit) {
+      // Newest first by the user's own workout date, then by when it was
+      // started, then by session id — a total order, so paging is stable.
+      // LEFT JOIN so an occurrence with no set rows still reports honestly
+      // rather than disappearing from history.
+      const result = await db
+        .prepare(
+          `SELECT o.workout_date, o.session_id,
+                  o.session_day_snapshot, o.session_focus_snapshot,
+                  o.session_intensity_snapshot, o.started_at, o.updated_at,
+                  COUNT(s.set_index) AS total_sets,
+                  SUM(CASE WHEN s.status = 'completed' THEN 1 ELSE 0 END) AS completed_sets,
+                  SUM(CASE WHEN s.status = 'skipped'   THEN 1 ELSE 0 END) AS skipped_sets
+             FROM workout_occurrences o
+             LEFT JOIN workout_sets s
+               ON ${OWNERSHIP_JOIN}
+            WHERE o.google_sub = ?
+            GROUP BY o.workout_date, o.session_id, o.snapshot_id
+            ORDER BY o.workout_date DESC, o.started_at DESC, o.session_id ASC
+            LIMIT ?`,
+        )
+        .bind(googleSub, limit)
+        .all<HistoryRow>()
+
+      return (result.results ?? []).map(toHistoryEntry)
+    },
+
+    async totals(googleSub) {
+      const row = await db
+        .prepare(
+          `SELECT
+             (SELECT COUNT(*) FROM workout_occurrences WHERE google_sub = ?)
+               AS recorded_workouts,
+             (SELECT COUNT(*)
+                FROM workout_sets s
+                JOIN workout_occurrences o ON ${OWNERSHIP_JOIN}
+               WHERE s.google_sub = ?) AS recorded_sets,
+             (SELECT COUNT(*)
+                FROM workout_sets s
+                JOIN workout_occurrences o ON ${OWNERSHIP_JOIN}
+               WHERE s.google_sub = ? AND s.status = 'completed') AS completed_sets,
+             (SELECT COUNT(*)
+                FROM workout_sets s
+                JOIN workout_occurrences o ON ${OWNERSHIP_JOIN}
+               WHERE s.google_sub = ? AND s.status = 'skipped') AS skipped_sets`,
+        )
+        .bind(googleSub, googleSub, googleSub, googleSub)
+        .first<TotalsRow>()
+
+      const completed = row?.completed_sets ?? 0
+      const skipped = row?.skipped_sets ?? 0
+      const result: WorkoutHistoryTotals = {
+        workouts: row?.recorded_workouts ?? 0,
+        sets: row?.recorded_sets ?? 0,
+        completed,
+        skipped,
+        resolved: completed + skipped,
+      }
+      return result
     },
 
     async touchOccurrence(googleSub, workoutDate, sessionId, updatedAt) {

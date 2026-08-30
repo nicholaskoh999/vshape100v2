@@ -417,6 +417,74 @@ export function summariseSets(
   return { total: sets.length, completed, skipped, resolved: completed + skipped }
 }
 
+/* ------------------------------------------------------------------ */
+/* Recorded history                                                    */
+/* ------------------------------------------------------------------ */
+
+/** Default number of recent workouts a history read returns. */
+export const DEFAULT_HISTORY_LIMIT = 20
+/** Most a single history read may ask for. */
+export const MAX_HISTORY_LIMIT = 50
+
+/**
+ * Validate a `?limit=` value.
+ *
+ * Absent means the default. Anything else must be a whole number inside the
+ * bound — a malformed or unbounded limit is rejected rather than quietly
+ * clamped, so a caller is told its request was wrong instead of silently
+ * getting a different page than it asked for.
+ */
+export function parseHistoryLimit(raw: string | null | undefined): number | null {
+  if (raw === null || raw === undefined || raw === '') return DEFAULT_HISTORY_LIMIT
+  const value = Number(raw)
+  if (!Number.isInteger(value)) return null
+  if (value < 1 || value > MAX_HISTORY_LIMIT) return null
+  return value
+}
+
+/**
+ * One recorded workout, as history reports it.
+ *
+ * Every field is a fact that was persisted. Nothing here is inferred: a
+ * workout that was never started simply is not in history, and this round
+ * never invents one to represent it.
+ */
+export type WorkoutHistoryEntry = {
+  date: string
+  sessionId: string
+  day: string
+  focus: string
+  intensity: string
+  startedAt: number
+  updatedAt: number
+  progress: WorkoutProgress
+}
+
+/** Totals across everything an account has recorded, not just one page. */
+export type WorkoutHistoryTotals = {
+  workouts: number
+  sets: number
+  completed: number
+  skipped: number
+  resolved: number
+}
+
+/**
+ * True when every expected set of a workout has been resolved either way.
+ *
+ * Deliberately NOT called "complete": a workout whose sets were all skipped is
+ * fully traversed and not trained at all. Callers that care about training
+ * must read `completed`.
+ */
+export function isFullyResolved(progress: WorkoutProgress): boolean {
+  return progress.total > 0 && progress.resolved === progress.total
+}
+
+/** How many expected sets are still untouched. */
+export function pendingSets(progress: WorkoutProgress): number {
+  return Math.max(0, progress.total - progress.resolved)
+}
+
 /** "kg each" for dumbbells, "kg" otherwise. Never abbreviated away. */
 export function loadUnitLabel(unit: WorkoutLoadUnit): string {
   return unit === 'kg_each' ? 'kg each' : 'kg'

@@ -108,7 +108,67 @@ export function createFakeD1() {
   /** Set to make every workout statement throw, as D1 would. */
   let workoutFailure: Error | null = null
 
+  /** Sets that belong to an occurrence — the ownership join, in the stand-in. */
+  function ownedSets(row: OccurrenceRow) {
+    return [...workoutSets.values()].filter(
+      (set) =>
+        set.google_sub === row.google_sub &&
+        set.workout_date === row.workout_date &&
+        set.session_id === row.session_id &&
+        set.snapshot_id === row.snapshot_id,
+    )
+  }
+
   function execute(sql: string, args: unknown[]) {
+    // Checked before the generic workout_sets branch: both history statements
+    // name that table too, and would otherwise be misrouted.
+    if (sql.includes('LEFT JOIN workout_sets')) {
+      if (workoutFailure) throw workoutFailure
+
+      const [google_sub, limit] = args as [string, number]
+      return [...occurrences.values()]
+        .filter((row) => row.google_sub === google_sub)
+        // ORDER BY workout_date DESC, started_at DESC, session_id ASC — a
+        // total order, so the newest-first page is stable.
+        .sort((a, b) => {
+          if (a.workout_date !== b.workout_date) {
+            return b.workout_date.localeCompare(a.workout_date)
+          }
+          if (a.started_at !== b.started_at) return b.started_at - a.started_at
+          return a.session_id.localeCompare(b.session_id)
+        })
+        .slice(0, limit)
+        .map((row) => {
+          const sets = ownedSets(row)
+          return {
+            workout_date: row.workout_date,
+            session_id: row.session_id,
+            session_day_snapshot: row.session_day_snapshot,
+            session_focus_snapshot: row.session_focus_snapshot,
+            session_intensity_snapshot: row.session_intensity_snapshot,
+            started_at: row.started_at,
+            updated_at: row.updated_at,
+            total_sets: sets.length,
+            completed_sets: sets.filter((set) => set.status === 'completed').length,
+            skipped_sets: sets.filter((set) => set.status === 'skipped').length,
+          }
+        })
+    }
+
+    if (sql.includes('AS recorded_workouts')) {
+      if (workoutFailure) throw workoutFailure
+
+      const [google_sub] = args as [string]
+      const mine = [...occurrences.values()].filter((row) => row.google_sub === google_sub)
+      const sets = mine.flatMap(ownedSets)
+      return {
+        recorded_workouts: mine.length,
+        recorded_sets: sets.length,
+        completed_sets: sets.filter((set) => set.status === 'completed').length,
+        skipped_sets: sets.filter((set) => set.status === 'skipped').length,
+      }
+    }
+
     if (sql.includes('workout_sets')) {
       if (workoutFailure) throw workoutFailure
 
