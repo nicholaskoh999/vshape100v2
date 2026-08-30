@@ -274,9 +274,42 @@ describe('4. recorded history', () => {
     await screen.findByText('Recorded training')
     const totals = screen.getByText('Recorded training').closest('div')!
     expect(within(totals).getByText('Workouts').nextSibling).toHaveTextContent('2')
-    expect(within(totals).getByText('Sets logged').nextSibling).toHaveTextContent('6')
+    expect(within(totals).getByText('Total sets').nextSibling).toHaveTextContent('6')
     expect(within(totals).getByText('Completed').nextSibling).toHaveTextContent('4')
     expect(within(totals).getByText('Skipped').nextSibling).toHaveTextContent('1')
+  })
+
+  /**
+   * The totals headline counts every expected set row a Start created, so it
+   * includes sets that are still pending. It must therefore not be described
+   * as work that was logged.
+   */
+  it('counts pending sets in the total without calling them logged', async () => {
+    // 7 expected sets: 3 completed, 1 skipped, 3 still pending.
+    seedWorkout({ date: '2026-08-31', total: 4, completed: 2, skipped: 1 })
+    seedWorkout({ date: '2026-09-01', total: 3, completed: 1, skipped: 0, startedAt: 2 })
+    await renderProgress()
+
+    await screen.findByText('Recorded training')
+    const totals = screen.getByText('Recorded training').closest('div')!
+
+    // The total includes the 3 pending rows.
+    expect(within(totals).getByText('Total sets').nextSibling).toHaveTextContent('7')
+    // Completed and skipped stay their own separate facts.
+    expect(within(totals).getByText('Completed').nextSibling).toHaveTextContent('3')
+    expect(within(totals).getByText('Skipped').nextSibling).toHaveTextContent('1')
+    // 3 + 1 = 4 resolved, so 3 of the 7 were never touched.
+    expect(within(totals).queryByText('Sets logged')).toBeNull()
+
+    // And nowhere on the page are those 7 described as logged.
+    const page = document.querySelector('main')?.textContent ?? ''
+    expect(page).not.toMatch(/sets logged/i)
+    expect(page).not.toMatch(/7 (sets )?logged/i)
+    // The per-workout rows still report the untouched sets as pending:
+    // 4 sets = 2 completed + 1 skipped + 1 pending, and 3 = 1 completed + 2 pending.
+    const card = await awaitHistoryCard()
+    expect(within(card).getByText(/2 completed · 1 skipped · 1 pending/)).toBeInTheDocument()
+    expect(within(card).getByText(/1 completed · 2 pending/)).toBeInTheDocument()
   })
 })
 

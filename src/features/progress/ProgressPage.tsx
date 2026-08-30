@@ -201,7 +201,12 @@ function RecordedOverview({
       </p>
       <dl className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Stat label="Workouts" value={totals.workouts} />
-        <Stat label="Sets logged" value={totals.sets} />
+        {/*
+          "Total sets", not "Sets logged": this counts every expected set row a
+          Start created, so it includes sets that are still pending. Calling
+          them logged would claim work that has not happened.
+        */}
+        <Stat label="Total sets" value={totals.sets} />
         <Stat label="Completed" value={totals.completed} tone="completed" />
         {/* Kept beside completed, never added into it. */}
         <Stat label="Skipped" value={totals.skipped} tone="skipped" />
