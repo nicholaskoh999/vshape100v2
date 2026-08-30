@@ -1,3 +1,5 @@
+import { isLocalDate } from './localDate'
+
 /**
  * Workout logging contract and validation.
  *
@@ -79,29 +81,18 @@ export const MAX_SET_LOAD = 1_000
 /* Primitive validation                                                */
 /* ------------------------------------------------------------------ */
 
-const DAY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/
 /** Lowercase slug, e.g. `monday` or `lat-pulldown`. */
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
 /**
  * A real calendar date in `YYYY-MM-DD`, so 2026-02-30 is rejected.
  *
- * This is the user's LOCAL workout date. It is validated for shape and
- * calendar validity only — no timezone is applied here and none is assumed,
- * because applying one would drift the workout across midnight for anyone not
- * in that zone. The client sends the date its own calendar is showing.
+ * This is the user's LOCAL workout date. Validation lives in
+ * shared/localDate.ts so Holiday, Foundation and workout dates all agree on
+ * what a calendar date is rather than each carrying their own copy.
  */
 export function isWorkoutDate(value: unknown): value is string {
-  if (typeof value !== 'string') return false
-  const match = DAY_PATTERN.exec(value)
-  if (!match) return false
-  const [, year, month, day] = match.map(Number) as [number, number, number, number]
-  const date = new Date(Date.UTC(year, month - 1, day))
-  return (
-    date.getUTCFullYear() === year &&
-    date.getUTCMonth() === month - 1 &&
-    date.getUTCDate() === day
-  )
+  return isLocalDate(value)
 }
 
 /** Validate the workout date, returning it or null. */

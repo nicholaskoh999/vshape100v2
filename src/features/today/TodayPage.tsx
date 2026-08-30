@@ -1,19 +1,32 @@
-import { Scale } from 'lucide-react'
+import { CalendarRange, Dumbbell, Palmtree, Scale } from 'lucide-react'
+import { Link } from 'react-router'
 
+import { Card } from '@/components/ui/Card'
 import { EmptyShell } from '@/components/ui/EmptyShell'
 import { PageHeader } from '@/components/ui/PageHeader'
+import { foundationStatus } from '@/features/progress/foundation'
+import { localDateOf } from '@shared/localDate'
 import { TodayHero } from './components/TodayHero'
 import { TodaySection } from './components/TodaySection'
 import { TodayStatusNotice } from './components/TodayStatusNotice'
 import { useToday } from './useToday'
 
-const FOUNDATION_DAY_1 = new Date(2026, 7, 31) // 2026-08-31 local time
-const MS_PER_DAY = 24 * 60 * 60 * 1000
-
-/** Foundation day number by real calendar date. Day 100 is a milestone, not an end. */
-function foundationDay(now: Date) {
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  return Math.floor((today.getTime() - FOUNDATION_DAY_1.getTime()) / MS_PER_DAY) + 1
+/**
+ * The Foundation eyebrow.
+ *
+ * Uses the one accepted Foundation calculation rather than a second copy:
+ * this page previously divided a millisecond difference, which a daylight-
+ * saving transition makes 23 or 25 hours and therefore off by a day. Holiday
+ * changes nothing here — the day number follows the real calendar either way.
+ */
+function foundationEyebrow(now: Date): string {
+  const status = foundationStatus(localDateOf(now))
+  if (!status) return 'Foundation'
+  if (status.phase === 'upcoming') {
+    const days = status.daysUntilStart ?? 0
+    return `Foundation starts in ${days} day${days === 1 ? '' : 's'}`
+  }
+  return `Foundation · Day ${status.day}`
 }
 
 /** Small live readout — also the visible proof the page follows the clock. */
@@ -66,7 +79,6 @@ export function TodayPage() {
       }”. Please try again.`
     : null
 
-  const day = foundationDay(now)
   const dateLabel = now.toLocaleDateString('en-GB', {
     weekday: 'long',
     day: 'numeric',
@@ -82,16 +94,16 @@ export function TodayPage() {
   return (
     <>
       <PageHeader
-        eyebrow={
-          day < 1
-            ? `Foundation starts in ${1 - day} day${1 - day === 1 ? '' : 's'}`
-            : `Foundation · Day ${day}`
-        }
+        eyebrow={foundationEyebrow(now)}
         title="Today"
         subline={`${dateLabel} · ${agenda.route.label}`}
         actions={<ClockChip now={now} />}
       />
 
+      {agenda.holiday && <HolidayToday />}
+
+      {!agenda.holiday && (
+      <>
       <TodayStatusNotice
         hydration={hydration}
         failureMessage={failureMessage}
@@ -169,6 +181,62 @@ export function TodayPage() {
           />
         </div>
       </div>
+      </>
+      )}
     </>
+  )
+}
+
+/**
+ * Today on a Holiday date.
+ *
+ * EXEMPT, not missed. The normal agenda is not rendered at all, so nothing can
+ * read as late — and nothing is marked complete to achieve that. Training stays
+ * reachable for anyone who genuinely wants it, but nothing here asks for it.
+ */
+function HolidayToday() {
+  return (
+    <Card className="p-5 md:p-6">
+      {/* Card does not forward extra props, so the marker lives here. */}
+      <div data-today-holiday>
+      <div className="flex items-start gap-4">
+        <span
+          aria-hidden="true"
+          className="grid size-12 shrink-0 place-items-center rounded-2xl bg-holiday/15 text-holiday md:size-14"
+        >
+          <Palmtree className="size-6" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-holiday">
+            Holiday · Exempt
+          </p>
+          <h2 className="mt-1 text-xl font-extrabold tracking-tight text-offwhite md:text-2xl">
+            A planned pause from the normal routine.
+          </h2>
+          <p className="mt-1.5 text-[13px] leading-relaxed text-ink-faint">
+            Nothing is due today and nothing is counted as missed. Foundation Day keeps
+            counting.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <Link
+          to="/calendar"
+          className="inline-flex h-11 items-center justify-center gap-1.5 rounded-control border border-edge-strong px-4 text-[13px] font-bold text-ink-dim transition-colors duration-150 hover:border-blue/60 hover:text-offwhite"
+        >
+          <CalendarRange className="size-4" aria-hidden="true" />
+          Open Calendar
+        </Link>
+        <Link
+          to="/training"
+          className="inline-flex h-11 items-center justify-center gap-1.5 rounded-control border border-edge px-4 text-[13px] font-bold text-ink-faint transition-colors duration-150 hover:border-edge-strong hover:text-offwhite"
+        >
+          <Dumbbell className="size-4" aria-hidden="true" />
+          Train anyway
+        </Link>
+      </div>
+      </div>
+    </Card>
   )
 }

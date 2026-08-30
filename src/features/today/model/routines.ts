@@ -214,6 +214,21 @@ function sundayRoute(): Route {
   }
 }
 
+/**
+ * The route for a Holiday date.
+ *
+ * Deliberately empty. Holiday is EXEMPT: suspending the day's pressure means
+ * there is nothing to do, not a list of things quietly marked complete.
+ */
+export function holidayRoute(): Route {
+  return {
+    id: 'holiday',
+    label: 'Holiday',
+    summary: 'A planned pause from the normal routine. Foundation Day continues.',
+    items: [],
+  }
+}
+
 /** Which route a JS day index follows (0 = Sunday). */
 export function routeIdForWeekday(weekday: number): RouteId {
   if (weekday === 0) return 'sunday'

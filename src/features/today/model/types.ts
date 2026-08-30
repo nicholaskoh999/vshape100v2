@@ -15,8 +15,14 @@
  * calendar date.
  */
 
-/** Which accepted route a day follows. */
-export type RouteId = 'home' | 'saturday' | 'sunday'
+/**
+ * Which accepted route a day follows.
+ *
+ * `holiday` is an OVERRIDE rather than a weekday: a Holiday date replaces
+ * whatever route it would otherwise have had. It is EXEMPT, not missed — it
+ * carries no items, so nothing on a Holiday can become LATE.
+ */
+export type RouteId = 'home' | 'saturday' | 'sunday' | 'holiday'
 
 /** Minutes since 00:00 of the anchoring day. May exceed 1440 (see above). */
 export type RouteMinute = number
@@ -131,6 +137,14 @@ export type TodayAgenda = {
   nowMinutes: number
   /** Every occurrence, already in display order. */
   entries: TodayEntry[]
+  /**
+   * True when the day carries a Holiday override.
+   *
+   * A Holiday agenda has no entries at all, so the normal routine's pressure
+   * simply does not exist for that day — nothing is late, and nothing is
+   * marked done to achieve that.
+   */
+  holiday: boolean
 }
 
 /** Icon slugs the Today UI knows how to render (Lucide only). */

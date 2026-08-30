@@ -1,5 +1,5 @@
 import { timeLabelFor } from './format'
-import { routeForDate } from './routines'
+import { holidayRoute, routeForDate } from './routines'
 import {
   MINUTES_PER_DAY,
   type Route,
@@ -25,6 +25,7 @@ import {
  */
 
 const EMPTY_COMPLETED: ReadonlySet<string> = new Set<string>()
+const EMPTY_HOLIDAYS: ReadonlySet<string> = new Set<string>()
 
 /** Local `YYYY-MM-DD` for a date — the identity of a routine day. */
 export function dayKey(date: Date): string {
@@ -137,12 +138,33 @@ export function completionDayRange(now: Date): { from: string; to: string } {
 export function buildAgenda(
   now: Date,
   completed: ReadonlySet<string> = EMPTY_COMPLETED,
+  holidayDays: ReadonlySet<string> = EMPTY_HOLIDAYS,
 ): TodayAgenda {
   const today = startOfLocalDay(now)
   const yesterday = addDays(today, -1)
-  const todayRoute = routeForDate(today)
-  const yesterdayRoute = routeForDate(yesterday)
   const nowMinutes = minutesOfDay(now)
+  const todayKey = dayKey(today)
+
+  // A Holiday suspends the day entirely. Returning no entries is what makes
+  // that honest: there is nothing to be late for, and nothing is marked done
+  // in order to achieve it. Yesterday's spillover is dropped too, so a normal
+  // day rolling into a Holiday cannot put routine pressure on it.
+  if (holidayDays.has(todayKey)) {
+    return {
+      day: todayKey,
+      route: holidayRoute(),
+      nowMinutes,
+      entries: [],
+      holiday: true,
+    }
+  }
+
+  const todayRoute = routeForDate(today)
+  // A Holiday has no items, so a Holiday yesterday spills nothing into today
+  // — today's normal route simply resumes.
+  const yesterdayRoute = holidayDays.has(dayKey(yesterday))
+    ? holidayRoute()
+    : routeForDate(yesterday)
 
   const entries: TodayEntry[] = []
   let order = 0
@@ -203,5 +225,5 @@ export function buildAgenda(
   }
   if (next) next.status = 'NEXT'
 
-  return { day: dayKey(today), route: todayRoute, nowMinutes, entries }
+  return { day: todayKey, route: todayRoute, nowMinutes, entries, holiday: false }
 }

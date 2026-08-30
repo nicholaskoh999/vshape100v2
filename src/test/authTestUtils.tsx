@@ -6,6 +6,7 @@ import { routes } from '@/app/router/router'
 import { AuthProvider } from '@/features/auth/AuthProvider'
 import type { SessionState } from '@/features/auth/api'
 import { createMediaServer, type MediaServer } from './exerciseMediaApiTestUtils'
+import { createHolidayServer, type HolidayServer } from './holidayApiTestUtils'
 import { createTodayServer, type TodayServer } from './todayApiTestUtils'
 import { createWorkoutServer, type WorkoutServer } from './workoutApiTestUtils'
 
@@ -36,10 +37,10 @@ function jsonResponse(body: unknown): Response {
  * promise, which lets a test hold the bootstrap open and assert that nothing
  * protected has rendered yet.
  *
- * Today completions, canonical exercise media and workout logs are served by
- * in-memory stand-ins so the real client, hooks and engine all run; pass your
- * own via `today` / `media` / `workouts` to seed saved state or to make
- * requests fail.
+ * Today completions, canonical exercise media, workout logs and Holiday
+ * overrides are served by in-memory stand-ins so the real client, hooks and
+ * engine all run; pass your own via `today` / `media` / `workouts` /
+ * `holidays` to seed saved state or to make requests fail.
  */
 export function mockAuthFetch(options: {
   session: SessionState | Promise<SessionState>
@@ -47,10 +48,12 @@ export function mockAuthFetch(options: {
   today?: TodayServer
   media?: MediaServer
   workouts?: WorkoutServer
+  holidays?: HolidayServer
 }) {
   const today = options.today ?? createTodayServer()
   const media = options.media ?? createMediaServer()
   const workouts = options.workouts ?? createWorkoutServer()
+  const holidays = options.holidays ?? createHolidayServer()
 
   const handler: FetchHandler = async (url, init) => {
     if (url.startsWith('/api/auth/session')) {
@@ -68,6 +71,9 @@ export function mockAuthFetch(options: {
     }
     if (url.startsWith('/api/workouts')) {
       return workouts.handle(url, init)
+    }
+    if (url.startsWith('/api/holidays')) {
+      return holidays.handle(url, init)
     }
     throw new Error(`Unexpected fetch in test: ${url}`)
   }

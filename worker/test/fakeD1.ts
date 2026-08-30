@@ -1,7 +1,8 @@
 /**
  * Minimal in-memory stand-in for D1, covering exactly the statements the
  * Worker issues against `auth_sessions`, `today_completions`,
- * `exercise_media`, `workout_occurrences` and `workout_sets`.
+ * `exercise_media`, `workout_occurrences`, `workout_sets` and
+ * `holiday_overrides`.
  *
  * Route-level tests use this so the real handler, the real D1 mapping layer
  * and the real rules all run together.
@@ -39,6 +40,15 @@ type MediaRow = {
 /** `google_sub` + `occurrence_key` — the table's primary key. */
 function completionId(googleSub: string, occurrenceKey: string): string {
   return `${googleSub}\u0000${occurrenceKey}`
+}
+
+type HolidayRow = {
+  id: string
+  google_sub: string
+  start_date: string
+  end_date: string
+  created_at: number
+  updated_at: number
 }
 
 type OccurrenceRow = {
@@ -99,6 +109,7 @@ export function createFakeD1() {
   const sessions = new Map<string, SessionRow>()
   const completions = new Map<string, CompletionRow>()
   const media = new Map<string, MediaRow>()
+  const holidays = new Map<string, HolidayRow>()
   const occurrences = new Map<string, OccurrenceRow>()
   const workoutSets = new Map<string, WorkoutSetRow>()
   /** Set to make every `today_completions` statement throw, as D1 would. */
@@ -107,6 +118,8 @@ export function createFakeD1() {
   let mediaFailure: Error | null = null
   /** Set to make every workout statement throw, as D1 would. */
   let workoutFailure: Error | null = null
+  /** Set to make every `holiday_overrides` statement throw, as D1 would. */
+  let holidayFailure: Error | null = null
 
   /** Sets that belong to an occurrence — the ownership join, in the stand-in. */
   function ownedSets(row: OccurrenceRow) {
@@ -119,7 +132,84 @@ export function createFakeD1() {
     )
   }
 
+  /** `google_sub` + `id` — the holiday_overrides primary key. */
+  function holidayId(googleSub: string, id: string): string {
+    return `${googleSub}\u0000${id}`
+  }
+
   function execute(sql: string, args: unknown[]) {
+    if (sql.includes('holiday_overrides')) {
+      if (holidayFailure) throw holidayFailure
+
+      if (sql.includes('SELECT') && sql.includes('AND id = ?')) {
+        const [google_sub, id] = args as [string, string]
+        return holidays.get(holidayId(google_sub, id)) ?? null
+      }
+
+      if (sql.includes('SELECT')) {
+        // Inclusive-range intersection: start_date <= to AND end_date >= from.
+        const [google_sub, to, from] = args as [string, string, string]
+        return [...holidays.values()]
+          .filter(
+            (row) =>
+              row.google_sub === google_sub &&
+              row.start_date <= to &&
+              row.end_date >= from,
+          )
+          .sort((a, b) => {
+            if (a.start_date !== b.start_date) {
+              return a.start_date.localeCompare(b.start_date)
+            }
+            if (a.end_date !== b.end_date) return a.end_date.localeCompare(b.end_date)
+            return a.id.localeCompare(b.id)
+          })
+      }
+
+      if (sql.includes('INSERT INTO holiday_overrides')) {
+        const [id, google_sub, start_date, end_date, created_at, updated_at] = args as [
+          string,
+          string,
+          string,
+          string,
+          number,
+          number,
+        ]
+        holidays.set(holidayId(google_sub, id), {
+          id,
+          google_sub,
+          start_date,
+          end_date,
+          created_at,
+          updated_at,
+        })
+        return null
+      }
+
+      if (sql.includes('UPDATE holiday_overrides')) {
+        const [start_date, end_date, updated_at, google_sub, id] = args as [
+          string,
+          string,
+          number,
+          string,
+          string,
+        ]
+        const key = holidayId(google_sub, id)
+        const row = holidays.get(key)
+        // Only the dates move; identity and created_at are not assignable.
+        if (row) holidays.set(key, { ...row, start_date, end_date, updated_at })
+        return row ? 1 : 0
+      }
+
+      if (sql.includes('DELETE FROM holiday_overrides')) {
+        const [google_sub, id] = args as [string, string]
+        // The account key is part of the lookup, so another account's record
+        // is simply not there to delete.
+        return holidays.delete(holidayId(google_sub, id)) ? 1 : 0
+      }
+
+      throw new Error(`fakeD1 received an unexpected statement: ${sql}`)
+    }
+
     // Checked before the generic workout_sets branch: both history statements
     // name that table too, and would otherwise be misrouted.
     if (sql.includes('LEFT JOIN workout_sets')) {
@@ -532,8 +622,13 @@ export function createFakeD1() {
             return { results: (execute(sql, args) ?? []) as T[], success: true }
           },
           async run() {
-            execute(sql, args)
-            return { success: true }
+            const result = execute(sql, args)
+            // D1 reports affected rows; the Holiday delete uses it to tell
+            // "removed" from "was never yours to remove".
+            return {
+              success: true,
+              meta: { changes: typeof result === 'number' ? result : 0 },
+            }
           },
         }
       },
@@ -580,6 +675,7 @@ export function createFakeD1() {
     media,
     occurrences,
     workoutSets,
+    holidays,
     breakCompletions(error = new Error('D1 unavailable')) {
       completionsFailure = error
     },
@@ -588,6 +684,9 @@ export function createFakeD1() {
     },
     breakWorkouts(error = new Error('D1 unavailable')) {
       workoutFailure = error
+    },
+    breakHolidays(error = new Error('D1 unavailable')) {
+      holidayFailure = error
     },
     /**
      * Hold every batch until the returned function is called.
