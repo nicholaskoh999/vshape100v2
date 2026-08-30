@@ -73,7 +73,31 @@ export function ExerciseDetailPage() {
       />
 
       {found && (
-        <div className="flex flex-col gap-4">
+        /*
+          Round 09 — one measured column for the media and its prescriptions.
+
+          The shell's content column grows to `xl:max-w-4xl`, which let the
+          16:9 media stretch past the width a demo clip is actually watched at:
+          the taller it got, the more the prescriptions below fell out of view.
+          Capping the column at 44rem (704px) holds the media at a comfortable
+          size on a wide screen without introducing a second page container.
+
+          `w-full` keeps it fluid: the cap only engages once there is more room
+          than that, so tablet and mobile are unchanged and nothing can exceed
+          the padded shell column at any width.
+
+          Both children are laid out by this one element, so the media and the
+          prescription card share a width and a left edge — aligned with the
+          page title above rather than centred away from it.
+
+          The 16:9 ratio and the absence of a fixed media height stay where
+          they belong, in ExerciseMedia's own Frame. Nothing here sets a
+          height, so the media is still free to size itself from its width.
+        */
+        <div
+          data-exercise-detail-column
+          className="flex w-full max-w-[44rem] flex-col gap-4 md:gap-5"
+        >
           {/*
             Read-only here. There is no second media editor on this page — the
             "Edit media" action above goes to the one canonical editor, so this
