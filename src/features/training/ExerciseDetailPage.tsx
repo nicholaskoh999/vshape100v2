@@ -1,9 +1,10 @@
-import { ArrowLeft, ImageOff } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { Link } from 'react-router'
 import { useParams, useSearchParams } from 'react-router'
 
 import { Card } from '@/components/ui/Card'
 import { PageHeader } from '@/components/ui/PageHeader'
+import { ExerciseMedia } from './ExerciseMedia'
 import { ORIGIN_PARAM, resolveExerciseReturn } from './navigation'
 import { getExercise, trainingSessions } from './sessions'
 
@@ -47,13 +48,12 @@ export function ExerciseDetailPage() {
 
       {found && (
         <div className="flex flex-col gap-4">
-          {/* ExerciseMedia slot — external URL first, fallback always present. */}
-          <Card className="grid aspect-video place-items-center overflow-hidden">
-            <div className="flex flex-col items-center gap-2 text-ink-faint">
-              <ImageOff className="size-7" aria-hidden="true" />
-              <p className="text-[13px] font-semibold">Media coming soon</p>
-            </div>
-          </Card>
+          {/*
+            The V2 media library is not populated yet, so no exercise carries
+            a source and every one resolves to the no-media fallback. When the
+            library lands, this is the only line that changes.
+          */}
+          <ExerciseMedia media={null} />
 
           <Card className="divide-y divide-edge">
             {appearances.map((session) => {
