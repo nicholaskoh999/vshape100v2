@@ -133,7 +133,9 @@ describe('training navigation', () => {
   it('navigates from session to exercise detail', async () => {
     const user = userEvent.setup()
     const router = renderAt('/training/friday')
-    await user.click(await screen.findByText('Hammer Curl'))
+    // Rows expand in place; the detail link lives in the expanded panel.
+    await user.click(await screen.findByRole('button', { name: /Hammer Curl/ }))
+    await user.click(await screen.findByRole('link', { name: 'Open exercise details' }))
     expect(router.state.location.pathname).toBe('/exercises/hammer-curl')
   })
 })

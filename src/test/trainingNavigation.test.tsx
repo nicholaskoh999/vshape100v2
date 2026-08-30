@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -29,11 +29,35 @@ function backLink() {
   return screen.getByRole('link', { name: /^Back to / })
 }
 
+/** The compact row trigger for an exercise (name + prescription summary). */
+function exerciseTrigger(name: string) {
+  return screen.getByRole('button', { name: new RegExp(name) })
+}
+
+/**
+ * The one open panel's detail link.
+ *
+ * A closing panel stays mounted for its collapse animation, so this waits for
+ * the list to settle — which also asserts that only one row is ever open.
+ */
+async function openDetailsLink() {
+  return waitFor(() => {
+    const links = screen.getAllByRole('link', { name: 'Open exercise details' })
+    expect(links).toHaveLength(1)
+    return links[0]
+  })
+}
+
+/**
+ * Walk the Round 05 flow: expand the exercise in place, then follow its
+ * "Open exercise details" link.
+ */
 async function openExerciseFrom(sessionId: string, exerciseName: string) {
   const user = userEvent.setup()
   const router = renderApp(`/training/${sessionId}`)
   await screen.findByRole('heading', { level: 1 })
-  await user.click(screen.getByText(exerciseName))
+  await user.click(exerciseTrigger(exerciseName))
+  await user.click(await openDetailsLink())
   return { router, user }
 }
 
@@ -241,7 +265,8 @@ describe('browser history is left alone', () => {
     await screen.findByRole('heading', { name: 'Training' })
     await user.click(screen.getByText('Back Width + Biceps'))
     expect(router.state.location.pathname).toBe('/training/monday')
-    await user.click(screen.getByText('Lat Pulldown'))
+    await user.click(exerciseTrigger('Lat Pulldown'))
+    await user.click(await openDetailsLink())
     expect(router.state.location.pathname).toBe('/exercises/lat-pulldown')
 
     // Browser Back — untouched by the contextual return control.
@@ -269,16 +294,23 @@ describe('browser history is left alone', () => {
 
 describe('session page links carry the origin', () => {
   it('stamps every exercise link with its own session', async () => {
+    const user = userEvent.setup()
     renderApp('/training/monday')
     await screen.findByRole('heading', { name: 'Back Width + Biceps' })
-    const exerciseLinks = screen
-      .getAllByRole('link')
-      .filter((link) => link.getAttribute('href')?.startsWith('/exercises/'))
-    expect(exerciseLinks).toHaveLength(5)
-    for (const link of exerciseLinks) {
-      expect(link).toHaveAttribute(
+
+    // Only the open row carries a link now, so check each in turn.
+    const expected = [
+      ['Lat Pulldown', 'lat-pulldown'],
+      ['One-Arm DB Row', 'one-arm-db-row'],
+      ['Face Pull', 'face-pull'],
+      ['Preacher Curl', 'preacher-curl'],
+      ['Hammer Curl', 'hammer-curl'],
+    ]
+    for (const [name, slug] of expected) {
+      await user.click(exerciseTrigger(name))
+      expect(await openDetailsLink()).toHaveAttribute(
         'href',
-        expect.stringContaining(`?${ORIGIN_PARAM}=monday`),
+        `/exercises/${slug}?${ORIGIN_PARAM}=monday`,
       )
     }
   })
