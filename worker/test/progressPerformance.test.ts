@@ -43,6 +43,9 @@ function set(over: Partial<EligibleSet> = {}): EligibleSet {
     result: 10,
     workoutDate: '2026-09-07',
     sessionId: 'monday',
+    // Derived from the date so fixtures order chronologically by default; a
+    // test about same-date recency sets it explicitly.
+    startedAt: Date.parse(`${over.workoutDate ?? '2026-09-07'}T09:00:00Z`),
     ...over,
   }
 }
@@ -59,6 +62,9 @@ function row(over: Partial<CompletedSetRow> = {}): CompletedSetRow {
     result: 10,
     workoutDate: '2026-09-07',
     sessionId: 'monday',
+    // Derived from the date so fixtures order chronologically by default; a
+    // test about same-date recency sets it explicitly.
+    startedAt: Date.parse(`${over.workoutDate ?? '2026-09-07'}T09:00:00Z`),
     ...over,
   }
 }
@@ -67,60 +73,77 @@ function row(over: Partial<CompletedSetRow> = {}): CompletedSetRow {
 /* 1. Reading a stored row                                             */
 /* ------------------------------------------------------------------ */
 
-describe('1. a row is read or it is refused', () => {
+describe('1. a row is eligible, non-comparable, or unreadable', () => {
+  const status = (over: Partial<CompletedSetRow> = {}) => readSet(row(over)).status
+  const eligible = (over: Partial<CompletedSetRow> = {}) => {
+    const read = readSet(row(over))
+    return read.status === 'eligible' ? read.set : null
+  }
+
   it('reads a well-formed loaded set', () => {
-    expect(readSet(row())).toMatchObject({ loadMode: 'kg', loadValue: 50, result: 10 })
+    expect(eligible()).toMatchObject({ loadMode: 'kg', loadValue: 50, result: 10 })
   })
 
   it('reads per-side as a boolean', () => {
-    expect(readSet(row({ perSide: 1 }))?.perSide).toBe(true)
-    expect(readSet(row({ perSide: 0 }))?.perSide).toBe(false)
+    expect(eligible({ perSide: 1 })?.perSide).toBe(true)
+    expect(eligible({ perSide: 0 })?.perSide).toBe(false)
   })
 
   it('refuses an unknown result kind rather than defaulting it', () => {
     // Guessing 'reps' here would file a set into a variant it may not belong
     // to, and that is exactly how a PB gets manufactured.
-    expect(readSet(row({ resultKind: 'distance' }))).toBeNull()
-    expect(readSet(row({ resultKind: '' }))).toBeNull()
+    expect(status({ resultKind: 'distance' })).toBe('unreadable')
+    expect(status({ resultKind: '' })).toBe('unreadable')
   })
 
   it('refuses an unknown load mode rather than defaulting it', () => {
-    expect(readSet(row({ loadMode: 'lb' }))).toBeNull()
-    expect(readSet(row({ loadMode: 'pood' }))).toBeNull()
+    expect(status({ loadMode: 'lb' })).toBe('unreadable')
+    expect(status({ loadMode: 'pood' })).toBe('unreadable')
   })
 
   it('refuses a load whose unit disagrees with its variant', () => {
     // 10 recorded as kg_each is twice the metal of 10 recorded as kg. A row
     // that disagrees with itself cannot be compared with either.
-    expect(readSet(row({ loadMode: 'kg', loadUnit: 'kg_each' }))).toBeNull()
-    expect(readSet(row({ loadMode: 'kg_each', loadUnit: 'kg' }))).toBeNull()
+    expect(status({ loadMode: 'kg', loadUnit: 'kg_each' })).toBe('unreadable')
+    expect(status({ loadMode: 'kg_each', loadUnit: 'kg' })).toBe('unreadable')
   })
 
   it('refuses a load recorded against an unloaded exercise', () => {
-    expect(readSet(row({ loadMode: 'none', loadValue: 20, loadUnit: 'kg' }))).toBeNull()
+    expect(status({ loadMode: 'none', loadValue: 20, loadUnit: 'kg' })).toBe('unreadable')
   })
 
   it('reads an unloaded set', () => {
-    expect(readSet(row({ loadMode: 'none', loadValue: null, loadUnit: null }))).toMatchObject({
+    expect(eligible({ loadMode: 'none', loadValue: null, loadUnit: null })).toMatchObject({
       loadMode: 'none',
       loadValue: null,
     })
   })
 
-  it('reads a loaded set that recorded no load', () => {
-    // A real state: the reps were logged and the weight was not. It has no
-    // load fact, but it is not corrupt.
-    expect(readSet(row({ loadValue: null, loadUnit: null }))).toMatchObject({ loadValue: null })
+  it('calls a loaded set with no recorded load NON-COMPARABLE, not unreadable', () => {
+    // Real history: the reps were logged and the weight was not. It must not
+    // fail the account's whole read...
+    expect(status({ loadValue: null, loadUnit: null })).toBe('non-comparable')
+    expect(status({ loadMode: 'kg_each', loadValue: null, loadUnit: null })).toBe(
+      'non-comparable',
+    )
+  })
+
+  it('still reads a TIMED set that recorded no load', () => {
+    // ...but a timed variant ranks by seconds, so a missing load costs it
+    // nothing and the set remains comparable.
+    expect(
+      eligible({ resultKind: 'seconds', loadMode: 'kg', loadValue: null, loadUnit: null }),
+    ).toMatchObject({ resultKind: 'seconds', result: 10 })
   })
 
   it('refuses a set with no positive result', () => {
     for (const result of [0, -5, NaN]) {
-      expect(readSet(row({ result })), String(result)).toBeNull()
+      expect(status({ result }), String(result)).toBe('unreadable')
     }
   })
 
   it('refuses a row with no exercise identity', () => {
-    expect(readSet(row({ exerciseId: '' }))).toBeNull()
+    expect(status({ exerciseId: '' })).toBe('unreadable')
   })
 })
 
@@ -189,9 +212,13 @@ describe('3. loaded reps rank lexicographically', () => {
     expect(isBetter({ loadValue: 20, result: 5 }, { loadValue: null, result: 30 }, kind)).toBe(true)
   })
 
-  it('falls back to reps when neither set recorded a load', () => {
+  it('never ranks two loadless sets on reps', () => {
+    // There is no fallback. Ranking kilograms against repetitions puts two
+    // measurement systems on one axis, and a light long set would outrank a
+    // heavy one. Such sets are filtered out as non-comparable before they
+    // reach here; this holds the floor if one ever slipped through.
     expect(isBetter({ loadValue: null, result: 12 }, { loadValue: null, result: 10 }, kind)).toBe(
-      true,
+      false,
     )
   })
 })
@@ -346,6 +373,30 @@ describe('5. the all-time best', () => {
     expect(derivePerformance([])).toEqual([])
   })
 
+  it('contributes no point from an occurrence whose loaded sets recorded no load', () => {
+    // The middle workout logged reps only. It is real history, but it has no
+    // load to plot and must not become a point — least of all a point whose
+    // value is a rep count sitting on a kilogram axis.
+    const variants = derivePerformance([
+      set({ workoutDate: '2026-09-03', loadValue: 45, result: 10 }),
+      set({ workoutDate: '2026-09-24', loadValue: 50, result: 8 }),
+    ])
+
+    expect(variants[0].points.map((point) => point.date)).toEqual([
+      '2026-09-03',
+      '2026-09-24',
+    ])
+    for (const point of variants[0].points) expect(point.loadValue).not.toBeNull()
+  })
+
+  it('chooses from the real-load sets when an occurrence holds both', () => {
+    // One workout, one loadless set with huge reps and one real 50 kg set.
+    const variants = derivePerformance([
+      set({ workoutDate: '2026-09-24', loadValue: 50, result: 8 }),
+    ])
+    expect(variants[0].points[0]).toMatchObject({ loadValue: 50, result: 8 })
+  })
+
   it('ranks kg and kg_each in separate variants', () => {
     const variants = derivePerformance([
       set({ exerciseId: 'db-press', loadMode: 'kg', loadValue: 30, result: 10 }),
@@ -409,6 +460,79 @@ describe('6. presentation facts', () => {
       'middle-lift',
       'old-lift',
     ])
+  })
+
+  it('orders same-date variants by when the workout actually started', () => {
+    // Two sessions on one local date are genuinely one after the other, and
+    // the exercise name has nothing to do with which came last.
+    const morning = Date.parse('2026-09-24T07:00:00Z')
+    const evening = Date.parse('2026-09-24T19:00:00Z')
+
+    const variants = derivePerformance([
+      set({
+        exerciseId: 'aaa-morning-lift',
+        exerciseName: 'AAA Morning Lift',
+        workoutDate: '2026-09-24',
+        sessionId: 'monday',
+        startedAt: morning,
+      }),
+      set({
+        exerciseId: 'zzz-evening-lift',
+        exerciseName: 'ZZZ Evening Lift',
+        workoutDate: '2026-09-24',
+        sessionId: 'wednesday',
+        startedAt: evening,
+      }),
+    ])
+
+    // Alphabetically AAA would come first; by real recency the evening one does.
+    expect(variants.map((variant) => variant.exerciseId)).toEqual([
+      'zzz-evening-lift',
+      'aaa-morning-lift',
+    ])
+  })
+
+  it('orders points within a variant by real time, not by session name', () => {
+    const variants = derivePerformance([
+      set({
+        workoutDate: '2026-09-24',
+        sessionId: 'wednesday',
+        startedAt: Date.parse('2026-09-24T07:00:00Z'),
+        loadValue: 40,
+      }),
+      set({
+        workoutDate: '2026-09-24',
+        sessionId: 'monday',
+        startedAt: Date.parse('2026-09-24T19:00:00Z'),
+        loadValue: 50,
+      }),
+    ])
+
+    // 'monday' sorts before 'wednesday' alphabetically, but it happened later.
+    expect(variants[0].points.map((point) => point.loadValue)).toEqual([40, 50])
+  })
+
+  it('keeps the FIRST achievement when a tie spans two sessions in one day', () => {
+    const variants = derivePerformance([
+      set({
+        workoutDate: '2026-09-24',
+        sessionId: 'zzz-late',
+        startedAt: Date.parse('2026-09-24T19:00:00Z'),
+        loadValue: 50,
+        result: 8,
+      }),
+      set({
+        workoutDate: '2026-09-24',
+        sessionId: 'aaa-early',
+        startedAt: Date.parse('2026-09-24T07:00:00Z'),
+        loadValue: 50,
+        result: 8,
+      }),
+    ])
+
+    // Repeating a performance is not becoming stronger, and "first" means the
+    // earlier workout, not the earlier session name.
+    expect(variants[0].personalBest?.sessionId).toBe('aaa-early')
   })
 
   it('reports when each variant was last performed', () => {
@@ -506,6 +630,42 @@ describe('7. all of history, or nothing', () => {
 
   it('reports an empty history as complete and empty', async () => {
     const read = await readPerformance(storeOf([]), 'sub-a')
-    expect(read).toEqual({ complete: true, variants: [], examined: 0 })
+    expect(read).toEqual({ complete: true, variants: [], examined: 0, nonComparable: 0 })
+  })
+
+  it('skips a loadless loaded set without failing the whole read', async () => {
+    const read = await readPerformance(
+      storeOf([
+        row({ workoutDate: '2026-09-01', loadValue: 50, loadUnit: 'kg', result: 8 }),
+        row({ workoutDate: '2026-09-08', loadValue: null, loadUnit: null, result: 30 }),
+      ]),
+      'sub-a',
+    )
+
+    // The account keeps its answer; the loadless set simply is not part of it.
+    expect(read.complete).toBe(true)
+    expect(read.complete && read.examined).toBe(1)
+    expect(read.complete && read.nonComparable).toBe(1)
+    // 30 reps at no recorded weight does not become a 30 kg best.
+    expect(read.complete && read.variants[0].personalBest).toMatchObject({
+      loadValue: 50,
+      result: 8,
+    })
+  })
+
+  it('publishes no loaded variant at all when nothing in it recorded a load', async () => {
+    const read = await readPerformance(
+      storeOf([
+        row({ workoutDate: '2026-09-01', loadValue: null, loadUnit: null, result: 12 }),
+        row({ workoutDate: '2026-09-08', loadValue: null, loadUnit: null, result: 15 }),
+      ]),
+      'sub-a',
+    )
+
+    // Two real completed sets, and no loaded fact between them. There is
+    // nothing to be best at, so the variant does not appear.
+    expect(read.complete).toBe(true)
+    expect(read.variants).toEqual([])
+    expect(read.complete && read.nonComparable).toBe(2)
   })
 })

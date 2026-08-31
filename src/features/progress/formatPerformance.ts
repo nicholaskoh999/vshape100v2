@@ -45,10 +45,11 @@ export function formatPerformance(point: PerformancePoint, kind: VariantKind): s
 }
 
 /**
- * How a variant is named when one exercise has several measurement systems.
+ * The notable thing about a variant, when there is one.
  *
- * Returns null when there is nothing to disambiguate, so the common case reads
- * as just the exercise name.
+ * Returns null when nothing needs saying, so the common case reads as just the
+ * exercise name. This is only safe when the exercise has ONE variant — see
+ * `labelVariants`.
  */
 export function variantQualifier(kind: VariantKind): string | null {
   const parts: string[] = [];
@@ -56,6 +57,48 @@ export function variantQualifier(kind: VariantKind): string | null {
   if (kind.perSide) parts.push("per side");
   if (kind.resultKind === "seconds") parts.push("timed");
   return parts.length === 0 ? null : parts.join(" · ");
+}
+
+/**
+ * The FULL measurement system of a variant, always spelled out.
+ *
+ * Used when one exercise has more than one, where saying only the notable half
+ * is not enough: a `kg` variant and a `none` variant of the same exercise both
+ * have nothing "notable" about them, and would render as two identical
+ * choices with different meanings behind them.
+ */
+export function variantDescriptor(kind: VariantKind): string {
+  const load =
+    kind.loadMode === "kg_each" ? "kg each" : kind.loadMode === "kg" ? "kg" : "no load";
+  const result = kind.resultKind === "seconds" ? "timed" : "reps";
+  const parts = [load, result];
+  if (kind.perSide) parts.push("per side");
+  return parts.join(" · ");
+}
+
+/**
+ * Qualifiers for a whole list of variants, keyed by variant key.
+ *
+ * A variant key already separates measurement systems in the DATA. This makes
+ * that separation visible: whenever one canonical exercise appears with more
+ * than one variant, EVERY one of them is labelled with its full measurement
+ * system, so no two options can read the same. An exercise with a single
+ * variant keeps the quieter label, or none.
+ */
+export function labelVariants(
+  variants: readonly (VariantKind & { key: string; exerciseId: string })[],
+): Map<string, string | null> {
+  const perExercise = new Map<string, number>();
+  for (const variant of variants) {
+    perExercise.set(variant.exerciseId, (perExercise.get(variant.exerciseId) ?? 0) + 1);
+  }
+
+  const labels = new Map<string, string | null>();
+  for (const variant of variants) {
+    const ambiguous = (perExercise.get(variant.exerciseId) ?? 0) > 1;
+    labels.set(variant.key, ambiguous ? variantDescriptor(variant) : variantQualifier(variant));
+  }
+  return labels;
 }
 
 /** The column heading for this variant's values in an accessible table. */

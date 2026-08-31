@@ -64,6 +64,48 @@ export function createD1BodyWeightStore(db: D1Database): BodyWeightStore {
       return (result.results ?? []).map(toWeightRecord)
     },
 
+    async lifetimeEdges(googleSub) {
+      // Three tiny reads instead of one large one. A lifetime summary needs
+      // the newest two measurements, the oldest, and the total — reading every
+      // row to find three of them would be work for nothing, and sending every
+      // row to the browser so React could find them would be worse.
+      //
+      // None of these is affected by the chart's 30D / 90D window: the window
+      // decides what is drawn, not what "since first" means.
+      const newest = await db
+        .prepare(
+          `SELECT ${WEIGHT_COLUMNS}
+             FROM body_weight_entries
+            WHERE google_sub = ?
+            ORDER BY local_date DESC
+            LIMIT 2`,
+        )
+        .bind(googleSub)
+        .all<WeightRow>()
+
+      const oldest = await db
+        .prepare(
+          `SELECT ${WEIGHT_COLUMNS}
+             FROM body_weight_entries
+            WHERE google_sub = ?
+            ORDER BY local_date ASC
+            LIMIT 1`,
+        )
+        .bind(googleSub)
+        .first<WeightRow>()
+
+      const total = await db
+        .prepare(`SELECT COUNT(*) AS total FROM body_weight_entries WHERE google_sub = ?`)
+        .bind(googleSub)
+        .first<{ total: number }>()
+
+      return {
+        newest: (newest.results ?? []).map(toWeightRecord),
+        oldest: oldest ? toWeightRecord(oldest) : null,
+        count: total?.total ?? 0,
+      }
+    },
+
     async save({ googleSub, localDate, weightTenths, now }) {
       // ONE account × ONE local date = ONE entry. The conflict target is the
       // primary key, so saving the same date again updates that row in a
@@ -111,6 +153,7 @@ type SetRow = {
   actual_result: number
   workout_date: string
   session_id: string
+  started_at: number
 }
 
 export function createD1ProgressHistoryStore(db: D1Database): ProgressHistoryStore {
@@ -140,7 +183,11 @@ export function createD1ProgressHistoryStore(db: D1Database): ProgressHistorySto
                   s.actual_load_unit,
                   s.actual_result,
                   s.workout_date,
-                  s.session_id
+                  s.session_id,
+                  -- The occurrence's own start time. Two sessions on one local
+                  -- date are separate workouts, and this is the only fact that
+                  -- says which of them came first.
+                  o.started_at
              FROM workout_sets s
              JOIN workout_occurrences o
                ON o.google_sub = s.google_sub
@@ -171,6 +218,7 @@ export function createD1ProgressHistoryStore(db: D1Database): ProgressHistorySto
           result: row.actual_result,
           workoutDate: row.workout_date,
           sessionId: row.session_id,
+          startedAt: row.started_at,
         }),
       )
     },

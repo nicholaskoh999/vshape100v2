@@ -4,7 +4,7 @@ import {
 } from '../../shared/localDate'
 import {
   RANGE_DAYS,
-  summariseBodyWeight,
+  summariseEdges,
   type BodyWeightPoint,
   type BodyWeightRange,
   type BodyWeightSummary,
@@ -30,6 +30,18 @@ export type BodyWeightRecord = {
 export type BodyWeightStore = {
   /** Every measurement for this account, oldest first. */
   listAll(googleSub: string): Promise<BodyWeightRecord[]>
+  /**
+   * The ends of the whole history: newest two, oldest one, and the total.
+   *
+   * This is what a LIFETIME summary needs, and all it needs. Reading every row
+   * to find three of them would be work for nothing, and shipping every row to
+   * the browser so React could find them would be worse.
+   */
+  lifetimeEdges(googleSub: string): Promise<{
+    newest: BodyWeightRecord[]
+    oldest: BodyWeightRecord | null
+    count: number
+  }>
   /** Measurements within an inclusive local-date range, oldest first. */
   listRange(googleSub: string, from: string, to: string): Promise<BodyWeightRecord[]>
   /**
@@ -65,12 +77,23 @@ export function rangeWindow(
   return from === null ? null : { from, to: today }
 }
 
+const toPoint = (record: BodyWeightRecord): BodyWeightPoint => ({
+  date: record.localDate,
+  tenths: record.weightTenths,
+})
+
 /**
- * Read the measurements a range covers.
+ * Read the measurements a range covers, plus the LIFETIME summary.
  *
- * A bounded range is read as a range, not as "the newest N": anything that
- * reasons about a window needs every measurement inside it, and a page could
- * silently omit the oldest one and change the reported change-since-first.
+ * These are two different questions and they are answered separately on
+ * purpose. The window decides what is DRAWN; it does not decide what "since
+ * first" means. Deriving the summary from the window would silently redefine
+ * the words — inside 30D, "since first" would quietly become "since the first
+ * measurement in the last month", and the number would move every time
+ * somebody changed the window.
+ *
+ * A bounded range is read as a range, not as "the newest N": a window needs
+ * every measurement inside it, and a page could omit the oldest one.
  */
 export async function readBodyWeight(
   store: BodyWeightStore,
@@ -88,12 +111,16 @@ export async function readBodyWeight(
   // Only real measurements become points. A date with no measurement is
   // absent — never zero, never carried forward from the day before, never
   // interpolated between two neighbours.
-  const points: BodyWeightPoint[] = records.map((record) => ({
-    date: record.localDate,
-    tenths: record.weightTenths,
-  }))
+  const points: BodyWeightPoint[] = records.map(toPoint)
 
-  // The summary describes exactly the points being shown, so "change since
-  // first" inside 30D means since the first measurement in those 30 days.
-  return { points, summary: summariseBodyWeight(points) }
+  const edges = await store.lifetimeEdges(googleSub)
+  // `newest` is newest-first, so [0] is the latest and [1] the one before it.
+  const summary = summariseEdges({
+    latest: edges.newest[0] ? toPoint(edges.newest[0]) : null,
+    previous: edges.newest[1] ? toPoint(edges.newest[1]) : null,
+    first: edges.oldest ? toPoint(edges.oldest) : null,
+    count: edges.count,
+  })
+
+  return { points, summary }
 }

@@ -47,22 +47,32 @@ async function startSession(
   date: string,
   sessionId: string,
   exercises: ExerciseSpec[],
+  startedAt?: number,
 ) {
-  await startWorkout(createD1WorkoutStore(db), googleSub, date, sessionId, {
-    day: 'Monday',
-    focus: 'Back Width + Biceps',
-    intensity: 'HARD',
-    exercises: exercises.map((exercise) => ({
-      exerciseId: exercise.exerciseId ?? 'lat-pulldown',
-      name: exercise.name ?? 'Lat Pulldown',
-      prescription: '4 x 10-15',
-      equipment: null,
-      resultKind: exercise.resultKind ?? 'reps',
-      loadMode: exercise.loadMode ?? 'kg',
-      perSide: exercise.perSide ?? false,
-      setCount: exercise.setCount ?? 4,
-    })),
-  })
+  await startWorkout(
+    createD1WorkoutStore(db),
+    googleSub,
+    date,
+    sessionId,
+    {
+      day: 'Monday',
+      focus: 'Back Width + Biceps',
+      intensity: 'HARD',
+      exercises: exercises.map((exercise) => ({
+        exerciseId: exercise.exerciseId ?? 'lat-pulldown',
+        name: exercise.name ?? 'Lat Pulldown',
+        prescription: '4 x 10-15',
+        equipment: null,
+        resultKind: exercise.resultKind ?? 'reps',
+        loadMode: exercise.loadMode ?? 'kg',
+        perSide: exercise.perSide ?? false,
+        setCount: exercise.setCount ?? 4,
+      })),
+    },
+    // An explicit start time, so a test about same-date recency does not
+    // depend on two calls landing in different milliseconds.
+    startedAt ?? Date.parse(`${date}T09:00:00Z`),
+  )
 }
 
 /** Resolve one set of a started workout. */
@@ -490,6 +500,208 @@ describe('5. one point per workout, through the real query', () => {
 /* ------------------------------------------------------------------ */
 /* 6. Nothing invented                                                 */
 /* ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ */
+/* 5b. A loaded lift logged without its weight                         */
+/* ------------------------------------------------------------------ */
+
+describe('5b. a loaded set with no recorded load', () => {
+  /** Complete a set of a kg exercise WITHOUT entering the weight. */
+  async function completeWithoutLoad(
+    db: D1Database,
+    date: string,
+    order: number,
+    index: number,
+    result: number,
+  ) {
+    await resolveSet(db, 'sub-a', date, 'monday', order, index, {
+      action: 'complete',
+      result,
+      load: null,
+    })
+  }
+
+  it('does not become a personal best', async () => {
+    const { db } = createFakeD1()
+    const token = await seedToken(db, 'sub-a', 'a@example.com')
+
+    await startSession(db, 'sub-a', '2026-08-03', 'monday', [{}])
+    await resolveSet(db, 'sub-a', '2026-08-03', 'monday', 0, 0, {
+      action: 'complete',
+      result: 8,
+      load: { value: 50, unit: 'kg' },
+    })
+    // Thirty reps, no weight written down.
+    await completeWithoutLoad(db, '2026-08-03', 0, 1, 30)
+
+    const { body } = await performance(db, token)
+
+    // 30 reps at an unknown weight is not a 30 kg best, and not a best at all.
+    expect(body.variants[0].personalBest).toMatchObject({ loadValue: 50, result: 8 })
+  })
+
+  it('is chosen against, when an occurrence holds both kinds', async () => {
+    const { db } = createFakeD1()
+    const token = await seedToken(db, 'sub-a', 'a@example.com')
+
+    await startSession(db, 'sub-a', '2026-08-03', 'monday', [{}])
+    await completeWithoutLoad(db, '2026-08-03', 0, 0, 40)
+    await resolveSet(db, 'sub-a', '2026-08-03', 'monday', 0, 1, {
+      action: 'complete',
+      result: 6,
+      load: { value: 45, unit: 'kg' },
+    })
+
+    const { body } = await performance(db, token)
+
+    expect(body.variants[0].points).toHaveLength(1)
+    expect(body.variants[0].points[0]).toMatchObject({ loadValue: 45, result: 6 })
+  })
+
+  it('contributes no point when a whole occurrence recorded no load', async () => {
+    const { db } = createFakeD1()
+    const token = await seedToken(db, 'sub-a', 'a@example.com')
+
+    await startSession(db, 'sub-a', '2026-08-03', 'monday', [{}])
+    await resolveSet(db, 'sub-a', '2026-08-03', 'monday', 0, 0, {
+      action: 'complete',
+      result: 8,
+      load: { value: 50, unit: 'kg' },
+    })
+
+    // A second workout where only reps were logged.
+    await startSession(db, 'sub-a', '2026-08-10', 'monday', [{}])
+    await completeWithoutLoad(db, '2026-08-10', 0, 0, 25)
+
+    const { body } = await performance(db, token)
+
+    // One point, from the workout that has a load. Every plotted point on a
+    // loaded chart carries a real load.
+    expect(body.variants[0].points).toHaveLength(1)
+    expect(body.variants[0].points[0].date).toBe('2026-08-03')
+    for (const point of body.variants[0].points) {
+      expect(point.loadValue).not.toBeNull()
+    }
+  })
+
+  it('publishes no loaded variant when nothing in it recorded a load', async () => {
+    const { db } = createFakeD1()
+    const token = await seedToken(db, 'sub-a', 'a@example.com')
+
+    await startSession(db, 'sub-a', '2026-08-03', 'monday', [{}])
+    await completeWithoutLoad(db, '2026-08-03', 0, 0, 12)
+    await startSession(db, 'sub-a', '2026-08-10', 'monday', [{}])
+    await completeWithoutLoad(db, '2026-08-10', 0, 0, 15)
+
+    const { body } = await performance(db, token)
+
+    // Real history, and no load fact anywhere in it. There is nothing to be
+    // best at, so the variant does not appear - rather than appearing with rep
+    // counts standing in for kilograms.
+    expect(body.complete).toBe(true)
+    expect(body.variants).toEqual([])
+  })
+
+  it('leaves an UNLOADED variant untouched by the same rule', async () => {
+    const { db } = createFakeD1()
+    const token = await seedToken(db, 'sub-a', 'a@example.com')
+
+    await startSession(db, 'sub-a', '2026-08-03', 'monday', [
+      { exerciseId: 'push-up', name: 'Push-Up', loadMode: 'none' },
+    ])
+    await resolveSet(db, 'sub-a', '2026-08-03', 'monday', 0, 0, {
+      action: 'complete',
+      result: 22,
+      load: null,
+    })
+
+    const { body } = await performance(db, token)
+
+    // A bodyweight exercise has no load by definition, and ranks on reps.
+    expect(body.variants[0].personalBest).toMatchObject({ loadValue: null, result: 22 })
+  })
+
+  it('leaves a TIMED variant untouched by the same rule', async () => {
+    const { db } = createFakeD1()
+    const token = await seedToken(db, 'sub-a', 'a@example.com')
+
+    await startSession(db, 'sub-a', '2026-08-03', 'monday', [
+      { exerciseId: 'plank', name: 'Plank', resultKind: 'seconds', loadMode: 'none' },
+    ])
+    await resolveSet(db, 'sub-a', '2026-08-03', 'monday', 0, 0, {
+      action: 'complete',
+      result: 75,
+      load: null,
+    })
+
+    const { body } = await performance(db, token)
+    expect(body.variants[0].personalBest).toMatchObject({ result: 75 })
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* 5c. Same-date recency                                               */
+/* ------------------------------------------------------------------ */
+
+describe('5c. two workouts on one date', () => {
+  it('sorts the variant performed later in the day first', async () => {
+    const { db } = createFakeD1()
+    const token = await seedToken(db, 'sub-a', 'a@example.com')
+
+    // Alphabetically AAA would win; by real recency the evening one does.
+    await startSession(
+      db,
+      'sub-a',
+      '2026-08-03',
+      'monday',
+      [{ exerciseId: 'aaa-lift', name: 'AAA Lift' }],
+      Date.parse('2026-08-03T07:00:00Z'),
+    )
+    await resolveSet(db, 'sub-a', '2026-08-03', 'monday', 0, 0, {
+      action: 'complete',
+      result: 10,
+      load: { value: 40, unit: 'kg' },
+    })
+
+    await startSession(
+      db,
+      'sub-a',
+      '2026-08-03',
+      'wednesday',
+      [{ exerciseId: 'zzz-lift', name: 'ZZZ Lift' }],
+      Date.parse('2026-08-03T19:00:00Z'),
+    )
+    await resolveSet(db, 'sub-a', '2026-08-03', 'wednesday', 0, 0, {
+      action: 'complete',
+      result: 10,
+      load: { value: 40, unit: 'kg' },
+    })
+
+    const { body } = await performance(db, token)
+
+    expect(body.variants.map((variant) => variant.exerciseId)).toEqual([
+      'zzz-lift',
+      'aaa-lift',
+    ])
+  })
+
+  it('never exposes the occurrence timestamps it ordered by', async () => {
+    const { db } = createFakeD1()
+    const token = await seedToken(db, 'sub-a', 'a@example.com')
+    await startSession(db, 'sub-a', '2026-08-03', 'monday', [{}])
+    await resolveSet(db, 'sub-a', '2026-08-03', 'monday', 0, 0, {
+      action: 'complete',
+      result: 10,
+      load: { value: 50, unit: 'kg' },
+    })
+
+    const { body } = await performance(db, token)
+
+    // The browser gets the ORDER, not the clock.
+    expect(JSON.stringify(body)).not.toContain('startedAt')
+    expect(JSON.stringify(body)).not.toContain('started_at')
+  })
+})
 
 describe('6. no derived scores', () => {
   it('reports no estimated 1RM, tonnage or recommendation', async () => {

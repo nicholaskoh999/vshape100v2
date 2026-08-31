@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Card } from "@/components/ui/Card";
 
 import { formatLocalDate } from "./formatDate";
-import { formatPerformance, variantQualifier } from "./formatPerformance";
+import { formatPerformance, labelVariants } from "./formatPerformance";
 import type { PerformanceState } from "./usePerformance";
 import type { PerformanceVariant } from "./progressApi";
 
@@ -27,6 +27,9 @@ export function PersonalBestCard({ state }: { state: PerformanceState }) {
   const [expanded, setExpanded] = useState(false);
   const variants = state.performance?.variants ?? [];
   const shown = expanded ? variants : variants.slice(0, INITIAL_VISIBLE);
+  // Computed across the WHOLE list, not per row: whether a qualifier is needed
+  // depends on whether the same exercise appears more than once.
+  const qualifiers = labelVariants(variants);
 
   return (
     <Card className="p-5">
@@ -88,7 +91,11 @@ export function PersonalBestCard({ state }: { state: PerformanceState }) {
           <>
             <ul className="mt-4 divide-y divide-edge border-t border-edge">
               {shown.map((variant) => (
-                <BestRow key={variant.key} variant={variant} />
+                <BestRow
+                  key={variant.key}
+                  variant={variant}
+                  qualifier={qualifiers.get(variant.key) ?? null}
+                />
               ))}
             </ul>
 
@@ -111,11 +118,15 @@ export function PersonalBestCard({ state }: { state: PerformanceState }) {
   );
 }
 
-function BestRow({ variant }: { variant: PerformanceVariant }) {
+function BestRow({
+  variant,
+  qualifier,
+}: {
+  variant: PerformanceVariant;
+  qualifier: string | null;
+}) {
   const best = variant.personalBest;
   if (!best) return null;
-
-  const qualifier = variantQualifier(variant);
 
   return (
     <li className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3">

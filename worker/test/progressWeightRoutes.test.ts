@@ -517,7 +517,9 @@ describe('5. reading', () => {
     // Every seeded measurement is years old, so a 30-day window holds none of
     // them — and reports that honestly rather than reaching further back.
     expect(body.points).toEqual([])
-    expect(body.summary).toMatchObject({ count: 0 })
+    // The SUMMARY is lifetime, so it still knows about all three. The window
+    // decides what is drawn, not what exists.
+    expect(body.summary).toMatchObject({ count: 3 })
   })
 
   it('a bounded window requires a usable timezone', async () => {
@@ -561,6 +563,124 @@ describe('5. reading', () => {
     // The client can subtract tenths exactly; subtracting the kg floats would
     // give -0.09999999999999432.
     expect(body.summary).toMatchObject({ changeFromPreviousTenths: 1 })
+  })
+
+  /*
+   * The window chooses what is DRAWN. It does not change what "since first"
+   * means. Recomputing the summary inside 30D would answer a different
+   * question — "since the first measurement in the last month" — using the
+   * same words, and the number would move every time the window changed.
+   */
+  describe('the summary is lifetime, not windowed', () => {
+    /** The example from the review, verbatim. */
+    async function seedExample(db: D1Database, token: string) {
+      await save(db, token, '2026-01-01', 85)
+      await save(db, token, '2026-08-20', 80)
+      await save(db, token, '2026-08-31', 79)
+    }
+
+    it('keeps Latest, Previous and Since First identical in every window', async () => {
+      const { db } = createFakeD1()
+      const token = await seedToken(db, 'sub-a', 'a@example.com')
+      await seedExample(db, token)
+
+      const seen: Record<string, unknown> = {}
+      for (const range of ['30d', '90d', 'all'] as const) {
+        const { body } = await call(db, {
+          token,
+          path: `/weight?range=${range}&timezone=${encodeURIComponent(ZONE)}`,
+        })
+        seen[range] = body.summary
+      }
+
+      const expected = {
+        latest: { date: '2026-08-31', weightKg: 79, tenths: 790 },
+        previous: { date: '2026-08-20', weightKg: 80, tenths: 800 },
+        first: { date: '2026-01-01', weightKg: 85, tenths: 850 },
+        changeFromPreviousTenths: -10,
+        changeFromFirstTenths: -60,
+        count: 3,
+      }
+
+      // Byte-identical across all three windows.
+      expect(seen['30d']).toEqual(expected)
+      expect(seen['90d']).toEqual(expected)
+      expect(seen.all).toEqual(expected)
+    })
+
+    it('changes only the drawn points when the window changes', async () => {
+      const { db } = createFakeD1()
+      const token = await seedToken(db, 'sub-a', 'a@example.com')
+      await seedExample(db, token)
+
+      const dates = async (range: string) => {
+        const { body } = await call(db, {
+          token,
+          path: `/weight?range=${range}&timezone=${encodeURIComponent(ZONE)}`,
+        })
+        return (body.points as unknown as { date: string }[]).map((point) => point.date)
+      }
+
+      // Today is 2026-08-31, so 30D reaches back to 2026-08-02.
+      expect(await dates('30d')).toEqual(['2026-08-20', '2026-08-31'])
+      expect(await dates('90d')).toEqual(['2026-08-20', '2026-08-31'])
+      expect(await dates('all')).toEqual(['2026-01-01', '2026-08-20', '2026-08-31'])
+    })
+
+    it('does not ship the whole history to compute it', async () => {
+      const { db } = createFakeD1()
+      const token = await seedToken(db, 'sub-a', 'a@example.com')
+      await seedExample(db, token)
+
+      const { body } = await call(db, {
+        token,
+        path: `/weight?range=30d&timezone=${encodeURIComponent(ZONE)}`,
+      })
+
+      // The January measurement is named by the summary, but it is NOT one of
+      // the points the browser was sent to draw.
+      expect((body.summary as unknown as { first: { date: string } }).first.date).toBe(
+        '2026-01-01',
+      )
+      expect(body.points).toHaveLength(2)
+    })
+
+    it('still refuses to compare a lone measurement in any window', async () => {
+      const { db } = createFakeD1()
+      const token = await seedToken(db, 'sub-a', 'a@example.com')
+      await save(db, token, '2026-08-31', 79)
+
+      for (const range of ['30d', 'all'] as const) {
+        const { body } = await call(db, {
+          token,
+          path: `/weight?range=${range}&timezone=${encodeURIComponent(ZONE)}`,
+        })
+        expect(body.summary, range).toMatchObject({
+          changeFromPreviousTenths: null,
+          changeFromFirstTenths: null,
+          count: 1,
+        })
+      }
+    })
+
+    it('a measurement outside every window still sets Since First', async () => {
+      const { db } = createFakeD1()
+      const token = await seedToken(db, 'sub-a', 'a@example.com')
+      await save(db, token, '2020-03-01', 95)
+      await save(db, token, '2026-08-31', 79)
+
+      const { body } = await call(db, {
+        token,
+        path: `/weight?range=30d&timezone=${encodeURIComponent(ZONE)}`,
+      })
+
+      // Six years and 16 kg ago, outside any window, and still the first.
+      expect(body.summary).toMatchObject({
+        changeFromFirstTenths: 790 - 950,
+        count: 2,
+      })
+      expect(body.points).toHaveLength(1)
+    })
   })
 
   it('reports a storage failure without leaking anything', async () => {

@@ -159,6 +159,20 @@ async function handleWeightDelete(
  * history and never does the ranking, so a client-side cap cannot silently
  * become the definition of "all-time".
  */
+function toPublicPerformance(point: {
+  date: string
+  sessionId: string
+  loadValue: number | null
+  result: number
+}) {
+  return {
+    date: point.date,
+    sessionId: point.sessionId,
+    loadValue: point.loadValue,
+    result: point.result,
+  }
+}
+
 async function handlePerformance(
   store: ProgressHistoryStore,
   googleSub: string,
@@ -183,8 +197,11 @@ async function handlePerformance(
       // and nothing here converts it to a total.
       loadMode: variant.loadMode,
       perSide: variant.perSide,
-      personalBest: variant.personalBest,
-      points: variant.points,
+      // `startedAt` is stripped from both: the browser needs the ORDER these
+      // came in, which the server has already applied, not the clock they
+      // happened on.
+      personalBest: variant.personalBest ? toPublicPerformance(variant.personalBest) : null,
+      points: variant.points.map(toPublicPerformance),
       lastPerformed: variant.lastPerformed,
     })),
   })

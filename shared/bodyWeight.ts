@@ -174,9 +174,22 @@ export function isBodyWeightRange(value: unknown): value is BodyWeightRange {
 }
 
 /**
- * What can honestly be said about a set of measurements.
+ * What can honestly be said about the measurements.
  *
- * Every comparison that needs two points is null when there is only one,
+ * ## This is a LIFETIME summary, never a windowed one
+ *
+ * 30D / 90D / All choose which measurements are DRAWN. They do not change what
+ * "since first" means. If someone started at 85.0 kg in January and is 79.0 kg
+ * today, "since first" is -6.0 kg whichever window the chart is showing —
+ * recomputing it inside 30D would answer a different question ("since the
+ * first measurement in the last month") using the same words, and the number
+ * would move every time the window changed.
+ *
+ * So the summary is derived from every stored measurement, independently of
+ * the chart, and the server computes it directly rather than shipping the
+ * whole history to the browser so React can find the ends of it.
+ *
+ * Every comparison that needs two measurements is null when there is only one,
  * because "no change" and "nothing to compare with" are different facts and
  * showing 0.0 for the second would be an invented claim.
  */
@@ -188,30 +201,55 @@ export type BodyWeightSummary = {
   changeFromPrevious: number | null
   /** Latest minus first, in tenths. Null with fewer than two measurements. */
   changeFromFirst: number | null
+  /** How many measurements exist in total — not how many the window shows. */
+  count: number
+}
+
+/** The measurements a lifetime summary is built from. */
+export type BodyWeightEdges = {
+  latest: BodyWeightPoint | null
+  previous: BodyWeightPoint | null
+  first: BodyWeightPoint | null
   count: number
 }
 
 /**
- * Summarise measurements. Input need not be sorted.
+ * Build the summary from the ends of the whole history.
  *
- * Nothing is interpolated and nothing is filled: the points are the
- * measurements that exist, and a gap between two dates stays a gap.
+ * The caller supplies the newest two and the oldest measurement, which is all a
+ * summary needs — reading every row to find three of them would be work for
+ * nothing.
  */
-export function summariseBodyWeight(points: readonly BodyWeightPoint[]): BodyWeightSummary {
-  const sorted = [...points].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
-  const count = sorted.length
-
-  const latest = sorted[count - 1] ?? null
-  const previous = count >= 2 ? (sorted[count - 2] ?? null) : null
-  const first = sorted[0] ?? null
+export function summariseEdges(edges: BodyWeightEdges): BodyWeightSummary {
+  const { latest, previous, first, count } = edges
 
   return {
     latest,
     previous,
     first,
-    // Both require a second point. One measurement is a fact; a trend is not.
-    changeFromPrevious: latest && previous ? latest.tenths - previous.tenths : null,
+    // Both require a second measurement. One is a fact; a change is not.
+    changeFromPrevious:
+      latest && previous && count >= 2 ? latest.tenths - previous.tenths : null,
     changeFromFirst: latest && first && count >= 2 ? latest.tenths - first.tenths : null,
     count,
   }
+}
+
+/**
+ * Summarise a list of measurements directly. Input need not be sorted.
+ *
+ * Used where the whole history is already in hand. Nothing is interpolated and
+ * nothing is filled: the points are the measurements that exist, and a gap
+ * between two dates stays a gap.
+ */
+export function summariseBodyWeight(points: readonly BodyWeightPoint[]): BodyWeightSummary {
+  const sorted = [...points].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+  const count = sorted.length
+
+  return summariseEdges({
+    latest: sorted[count - 1] ?? null,
+    previous: count >= 2 ? (sorted[count - 2] ?? null) : null,
+    first: sorted[0] ?? null,
+    count,
+  })
 }

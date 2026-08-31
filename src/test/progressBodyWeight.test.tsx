@@ -202,7 +202,44 @@ describe('3. 30D / 90D / All', () => {
 
     await user.click(screen.getByRole('button', { name: '30D' }))
     await waitFor(() => expect(card()?.textContent).toMatch(/no measurements in the last/i))
-    expect(card()?.textContent).not.toMatch(/90\.0/)
+    // Nothing is DRAWN for a window with no measurements in it...
+    expect(card()?.querySelectorAll('[data-trend-chart] circle')).toHaveLength(0)
+  })
+
+  it('still reports the lifetime latest when the window is empty', async () => {
+    server.seedWeight('2020-01-01', 900)
+    const user = await renderProgress()
+
+    await user.click(screen.getByRole('button', { name: '30D' }))
+    await waitFor(() => expect(card()?.textContent).toMatch(/no measurements in the last/i))
+
+    // ...but the summary is lifetime, so the only measurement this account has
+    // is still its latest. The window chose what to draw, not what exists.
+    expect(card()?.textContent).toMatch(/90\.0/)
+  })
+
+  it('keeps Latest and Since First identical across every window', async () => {
+    // The worked example: a January start far outside 30D and 90D.
+    server.seedWeight('2026-01-01', 850)
+    server.seedWeight('2026-08-20', 800)
+    server.seedWeight(TODAY_DATE, 790)
+    const user = await renderProgress()
+
+    async function summaryText(label: string) {
+      await user.click(screen.getByRole('button', { name: label }))
+      await waitFor(() => expect(state()).toBe('ready'))
+      const changes = [...(card()?.querySelectorAll('[data-change]') ?? [])].map((node) =>
+        node.getAttribute('data-change'),
+      )
+      return { changes, latest: /79\.0/.test(card()?.textContent ?? '') }
+    }
+
+    for (const label of ['30D', '90D', 'All']) {
+      const seen = await summaryText(label)
+      // -1.0 kg since the previous, -6.0 kg since January, in every window.
+      expect(seen.changes, label).toEqual(['-10', '-60'])
+      expect(seen.latest, label).toBe(true)
+    }
   })
 })
 

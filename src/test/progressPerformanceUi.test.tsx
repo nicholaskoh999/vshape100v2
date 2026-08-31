@@ -270,9 +270,152 @@ describe('2. exercise performance', () => {
       .getAllByRole('option')
       .map((option) => option.textContent)
 
-    // Two choices, and the one that is per dumbbell says so.
+    // Two choices, and neither reads the same as the other.
     expect(labels).toHaveLength(2)
-    expect(labels.some((label) => /per dumbbell/i.test(label ?? ''))).toBe(true)
+    expect(new Set(labels).size).toBe(2)
+    expect(labels).toEqual([
+      'DB Press (kg · reps)',
+      'DB Press (kg each · reps)',
+    ])
+  })
+
+  /*
+   * The data already separates variants by exerciseId + resultKind + loadMode
+   * + perSide. What must also be true is that a PERSON can tell them apart: a
+   * kg variant and an unloaded variant of one exercise have nothing
+   * individually notable about either, and would otherwise render as two
+   * identical choices meaning different things.
+   */
+  it('gives every variant of one exercise a distinct accessible name', async () => {
+    seed([
+      variant({
+        key: 'x|reps|kg|both',
+        exerciseId: 'exercise-x',
+        exerciseName: 'Exercise X',
+        loadMode: 'kg',
+        points: [{ date: '2026-08-24', loadValue: 50, result: 8 }],
+      }),
+      variant({
+        key: 'x|reps|none|both',
+        exerciseId: 'exercise-x',
+        exerciseName: 'Exercise X',
+        loadMode: 'none',
+        points: [{ date: '2026-08-20', result: 20 }],
+      }),
+    ])
+    await renderProgress()
+
+    const options = within(screen.getByLabelText(/^exercise$/i)).getAllByRole('option')
+    const names = options.map((option) => option.textContent ?? '')
+
+    expect(names).toHaveLength(2)
+    // The exact wording is a UI choice; that the two differ is not.
+    expect(new Set(names).size).toBe(2)
+    for (const name of names) expect(name).toMatch(/Exercise X \(/)
+    expect(names.some((name) => /no load/i.test(name))).toBe(true)
+    expect(names.some((name) => /\bkg\b/i.test(name))).toBe(true)
+  })
+
+  it('distinguishes per-side from both-sides for one exercise', async () => {
+    seed([
+      variant({
+        key: 'row|side',
+        exerciseId: 'row',
+        exerciseName: 'Row',
+        perSide: true,
+        points: [{ date: '2026-08-24', loadValue: 24, result: 10 }],
+      }),
+      variant({
+        key: 'row|both',
+        exerciseId: 'row',
+        exerciseName: 'Row',
+        perSide: false,
+        points: [{ date: '2026-08-20', loadValue: 24, result: 10 }],
+      }),
+    ])
+    await renderProgress()
+
+    const names = within(screen.getByLabelText(/^exercise$/i))
+      .getAllByRole('option')
+      .map((option) => option.textContent ?? '')
+
+    expect(new Set(names).size).toBe(2)
+    expect(names.some((name) => /per side/i.test(name))).toBe(true)
+  })
+
+  it('distinguishes reps from timed for one exercise', async () => {
+    seed([
+      variant({
+        key: 'hold|reps',
+        exerciseId: 'hold',
+        exerciseName: 'Hold',
+        loadMode: 'none',
+        resultKind: 'reps',
+        points: [{ date: '2026-08-24', result: 12 }],
+      }),
+      variant({
+        key: 'hold|seconds',
+        exerciseId: 'hold',
+        exerciseName: 'Hold',
+        loadMode: 'none',
+        resultKind: 'seconds',
+        points: [{ date: '2026-08-20', result: 60 }],
+      }),
+    ])
+    await renderProgress()
+
+    const names = within(screen.getByLabelText(/^exercise$/i))
+      .getAllByRole('option')
+      .map((option) => option.textContent ?? '')
+
+    expect(new Set(names).size).toBe(2)
+    expect(names.some((name) => /timed/i.test(name))).toBe(true)
+  })
+
+  it('leaves a single-variant exercise reading as just its name', async () => {
+    seed([
+      variant({
+        key: 'solo',
+        exerciseId: 'solo',
+        exerciseName: 'Lat Pulldown',
+        points: [{ date: '2026-08-24', loadValue: 50, result: 8 }],
+      }),
+    ])
+    await renderProgress()
+
+    // Nothing to disambiguate, so nothing is added.
+    expect(
+      within(screen.getByLabelText(/^exercise$/i)).getByRole('option').textContent,
+    ).toBe('Lat Pulldown')
+  })
+
+  it('distinguishes the rows in Personal Best too', async () => {
+    seed([
+      variant({
+        key: 'x|reps|kg|both',
+        exerciseId: 'exercise-x',
+        exerciseName: 'Exercise X',
+        loadMode: 'kg',
+        points: [{ date: '2026-08-24', loadValue: 50, result: 8 }],
+      }),
+      variant({
+        key: 'x|reps|none|both',
+        exerciseId: 'exercise-x',
+        exerciseName: 'Exercise X',
+        loadMode: 'none',
+        points: [{ date: '2026-08-20', result: 20 }],
+      }),
+    ])
+    await renderProgress()
+
+    const rows = [...((pbCard() as HTMLElement).querySelectorAll('li') ?? [])].map(
+      (row) => row.textContent ?? '',
+    )
+
+    expect(rows).toHaveLength(2)
+    // Both name the exercise, and each says which measurement it is.
+    expect(rows.some((row) => /no load/i.test(row))).toBe(true)
+    expect(rows.some((row) => /kg · reps/i.test(row))).toBe(true)
   })
 
   it('shows one real result and no trend line for a single workout', async () => {
@@ -433,6 +576,77 @@ describe('2. exercise performance', () => {
     expect((perfCard() as HTMLElement).querySelectorAll('[data-trend-chart] circle')).toHaveLength(
       2,
     )
+  })
+
+  /*
+   * A loaded chart plots LOAD. A point with no recorded load has nothing to
+   * put on that axis, and substituting its rep count would place kilograms and
+   * repetitions on one line — a 30-rep set at no weight would tower over a
+   * 50 kg one. The server already excludes these; the client refuses to draw
+   * one if it ever arrived.
+   */
+  it('never plots a rep count on a loaded chart axis', async () => {
+    server.setPerformance({
+      complete: true,
+      variants: [
+        {
+          key: 'a',
+          exerciseId: 'a',
+          exerciseName: 'Lat Pulldown',
+          resultKind: 'reps',
+          loadMode: 'kg',
+          perSide: false,
+          personalBest: { date: '2026-08-24', sessionId: 'monday', loadValue: 50, result: 8 },
+          points: [
+            { date: '2026-08-03', sessionId: 'monday', loadValue: 45, result: 10 },
+            // No load, and a rep count far larger than any of the loads.
+            { date: '2026-08-10', sessionId: 'monday', loadValue: null, result: 30 },
+            { date: '2026-08-24', sessionId: 'monday', loadValue: 50, result: 8 },
+          ],
+          lastPerformed: '2026-08-24',
+        },
+      ],
+    })
+    const user = await renderProgress()
+
+    const card = perfCard() as HTMLElement
+    const circles = [...card.querySelectorAll('[data-trend-chart] circle')]
+
+    // Two dots, not three: the loadless workout is not a point on this chart.
+    expect(circles).toHaveLength(2)
+
+    // And the axis still spans 45 to 50, so nothing was scaled by a 30 that
+    // meant repetitions.
+    await user.click(within(card).getByText(/show the 2 recorded values/i))
+    const table = within(card).getByRole('table')
+    expect(within(table).getByText('45 kg × 10 reps')).toBeInTheDocument()
+    expect(within(table).getByText('50 kg × 8 reps')).toBeInTheDocument()
+    expect(within(table).queryByText(/30 reps/)).toBeNull()
+  })
+
+  it('drops a loaded personal best that carries no load', async () => {
+    server.setPerformance({
+      complete: true,
+      variants: [
+        {
+          key: 'a',
+          exerciseId: 'a',
+          exerciseName: 'Lat Pulldown',
+          resultKind: 'reps',
+          loadMode: 'kg',
+          perSide: false,
+          // A best with no load is not a best.
+          personalBest: { date: '2026-08-10', sessionId: 'monday', loadValue: null, result: 30 },
+          points: [{ date: '2026-08-03', sessionId: 'monday', loadValue: 45, result: 10 }],
+          lastPerformed: '2026-08-03',
+        },
+      ],
+    })
+    await renderProgress()
+
+    const card = pbCard() as HTMLElement
+    // The row renders nothing rather than "30 reps" where a load belongs.
+    expect(card.textContent).not.toMatch(/30 reps/)
   })
 
   it('shows no trend when the history could not be fully read', async () => {

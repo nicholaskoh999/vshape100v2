@@ -218,12 +218,22 @@ function toVariant(raw: unknown): PerformanceVariant | null {
   if (typeof row.resultKind !== 'string' || !RESULT_KINDS.includes(row.resultKind)) return null
   if (typeof row.loadMode !== 'string' || !LOAD_MODES.includes(row.loadMode)) return null
 
+  const loadedReps = row.resultKind === 'reps' && row.loadMode !== 'none'
+
   const points = Array.isArray(row.points)
     ? row.points
         .map(toPerformancePoint)
         .filter((point): point is PerformancePoint => point !== null)
+        // A loaded-reps variant is ranked and plotted by LOAD. A point with no
+        // recorded load has nothing to place on that axis, and plotting its rep
+        // count instead would put kilograms and repetitions on one line. The
+        // server already excludes these; this refuses to draw one if it ever
+        // arrived.
+        .filter((point) => !loadedReps || point.loadValue !== null)
     : []
   if (points.length === 0) return null
+
+  const personalBest = toPerformancePoint(row.personalBest)
 
   return {
     key: row.key,
@@ -232,7 +242,10 @@ function toVariant(raw: unknown): PerformanceVariant | null {
     resultKind: row.resultKind as WorkoutResultKind,
     loadMode: row.loadMode as WorkoutLoadMode,
     perSide: row.perSide === true,
-    personalBest: toPerformancePoint(row.personalBest),
+    // Same rule for the best: a loaded best without a load is not a best.
+    personalBest: personalBest && (!loadedReps || personalBest.loadValue !== null)
+      ? personalBest
+      : null,
     points,
     lastPerformed:
       typeof row.lastPerformed === 'string'

@@ -533,20 +533,34 @@ export function createFakeD1() {
 
       if (sql.includes('SELECT')) {
         const [google_sub] = args as [string]
+        const mine = [...bodyWeights.values()].filter((row) => row.google_sub === google_sub)
+
+        // The lifetime summary reads the ends of the history, never a window.
+        if (sql.includes('COUNT(*) AS total')) {
+          return { total: mine.length }
+        }
+
+        const ascending = [...mine].sort((a, b) => a.local_date.localeCompare(b.local_date))
+        if (sql.includes('ORDER BY local_date DESC')) {
+          return [...ascending].reverse().slice(0, 2)
+        }
+        if (sql.includes('LIMIT 1')) {
+          // Read through `.first()`, so this hands back one row or null —
+          // never a one-element array.
+          return ascending[0] ?? null
+        }
+
         // The ranged read binds (google_sub, from, to); listAll binds only the
         // account. Dates are zero-padded text, so comparison is exact.
         const ranged = sql.includes('local_date >= ?')
         const from = ranged ? (args[1] as string) : null
         const to = ranged ? (args[2] as string) : null
 
-        return [...bodyWeights.values()]
-          .filter((row) => row.google_sub === google_sub)
-          .filter((row) =>
-            from === null || to === null
-              ? true
-              : row.local_date >= from && row.local_date <= to,
-          )
-          .sort((a, b) => a.local_date.localeCompare(b.local_date))
+        return ascending.filter((row) =>
+          from === null || to === null
+            ? true
+            : row.local_date >= from && row.local_date <= to,
+        )
       }
 
       throw new Error(`fakeD1 received an unexpected statement: ${sql}`)
@@ -564,10 +578,16 @@ export function createFakeD1() {
 
       // ownedSets() IS the snapshot-token join: a set only counts under the
       // occurrence whose token it carries, so a losing Start's rows cannot
-      // appear here any more than they can in D1.
+      // appear here any more than they can in D1. The occurrence's start time
+      // travels with each set, exactly as the real JOIN carries o.started_at.
       return [...occurrences.values()]
         .filter((row) => row.google_sub === google_sub)
-        .flatMap(ownedSets)
+        .flatMap((occurrence) =>
+          ownedSets(occurrence).map((set) => ({
+            ...set,
+            started_at: occurrence.started_at,
+          })),
+        )
         .filter((set) => set.status === 'completed' && set.actual_result !== null)
         .sort((a, b) => {
           if (a.workout_date !== b.workout_date) {
@@ -589,6 +609,7 @@ export function createFakeD1() {
           actual_result: set.actual_result,
           workout_date: set.workout_date,
           session_id: set.session_id,
+          started_at: set.started_at,
         }))
     }
 

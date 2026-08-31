@@ -4,11 +4,7 @@ import { useState } from "react";
 import { Card } from "@/components/ui/Card";
 
 import { formatLocalDate } from "./formatDate";
-import {
-  formatPerformance,
-  valueHeading,
-  variantQualifier,
-} from "./formatPerformance";
+import { formatPerformance, labelVariants, valueHeading } from "./formatPerformance";
 import { TrendChart, type TrendPoint } from "./TrendChart";
 import type { PerformanceVariant } from "./progressApi";
 import type { PerformanceState } from "./usePerformance";
@@ -42,6 +38,13 @@ export function ExercisePerformanceCard({ state }: { state: PerformanceState }) 
   */
   const selected =
     variants.find((variant) => variant.key === chosenKey) ?? variants[0] ?? null;
+
+  /*
+    Whether an option needs its measurement system spelled out depends on the
+    whole list: two variants of one exercise must never read the same, even
+    when neither has anything individually "notable" about it.
+  */
+  const qualifiers = labelVariants(variants);
 
   return (
     <Card className="p-5">
@@ -115,7 +118,7 @@ export function ExercisePerformanceCard({ state }: { state: PerformanceState }) 
               >
                 {variants.map((variant) => (
                   <option key={variant.key} value={variant.key}>
-                    {optionLabel(variant)}
+                    {optionLabel(variant, qualifiers.get(variant.key) ?? null)}
                   </option>
                 ))}
               </select>
@@ -130,8 +133,7 @@ export function ExercisePerformanceCard({ state }: { state: PerformanceState }) 
 }
 
 /** Most-recent-first ordering comes from the server; this only labels it. */
-function optionLabel(variant: PerformanceVariant): string {
-  const qualifier = variantQualifier(variant);
+function optionLabel(variant: PerformanceVariant, qualifier: string | null): string {
   return qualifier ? `${variant.exerciseName} (${qualifier})` : variant.exerciseName;
 }
 
@@ -139,7 +141,7 @@ function SelectedVariant({ variant }: { variant: PerformanceVariant }) {
   const points: TrendPoint[] = variant.points.map((point) => ({
     date: point.date,
     id: point.sessionId,
-    value: sortableValue(point.loadValue, point.result, variant),
+    value: plottedValue(point.loadValue, point.result, variant),
     display: formatPerformance(point, variant),
   }));
 
@@ -204,16 +206,17 @@ function plotsLabel(variant: PerformanceVariant): string | undefined {
  * written out in the table. For unloaded and timed variants there is only one
  * axis, so the result itself is plotted.
  *
- * A loaded set with no recorded load has no load to plot and falls back to its
- * reps, which is the only fact it carries.
+ * There is deliberately NO fallback for a loaded point with no recorded load.
+ * Substituting its rep count would put kilograms and repetitions on the same
+ * axis — a 30-rep set at no weight would tower over a 50 kg one. Such points
+ * never reach here: the server excludes them and the client parser drops any
+ * that somehow arrive.
  */
-function sortableValue(
+function plottedValue(
   loadValue: number | null,
   result: number,
   variant: PerformanceVariant,
 ): number {
-  if (variant.resultKind === "reps" && variant.loadMode !== "none" && loadValue !== null) {
-    return loadValue;
-  }
+  if (variant.resultKind === "reps" && variant.loadMode !== "none") return loadValue as number;
   return result;
 }

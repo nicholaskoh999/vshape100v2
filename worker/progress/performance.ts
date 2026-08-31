@@ -57,21 +57,50 @@ export type CompletedSetRow = {
   result: number
   workoutDate: string
   sessionId: string
+  /** The occurrence's start time, for same-date recency. */
+  startedAt: number
 }
 
-/** A readable set: every persisted enum was one of the values it may be. */
+/**
+ * A readable set that can take part in a comparison.
+ *
+ * For a LOADED reps variant `loadValue` is guaranteed non-null: a completed set
+ * with no recorded load is real workout history but carries no load fact, and a
+ * load fact is exactly what that variant ranks by. Such a set never reaches
+ * this type — see `readSet`.
+ */
 export type EligibleSet = {
   exerciseId: string
   exerciseName: string
   resultKind: WorkoutResultKind
   loadMode: WorkoutLoadMode
   perSide: boolean
-  /** Recorded load, in the unit the variant names. Null when none was recorded. */
+  /** Recorded load. Null only where the variant does not rank by load. */
   loadValue: number | null
   result: number
   workoutDate: string
+  /** Local workout date plus session identify the occurrence. */
   sessionId: string
+  /** When the occurrence was started. Breaks ties within one local date. */
+  startedAt: number
 }
+
+/**
+ * What a stored row turned out to be.
+ *
+ *   eligible        it can be compared within its variant
+ *   non-comparable  real history, but it carries no fact this variant ranks by
+ *   unreadable      a persisted enum was not one of the values it may be
+ *
+ * The middle case matters. A completed loaded set with no recorded load is
+ * something a person genuinely did — they logged the reps and not the weight —
+ * so it must not fail the account's whole read. But it cannot establish a
+ * loaded best either, because there is no load to be best.
+ */
+export type ReadSetResult =
+  | { status: 'eligible'; set: EligibleSet }
+  | { status: 'non-comparable' }
+  | { status: 'unreadable' }
 
 /* ------------------------------------------------------------------ */
 /* Reading a row                                                       */
@@ -93,44 +122,54 @@ function isLoadMode(value: string): value is WorkoutLoadMode {
  * may not belong to — which is precisely how a PB gets manufactured out of a
  * measurement that meant something else.
  */
-export function readSet(row: CompletedSetRow): EligibleSet | null {
+export function readSet(row: CompletedSetRow): ReadSetResult {
+  const unreadable = { status: 'unreadable' } as const
+
   if (!row.exerciseId || !isResultKind(row.resultKind) || !isLoadMode(row.loadMode)) {
-    return null
+    return unreadable
   }
-  if (row.perSide !== 0 && row.perSide !== 1) return null
+  if (row.perSide !== 0 && row.perSide !== 1) return unreadable
   // A completed set carries a positive result; the schema enforces it, and a
   // row that somehow does not is not a performance.
-  if (!Number.isFinite(row.result) || row.result <= 0) return null
+  if (!Number.isFinite(row.result) || row.result <= 0) return unreadable
 
   let loadValue: number | null = null
 
   if (row.loadMode === 'none') {
     // Load is not applicable, so a load value here means the row and its own
     // load mode disagree and neither can be trusted.
-    if (row.loadValue !== null || row.loadUnit !== null) return null
+    if (row.loadValue !== null || row.loadUnit !== null) return unreadable
   } else if (row.loadValue === null) {
-    // A loaded set may legitimately carry no recorded load: the person logged
-    // the reps and not the weight. That is a real state, not a corrupt one, so
-    // it is readable — it simply has no load fact and cannot be ranked by load.
-    if (row.loadUnit !== null) return null
+    if (row.loadUnit !== null) return unreadable
+    // A loaded REPS variant ranks by load, and this set has none. It is real
+    // history — the reps were logged and the weight was not — but it cannot
+    // establish a best, cannot be a chart point, and must never fall back to
+    // being ranked on reps: that would put kilograms and repetitions on one
+    // axis and let a light long set outrank a heavy one.
+    if (row.resultKind === 'reps') return { status: 'non-comparable' }
+    // A timed variant ranks by seconds, so a missing load costs it nothing.
   } else {
     // A load whose unit disagrees with the variant's load mode cannot be
     // compared: 10 recorded as kg_each is twice the metal of 10 recorded as kg.
-    if (row.loadUnit !== row.loadMode) return null
-    if (!Number.isFinite(row.loadValue) || row.loadValue < 0) return null
+    if (row.loadUnit !== row.loadMode) return unreadable
+    if (!Number.isFinite(row.loadValue) || row.loadValue < 0) return unreadable
     loadValue = row.loadValue
   }
 
   return {
-    exerciseId: row.exerciseId,
-    exerciseName: row.exerciseName,
-    resultKind: row.resultKind,
-    loadMode: row.loadMode,
-    perSide: row.perSide === 1,
-    loadValue,
-    result: row.result,
-    workoutDate: row.workoutDate,
-    sessionId: row.sessionId,
+    status: 'eligible',
+    set: {
+      exerciseId: row.exerciseId,
+      exerciseName: row.exerciseName,
+      resultKind: row.resultKind,
+      loadMode: row.loadMode,
+      perSide: row.perSide === 1,
+      loadValue,
+      result: row.result,
+      workoutDate: row.workoutDate,
+      sessionId: row.sessionId,
+      startedAt: row.startedAt,
+    },
   }
 }
 
@@ -174,8 +213,9 @@ export type Performance = { loadValue: number | null; result: number }
  * is not allowed to influence the ranking, because trading seconds against
  * kilograms would be inventing a strength score.
  *
- * A set with no recorded load never outranks one that has a load: it carries
- * no load fact, so it cannot be shown to be heavier.
+ * A set with no recorded load never reaches here for a loaded variant: it is
+ * filtered out as non-comparable long before ranking, because falling back to
+ * reps would put kilograms and repetitions on one axis.
  */
 export function isBetter(
   a: Performance,
@@ -187,7 +227,8 @@ export function isBetter(
   if (loaded) {
     const aLoad = a.loadValue
     const bLoad = b.loadValue
-    if (aLoad === null && bLoad === null) return a.result > b.result
+    // Defensive, not a fallback: a null here would mean a non-comparable set
+    // slipped through, and it must not win by accident.
     if (aLoad === null) return false
     if (bLoad === null) return true
     if (aLoad !== bLoad) return aLoad > bLoad
@@ -197,14 +238,22 @@ export function isBetter(
   return a.result > b.result
 }
 
-/** Chronological order of two occurrences within one account. */
-function earlier(
-  a: { workoutDate: string; sessionId: string },
-  b: { workoutDate: string; sessionId: string },
-): boolean {
+/**
+ * Chronological order of two occurrences within one account.
+ *
+ * Two sessions on one local date are genuinely separate occurrences, and which
+ * came first is a fact the workout itself records — `started_at`. Falling back
+ * to the session slug would order Monday before Wednesday alphabetically no
+ * matter which was actually performed first.
+ */
+function earlier(a: Occurrence, b: Occurrence): boolean {
   if (a.workoutDate !== b.workoutDate) return a.workoutDate < b.workoutDate
+  if (a.startedAt !== b.startedAt) return a.startedAt < b.startedAt
+  // Same date and same instant: a stable tiebreak, so ordering is total.
   return a.sessionId < b.sessionId
 }
+
+type Occurrence = { workoutDate: string; sessionId: string; startedAt: number }
 
 /* ------------------------------------------------------------------ */
 /* Derived shapes                                                      */
@@ -216,6 +265,12 @@ export type PerformancePoint = {
   sessionId: string
   loadValue: number | null
   result: number
+  /**
+   * When that workout was started. Kept because it is the only fact that can
+   * order two sessions on one local date, and stripped before the response —
+   * the browser needs the order, not the clock.
+   */
+  startedAt: number
 }
 
 export type VariantPerformance = {
@@ -231,6 +286,8 @@ export type VariantPerformance = {
   points: PerformancePoint[]
   /** The most recent occurrence this variant was performed in. */
   lastPerformed: string
+  /** When that most recent occurrence started. Orders same-date variants. */
+  lastPerformedAt: number
 }
 
 /* ------------------------------------------------------------------ */
@@ -239,7 +296,7 @@ export type VariantPerformance = {
 
 /** The occurrence a set belongs to: local workout date plus session. */
 const occurrenceKey = (set: { workoutDate: string; sessionId: string }) =>
-  `${set.workoutDate}${set.sessionId}`
+  `${set.workoutDate}|${set.sessionId}`
 
 /**
  * Derive every comparable variant from a COMPLETE set of eligible sets.
@@ -264,17 +321,15 @@ export function derivePerformance(sets: readonly EligibleSet[]): VariantPerforma
   // The display name for a canonical exercise is taken from its most recent
   // snapshot across every variant, so a renamed exercise reads by its current
   // name without any historical row being rewritten.
-  const names = new Map<string, { name: string; date: string; sessionId: string }>()
+  const names = new Map<string, { name: string } & Occurrence>()
   for (const set of sets) {
     const held = names.get(set.exerciseId)
-    const here = { workoutDate: set.workoutDate, sessionId: set.sessionId }
-    if (!held || earlier({ workoutDate: held.date, sessionId: held.sessionId }, here)) {
-      names.set(set.exerciseId, {
-        name: set.exerciseName,
-        date: set.workoutDate,
-        sessionId: set.sessionId,
-      })
+    const here: Occurrence = {
+      workoutDate: set.workoutDate,
+      sessionId: set.sessionId,
+      startedAt: set.startedAt,
     }
+    if (!held || earlier(held, here)) names.set(set.exerciseId, { name: set.exerciseName, ...here })
   }
 
   const variants: VariantPerformance[] = []
@@ -295,14 +350,15 @@ export function derivePerformance(sets: readonly EligibleSet[]): VariantPerforma
         sessionId: set.sessionId,
         loadValue: set.loadValue,
         result: set.result,
+        startedAt: set.startedAt,
       }
       if (!held || isBetter(candidate, held, kind)) perOccurrence.set(id, candidate)
     }
 
     const points = [...perOccurrence.values()].sort((a, b) =>
       earlier(
-        { workoutDate: a.date, sessionId: a.sessionId },
-        { workoutDate: b.date, sessionId: b.sessionId },
+        { workoutDate: a.date, sessionId: a.sessionId, startedAt: a.startedAt },
+        { workoutDate: b.date, sessionId: b.sessionId, startedAt: b.startedAt },
       )
         ? -1
         : 1,
@@ -328,13 +384,20 @@ export function derivePerformance(sets: readonly EligibleSet[]): VariantPerforma
       personalBest,
       points,
       lastPerformed: points[points.length - 1].date,
+      lastPerformedAt: points[points.length - 1].startedAt,
     })
   }
 
-  // Most recently performed first; a shared date is broken by name so the
-  // order is stable rather than dependent on Map insertion.
+  // Most recently performed first. Two variants last performed on the same
+  // local date are ordered by when those workouts actually STARTED, because a
+  // morning and an evening session are genuinely one after the other and the
+  // exercise name has nothing to do with which came last.
   return variants.sort((a, b) => {
     if (a.lastPerformed !== b.lastPerformed) return a.lastPerformed < b.lastPerformed ? 1 : -1
+    if (a.lastPerformedAt !== b.lastPerformedAt) {
+      return a.lastPerformedAt < b.lastPerformedAt ? 1 : -1
+    }
+    // Same date and same instant: a stable tiebreak, so the order is total.
     if (a.exerciseName !== b.exerciseName) return a.exerciseName < b.exerciseName ? -1 : 1
     return a.key < b.key ? -1 : 1
   })

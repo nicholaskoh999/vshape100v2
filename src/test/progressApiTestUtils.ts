@@ -53,7 +53,15 @@ export function createProgressServer(): ProgressServer {
       .sort()
 
     const points = dates.map(point)
-    const summary = summariseBodyWeight(points.map((p) => ({ date: p.date, tenths: p.tenths })))
+
+    // The summary is LIFETIME, exactly as the Worker computes it: the window
+    // decides which points are drawn and nothing else. Summarising `points`
+    // here would let a UI test pass against a contract the server does not
+    // have.
+    const everyDate = [...weights.keys()].sort()
+    const summary = summariseBodyWeight(
+      everyDate.map((date) => ({ date, tenths: weights.get(date) as number })),
+    )
 
     return {
       range,
