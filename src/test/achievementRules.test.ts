@@ -17,9 +17,15 @@ import {
   outcomeFor,
   type StreakSources,
 } from '@/features/achievements/model/streak'
-import { evaluationWindow } from '@/features/achievements/useAchievements'
+import {
+  evaluationChunks,
+  evaluationWindow,
+  MAX_CHUNK_DAYS,
+  rangeLength,
+} from '@/features/achievements/model/window'
 import { foundationStatus } from '@/features/progress/foundation'
 import type { HolidayRecord } from '@shared/holiday'
+import { addLocalDays, daysBetween } from '@shared/localDate'
 import type { WorkoutHistoryEntry } from '@shared/workoutLog'
 
 /**
@@ -355,10 +361,32 @@ describe('5. qualifying session count', () => {
     expect(countQualifyingSessions([finished('2026-09-07', 'friday')])).toBe(0)
   })
 
-  it('counts a session finished on a Holiday, which is training that happened', () => {
-    // Holiday removes the day's pressure; it does not erase the work done.
-    // The streak stays unaffected, which the streak tests above cover.
-    expect(countQualifyingSessions([finished('2026-09-07', 'monday')])).toBe(1)
+  it('counts a session finished on a real Holiday without moving any streak', () => {
+    // The whole rule in one evaluation: an ACTUAL Holiday record covering the
+    // date, and a genuinely finished matching weekday workout on it.
+    const entries = [finished('2026-09-07', 'monday')]
+    const holidays = [holiday('h1', '2026-09-07')]
+    const result = evaluateStreaks(
+      sources({ entries, holidays, today: '2026-09-07', from: '2026-09-07' }),
+    )
+
+    expect(result.status).toBe('ready')
+    if (result.status !== 'ready') return
+
+    // The work happened, so it counts as a session finished…
+    expect(result.facts.qualifyingSessions).toBe(1)
+    // …and First session can unlock from it.
+    const list = buildMilestones({ streak: result, foundation: foundationStatus('2026-09-07') })
+    expect(milestone(list, 'first-session').state.status).toBe('unlocked')
+
+    // …but the date stays EXEMPT, so neither streak moves.
+    expect(result.facts.current).toBe(0)
+    expect(result.facts.best).toBe(0)
+    expect(outcomeFor('2026-09-07', {
+      today: '2026-09-07',
+      holidays,
+      qualifying: buildQualifyingIndex(entries),
+    })).toBe('neutral')
   })
 })
 
@@ -433,12 +461,60 @@ describe('7. evaluation window', () => {
     expect(evaluationWindow('2026-08-01')).toEqual({ from: '2026-08-01', to: '2026-08-01' })
   })
 
-  it('clips a window longer than a read may span', () => {
-    // Far past Day 100. The window shortens rather than asking for a span the
-    // bounded reads would refuse.
+  it('still reaches back to Day 1 years later, never a rolling year', () => {
+    // The correction. A rolling window would quietly rewrite history: a run
+    // reached in 2026 would stop counting once it aged out, and an
+    // achievement already earned would lock itself again.
     const result = evaluationWindow('2030-01-01')
-    expect(result.to).toBe('2030-01-01')
-    expect(result.from > '2026-08-31').toBe(true)
+    expect(result).toEqual({ from: '2026-08-31', to: '2030-01-01' })
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* 7b. Reading that period in bounded chunks                           */
+/* ------------------------------------------------------------------ */
+
+describe('7b. evaluation chunks', () => {
+  it('asks for one chunk when the period fits in one request', () => {
+    expect(evaluationChunks({ from: '2026-08-31', to: '2026-09-11' })).toEqual([
+      { from: '2026-08-31', to: '2026-09-11' },
+    ])
+  })
+
+  it('keeps every chunk inside the per-request bound', () => {
+    const chunks = evaluationChunks(evaluationWindow('2030-01-01'))
+    expect(chunks.length).toBeGreaterThan(1)
+    for (const chunk of chunks) {
+      expect(rangeLength(chunk), `${chunk.from}..${chunk.to}`).toBeLessThanOrEqual(
+        MAX_CHUNK_DAYS,
+      )
+    }
+  })
+
+  it('tiles the whole period exactly — no gap and no overlap', () => {
+    const window = evaluationWindow('2030-01-01')
+    const chunks = evaluationChunks(window)
+
+    expect(chunks[0].from).toBe(window.from)
+    expect(chunks[chunks.length - 1].to).toBe(window.to)
+
+    for (let i = 1; i < chunks.length; i += 1) {
+      // Each chunk begins the day AFTER the previous one ends: adjacent, so
+      // no date is missed, and non-overlapping, so none is counted twice.
+      expect(addLocalDays(chunks[i - 1].to, 1)).toBe(chunks[i].from)
+    }
+  })
+
+  it('covers every date in the period', () => {
+    const window = evaluationWindow('2028-03-17')
+    const chunks = evaluationChunks(window)
+    const covered = chunks.reduce((sum, chunk) => sum + rangeLength(chunk), 0)
+    expect(covered).toBe(rangeLength(window))
+  })
+
+  it('returns nothing for a period that is not usable', () => {
+    expect(evaluationChunks({ from: '2026-09-30', to: '2026-09-01' })).toEqual([])
+    expect(evaluationChunks({ from: 'nonsense', to: '2026-09-01' })).toEqual([])
   })
 })
 
@@ -573,5 +649,161 @@ describe('8. milestones', () => {
       'day-50',
       'day-100',
     ])
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* 9. History does not expire                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Round 12 correction 1 — an achievement must not un-happen.
+ *
+ * The candidate evaluated only the most recent 366 days, which turned
+ * "historical Foundation truth" into a silent rolling year: a run reached
+ * early in Foundation would stop counting once it aged out, and Consistency,
+ * already earned, would lock itself again purely because time passed.
+ *
+ * Every test below places the achievement-producing history FAR outside that
+ * old rolling window, so any return to clipping fails here.
+ */
+
+/** Ten consecutive training days early in Foundation: 7–18 September 2026. */
+const OLD_RUN: [string, string][] = [
+  ['2026-09-07', 'monday'],
+  ['2026-09-08', 'tuesday'],
+  ['2026-09-09', 'wednesday'],
+  ['2026-09-10', 'thursday'],
+  ['2026-09-11', 'friday'],
+  // 12th and 13th are the weekend: neutral, and they bridge the run.
+  ['2026-09-14', 'monday'],
+  ['2026-09-15', 'tuesday'],
+  ['2026-09-16', 'wednesday'],
+  ['2026-09-17', 'thursday'],
+  ['2026-09-18', 'friday'],
+]
+
+/** Long after the old run — well past any rolling-year cutoff. */
+const MUCH_LATER = '2028-03-17'
+
+function oldRunEntries() {
+  return OLD_RUN.map(([date, session]) => finished(date, session))
+}
+
+describe('9. an old run still counts, years later', () => {
+  it('is genuinely older than the rolling window that used to clip it', () => {
+    // Guards the premise of this whole section.
+    const age = daysBetween('2026-09-18', MUCH_LATER)
+    expect(age).not.toBeNull()
+    expect(age as number).toBeGreaterThan(MAX_CHUNK_DAYS)
+  })
+
+  it('keeps a ten-day run as the best streak and leaves Consistency unlocked', () => {
+    const streak = evaluateStreaks(
+      sources({ entries: oldRunEntries(), today: MUCH_LATER, from: evaluationWindow(MUCH_LATER).from }),
+    )
+    expect(streak.status).toBe('ready')
+    if (streak.status !== 'ready') return
+
+    expect(streak.facts.best).toBeGreaterThanOrEqual(10)
+
+    const list = buildMilestones({ streak, foundation: foundationStatus(MUCH_LATER) })
+    expect(milestone(list, 'consistency').state.status).toBe('unlocked')
+    expect(milestone(list, 'full-week').state.status).toBe('unlocked')
+  })
+
+  it('does not let a weaker recent streak replace the historical best', () => {
+    const entries = [
+      ...oldRunEntries(),
+      // Only two training days at the current end of the timeline.
+      finished('2028-03-16', 'thursday'),
+      finished('2028-03-17', 'friday'),
+    ]
+    const streak = evaluateStreaks(sources({ entries, today: MUCH_LATER, from: evaluationWindow(MUCH_LATER).from }))
+    if (streak.status !== 'ready') throw new Error('expected ready')
+
+    expect(streak.facts.best).toBe(10)
+    // The current streak is its own fact and does not overwrite the best.
+    expect(streak.facts.current).toBe(2)
+  })
+
+  it('still represents an old first session', () => {
+    const streak = evaluateStreaks(
+      sources({ entries: oldRunEntries(), today: MUCH_LATER, from: evaluationWindow(MUCH_LATER).from }),
+    )
+    if (streak.status !== 'ready') throw new Error('expected ready')
+
+    expect(streak.facts.qualifyingSessions).toBe(10)
+
+    const list = buildMilestones({ streak, foundation: foundationStatus(MUCH_LATER) })
+    expect(milestone(list, 'first-session').state.status).toBe('unlocked')
+  })
+
+  it('does not relock Full week or Consistency as the history ages', () => {
+    const entries = oldRunEntries()
+    const unlockedAt = (today: string) => {
+      const streak = evaluateStreaks(sources({ entries, today, from: evaluationWindow(today).from }))
+      const list = buildMilestones({ streak, foundation: foundationStatus(today) })
+      return {
+        week: milestone(list, 'full-week').state.status,
+        consistency: milestone(list, 'consistency').state.status,
+      }
+    }
+
+    // The day the run finished…
+    const then = unlockedAt('2026-09-18')
+    // …and long after it aged past the old cutoff.
+    const later = unlockedAt(MUCH_LATER)
+
+    expect(then).toEqual({ week: 'unlocked', consistency: 'unlocked' })
+    // Identical. Time passing is not an event that takes an achievement away.
+    expect(later).toEqual(then)
+  })
+
+  it('reports the current streak from the current end, not from the old run', () => {
+    // The old run is long over and nothing recent was trained.
+    const streak = evaluateStreaks(
+      sources({ entries: oldRunEntries(), today: MUCH_LATER, from: evaluationWindow(MUCH_LATER).from }),
+    )
+    if (streak.status !== 'ready') throw new Error('expected ready')
+
+    expect(streak.facts.current).toBe(0)
+    // …while the historical best is untouched by that.
+    expect(streak.facts.best).toBe(10)
+  })
+
+  it('keeps a weekend and a Holiday inside an old run neutral', () => {
+    const entries = [
+      finished('2026-09-07', 'monday'),
+      finished('2026-09-08', 'tuesday'),
+      finished('2026-09-09', 'wednesday'),
+      finished('2026-09-10', 'thursday'),
+      finished('2026-09-11', 'friday'),
+      // Monday the 14th is a Holiday — exempt, so it bridges rather than breaks.
+      finished('2026-09-15', 'tuesday'),
+      finished('2026-09-16', 'wednesday'),
+      finished('2026-09-17', 'thursday'),
+      finished('2026-09-18', 'friday'),
+    ]
+    const holidays = [holiday('h1', '2026-09-14')]
+    const streak = evaluateStreaks(
+      sources({ entries, holidays, today: MUCH_LATER, from: evaluationWindow(MUCH_LATER).from }),
+    )
+    if (streak.status !== 'ready') throw new Error('expected ready')
+
+    // Nine finished days, bridged by a weekend AND a Holiday.
+    expect(streak.facts.best).toBe(9)
+  })
+
+  it('still breaks an old run on a real failure inside it', () => {
+    const entries = oldRunEntries().filter((row) => row.date !== '2026-09-09')
+    const streak = evaluateStreaks(sources({ entries, today: MUCH_LATER, from: evaluationWindow(MUCH_LATER).from }))
+    if (streak.status !== 'ready') throw new Error('expected ready')
+
+    // Two before the missed Wednesday, seven after it.
+    expect(streak.facts.best).toBe(7)
+    const list = buildMilestones({ streak, foundation: foundationStatus(MUCH_LATER) })
+    expect(milestone(list, 'consistency').state.status).toBe('locked')
+    expect(milestone(list, 'full-week').state.status).toBe('unlocked')
   })
 })

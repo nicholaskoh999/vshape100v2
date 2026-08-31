@@ -370,3 +370,163 @@ describe('5. structure', () => {
     expect(fixed).toHaveLength(0)
   })
 })
+
+/* ------------------------------------------------------------------ */
+/* 6. Reading the whole period in chunks                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Round 12 correction 1 — the period is Foundation Day 1 → today, always.
+ *
+ * From this date the period no longer fits one bounded request, so it is read
+ * as two adjacent chunks. These prove the composition is faithful: no gap, no
+ * duplicate, and no definitive answer unless every chunk succeeded.
+ *
+ * 2028-03-17 is a Friday, roughly 18 months after Foundation Day 1. The chunk
+ * boundary falls between 2027-08-31 (a Tuesday) and 2027-09-01 (a Wednesday).
+ */
+const LONG_AFTER = new Date(2028, 2, 17, 9, 0)
+
+function rangeCalls(): { from: string; to: string }[] {
+  return workouts.calls
+    .filter((call) => call.url.includes('from=') && call.method === 'GET')
+    .map((call) => {
+      const params = new URLSearchParams(call.url.split('?')[1] ?? '')
+      return { from: params.get('from') ?? '', to: params.get('to') ?? '' }
+    })
+}
+
+describe('6. multi-chunk reads', () => {
+  beforeEach(() => {
+    vi.setSystemTime(LONG_AFTER)
+  })
+
+  it('asks for adjacent chunks covering Day 1 through today', async () => {
+    await renderAchievements()
+    await settled()
+
+    const ranges = rangeCalls()
+    expect(ranges.length).toBeGreaterThan(1)
+
+    const sorted = [...ranges].sort((a, b) => a.from.localeCompare(b.from))
+    // Day 1 is reached, today is reached, and the chunks meet exactly.
+    expect(sorted[0].from).toBe('2026-08-31')
+    expect(sorted[sorted.length - 1].to).toBe('2028-03-17')
+    for (let i = 1; i < sorted.length; i += 1) {
+      expect(sorted[i - 1].to < sorted[i].from).toBe(true)
+    }
+  })
+
+  it('counts workouts on the last and first dates of neighbouring chunks', async () => {
+    seedFinished('2027-08-31', 'tuesday')
+    seedFinished('2027-09-01', 'wednesday')
+
+    await renderAchievements()
+    await settled()
+
+    expect(streakState()).toBe('ready')
+    const values = summary()?.querySelectorAll('dd')
+    // Best streak spans the boundary as two consecutive training days…
+    expect(values?.[1]?.textContent).toMatch(/^2/)
+    // …and each is counted once, not once per chunk that returned it.
+    expect(values?.[2]?.textContent).toMatch(/^2/)
+  })
+
+  it('does not double-count a Holiday that spans the chunk boundary', async () => {
+    // The record is returned by BOTH chunks it intersects.
+    holidays.seed(holiday('h1', '2027-08-30', '2027-09-02'))
+    seedFinished('2027-08-31', 'tuesday')
+    seedFinished('2027-09-01', 'wednesday')
+
+    await renderAchievements()
+    await settled()
+
+    expect(streakState()).toBe('ready')
+    const values = summary()?.querySelectorAll('dd')
+    // Both dates are exempt, so neither streak moves…
+    expect(values?.[0]?.textContent).toMatch(/^0/)
+    expect(values?.[1]?.textContent).toMatch(/^0/)
+    // …while the work done still counts, exactly twice.
+    expect(values?.[2]?.textContent).toMatch(/^2/)
+  })
+
+  it('states no streak when one workout chunk did not cover its span', async () => {
+    // Only the later chunk holds a workout, and the cap makes that one chunk
+    // report itself incomplete while the empty chunk stays complete.
+    seedFinished('2027-09-01', 'wednesday')
+    workouts.capRange(0)
+
+    await renderAchievements()
+    await settled()
+
+    expect(streakState()).toBe('unavailable')
+    expect(summary()?.textContent).toMatch(/did not cover the whole period/)
+  })
+
+  it('states no streak when one workout chunk fails', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    seedFinished('2027-09-01', 'wednesday')
+    // One of the two chunk requests fails; the other succeeds.
+    workouts.failReads(1)
+
+    await renderAchievements()
+    await settled()
+
+    expect(streakState()).toBe('unavailable')
+    errors.mockRestore()
+  })
+
+  it('states no streak when one Holiday chunk fails', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    holidays.failReads(1)
+
+    await renderAchievements()
+    await settled()
+
+    expect(streakState()).toBe('unavailable')
+    // A missing Holiday chunk is the dangerous one: those days would look
+    // like ordinary training days that were missed.
+    expect(summary()?.textContent).toMatch(/rest days cannot be told from missed ones/)
+    errors.mockRestore()
+  })
+
+  it('answers normally when every chunk succeeds and covers its span', async () => {
+    seedFinished('2027-09-01', 'wednesday')
+
+    await renderAchievements()
+    await settled()
+
+    expect(streakState()).toBe('ready')
+    expect(milestoneState('first-session')).toBe('unlocked')
+  })
+
+  it('keeps an achievement earned long ago from relocking', async () => {
+    // Ten consecutive training days in September 2026 — far outside the
+    // rolling year the candidate used to evaluate.
+    const run: [string, string][] = [
+      ['2026-09-07', 'monday'],
+      ['2026-09-08', 'tuesday'],
+      ['2026-09-09', 'wednesday'],
+      ['2026-09-10', 'thursday'],
+      ['2026-09-11', 'friday'],
+      ['2026-09-14', 'monday'],
+      ['2026-09-15', 'tuesday'],
+      ['2026-09-16', 'wednesday'],
+      ['2026-09-17', 'thursday'],
+      ['2026-09-18', 'friday'],
+    ]
+    for (const [date, session] of run) seedFinished(date, session)
+
+    await renderAchievements()
+    await settled()
+
+    expect(streakState()).toBe('ready')
+    expect(milestoneState('consistency')).toBe('unlocked')
+    expect(milestoneState('full-week')).toBe('unlocked')
+    expect(milestoneState('first-session')).toBe('unlocked')
+    // Best streak survives; the current one is honestly zero.
+    const values = summary()?.querySelectorAll('dd')
+    expect(values?.[0]?.textContent).toMatch(/^0/)
+    expect(values?.[1]?.textContent).toMatch(/^10/)
+  })
+})
