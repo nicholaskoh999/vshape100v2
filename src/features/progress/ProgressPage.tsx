@@ -10,24 +10,36 @@ import type { SessionIntensity } from "@/features/training/sessions";
 import { localWorkoutDate } from "@/features/training/workoutPlan";
 import { cn } from "@/lib/utils";
 import { pendingSets, type WorkoutProgress } from "@shared/workoutLog";
+import { BodyWeightCard } from "./BodyWeightCard";
+import { ExercisePerformanceCard } from "./ExercisePerformanceCard";
 import { foundationLabel, foundationStatus } from "./foundation";
 import type { WorkoutHistoryEntry } from "./historyApi";
+import { PersonalBestCard } from "./PersonalBestCard";
+import { usePerformance } from "./usePerformance";
 import { useWorkoutHistory } from "./useWorkoutHistory";
 
 /**
- * Progress v1 — recorded training only.
+ * Progress — recorded facts only.
  *
- * Everything on this page is a fact that was persisted. Nothing is inferred:
- * a workout that was never started is simply absent, never a "missed" one, and
- * no adherence percentage, streak or personal best is derived from that
- * absence. Skipped sets are reported next to completed ones, never folded
- * into them.
+ * Everything on this page is a fact that was persisted or derived exactly from
+ * what was persisted. Nothing is inferred from absence: a workout that was
+ * never started is simply absent, never a "missed" one, and no adherence
+ * percentage is derived from that absence. Skipped sets are reported next to
+ * completed ones, never folded into them.
+ *
+ * Round 15 adds body weight, Personal Bests and exercise performance as
+ * SECTIONS of this page. They are not new destinations — the app still has one
+ * Progress tab, and these are cards within it.
+ *
+ * The performance read is loaded once here and shared by the two cards that
+ * need it, so opening Progress does not walk the whole set history twice.
  */
 export function ProgressPage() {
   // The user's own calendar date, fixed for this mount.
   const [today] = useState(() => localWorkoutDate());
   const foundation = useMemo(() => foundationStatus(today), [today]);
   const { status, history, reload } = useWorkoutHistory();
+  const performance = usePerformance();
 
   return (
     <>
@@ -51,7 +63,19 @@ export function ProgressPage() {
         </motion.div>
 
         <motion.div variants={listItemVariants}>
+          <BodyWeightCard />
+        </motion.div>
+
+        <motion.div variants={listItemVariants}>
           <RecordedOverview state={status} history={history} onRetry={reload} />
+        </motion.div>
+
+        <motion.div variants={listItemVariants}>
+          <PersonalBestCard state={performance} />
+        </motion.div>
+
+        <motion.div variants={listItemVariants}>
+          <ExercisePerformanceCard state={performance} />
         </motion.div>
 
         <motion.div variants={listItemVariants}>

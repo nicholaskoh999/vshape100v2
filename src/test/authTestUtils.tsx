@@ -7,6 +7,7 @@ import { AuthProvider } from '@/features/auth/AuthProvider'
 import type { SessionState } from '@/features/auth/api'
 import { createMediaServer, type MediaServer } from './exerciseMediaApiTestUtils'
 import { createHolidayServer, type HolidayServer } from './holidayApiTestUtils'
+import { createProgressServer, type ProgressServer } from './progressApiTestUtils'
 import { createTodayServer, type TodayServer } from './todayApiTestUtils'
 import { createWorkoutServer, type WorkoutServer } from './workoutApiTestUtils'
 
@@ -55,11 +56,18 @@ export function mockAuthFetch(options: {
    * reminders: Settings reports "unavailable" and asks the browser for nothing.
    */
   notifications?: (url: string, init?: RequestInit) => Promise<Response>
+  /**
+   * Progress API stand-in. Absent means an account with no measurements and no
+   * completed history — the honest default for a test that is not about
+   * Progress, and one that never lets a page claim data it does not have.
+   */
+  progress?: ProgressServer
 }) {
   const today = options.today ?? createTodayServer()
   const media = options.media ?? createMediaServer()
   const workouts = options.workouts ?? createWorkoutServer()
   const holidays = options.holidays ?? createHolidayServer()
+  const progress = options.progress ?? createProgressServer()
 
   const handler: FetchHandler = async (url, init) => {
     if (url.startsWith('/api/auth/session')) {
@@ -80,6 +88,9 @@ export function mockAuthFetch(options: {
     }
     if (url.startsWith('/api/holidays')) {
       return holidays.handle(url, init)
+    }
+    if (url.startsWith('/api/progress')) {
+      return progress.handle(url, init)
     }
     if (url.startsWith('/api/notifications')) {
       if (options.notifications) return options.notifications(url, init)

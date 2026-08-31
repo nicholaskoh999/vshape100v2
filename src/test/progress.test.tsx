@@ -367,7 +367,13 @@ describe('5. honest incompleteness', () => {
 /* ------------------------------------------------------------------ */
 
 describe('6. reports only what was recorded', () => {
-  it('shows no weight, streak, holiday or achievement surface', async () => {
+  /*
+   * Round 15 moved two of these out of the banned list on purpose: Progress
+   * now owns Body Weight and Personal Best. Everything else stays banned, and
+   * the progression vocabulary is banned harder — reporting what happened is
+   * Round 15's whole scope, and recommending what to do next is Round 16's.
+   */
+  it('shows no streak, holiday, achievement or progression surface', async () => {
     seedWorkout({ date: '2026-08-31', total: 4, completed: 4 })
     await renderProgress()
     await awaitHistoryCard()
@@ -376,17 +382,22 @@ describe('6. reports only what was recorded', () => {
     // Achievements, which are other rounds' surfaces, not Progress content.
     const text = document.querySelector('main')?.textContent ?? ''
     for (const banned of [
-      /weight trend/i,
-      /weigh-?in/i,
       /streak/i,
       /holiday/i,
       /achievement/i,
       /adherence/i,
-      /personal best/i,
       /double progression/i,
       /missed/i,
       /next load/i,
       /deload/i,
+      // Round 15 additions: no invented score, and no advice.
+      /1\s?rm/i,
+      /estimated/i,
+      /tonnage/i,
+      /suggest/i,
+      /recommend/i,
+      /you should/i,
+      /try adding/i,
     ]) {
       expect(text, String(banned)).not.toMatch(banned)
     }
