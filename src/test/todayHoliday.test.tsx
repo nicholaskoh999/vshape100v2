@@ -92,6 +92,21 @@ describe('1. Home mode is unchanged', () => {
 /* 2. Holiday suspends the day                                         */
 /* ------------------------------------------------------------------ */
 
+/** Holiday dates with Training Off - the exempt default. */
+function offDays(...dates: string[]) {
+  return new Map(dates.map((date) => [date, { name: '', trainingOn: false }]))
+}
+
+/** Holiday dates where the user chose to keep training. */
+function onDays(...dates: string[]) {
+  return new Map(dates.map((date) => [date, { name: '', trainingOn: true }]))
+}
+
+/** The titles the agenda is showing. */
+function titlesOf(agenda: ReturnType<typeof buildAgenda>) {
+  return agenda.entries.map((entry) => entry.item.title)
+}
+
 describe('2. a Holiday date', () => {
   it('shows the Holiday state instead of the routine', async () => {
     server.seed(holiday('h1', '2026-09-10'))
@@ -102,15 +117,33 @@ describe('2. a Holiday date', () => {
     expect(mainText()).toMatch(/planned pause from the normal routine/i)
   })
 
-  it('renders no routine items at all, so nothing can be late', () => {
+  it('borrows the recovery template instead of the work day', () => {
     const agenda = buildAgenda(
       new Date(2026, 8, 10, 23, 0),
       new Set(),
-      new Set(['2026-09-10']),
+      offDays('2026-09-10'),
     )
 
     expect(agenda.holiday).toBe(true)
-    expect(agenda.entries).toEqual([])
+    expect(agenda.route.id).toBe('holiday')
+
+    // A Holiday is a day to live, not an empty screen. It uses the same
+    // Sunday recovery items, so the two cannot drift apart.
+    const titles = titlesOf(agenda)
+    expect(titles).toContain('Natural wake')
+    expect(titles).toContain('Free time / Netflix / rest')
+
+    // What a Holiday removes is the WORK day.
+    expect(titles).not.toContain('Work')
+    expect(titles).not.toContain('Back home')
+    // Training Off, so no session is restored either.
+    expect(titles).not.toContain('Gym training')
+  })
+
+  it('keeps the real weekday, because a Holiday is not a Sunday', () => {
+    // 2026-09-10 is a Thursday. The routine changes; the calendar does not.
+    const agenda = buildAgenda(new Date(2026, 8, 10, 9, 0), new Set(), offDays('2026-09-10'))
+    expect(agenda.day).toBe('2026-09-10')
     expect(agenda.route.id).toBe('holiday')
   })
 
@@ -121,10 +154,11 @@ describe('2. a Holiday date', () => {
 
     await waitFor(() => expect(holidayCard()).not.toBeNull())
     const text = mainText()
-    // The whole agenda is absent — not merely styled differently.
-    expect(text).not.toMatch(/needs attention/i)
+    // The weekday's demands are gone. The recovery day remains, which is the
+    // point: a Holiday replaces the work day rather than erasing the day.
     expect(text).not.toMatch(/gym training/i)
-    expect(text).not.toMatch(/\bLATE\b/)
+    expect(text).not.toMatch(/back home/i)
+    expect(text).not.toMatch(/reading/i)
   })
 
   it('never describes the day as missed, failed or completed', async () => {
@@ -167,7 +201,7 @@ describe('2. a Holiday date', () => {
   })
 
   it('covers every day of a range', () => {
-    const days = new Set(['2026-09-10', '2026-09-11', '2026-09-12'])
+    const days = offDays('2026-09-10', '2026-09-11', '2026-09-12')
     for (const day of [10, 11, 12]) {
       expect(buildAgenda(new Date(2026, 8, day, 12, 0), new Set(), days).holiday).toBe(true)
     }
@@ -186,29 +220,31 @@ describe('3. cross-midnight', () => {
     const agenda = buildAgenda(
       new Date(2026, 8, 10, 0, 15),
       new Set(),
-      new Set(['2026-09-10']),
+      offDays('2026-09-10'),
     )
 
     expect(agenda.holiday).toBe(true)
-    // Yesterday's spillover does not reach into a Holiday.
-    expect(agenda.entries).toEqual([])
+    // Yesterday's spillover does not reach into a Holiday: nothing carries
+    // over, so nothing from yesterday can be late on it.
+    expect(agenda.entries.every((entry) => !entry.spillover)).toBe(true)
+    expect(titlesOf(agenda)).not.toContain('Ready to sleep')
   })
 
   it('and still shows Holiday once that interval has ended', () => {
     const agenda = buildAgenda(
       new Date(2026, 8, 10, 9, 0),
       new Set(),
-      new Set(['2026-09-10']),
+      offDays('2026-09-10'),
     )
     expect(agenda.holiday).toBe(true)
-    expect(agenda.entries).toEqual([])
+    expect(agenda.entries.every((entry) => !entry.spillover)).toBe(true)
   })
 
   it('Holiday yesterday into Home today invents no spillover', () => {
     const agenda = buildAgenda(
       new Date(2026, 8, 10, 0, 15),
       new Set(),
-      new Set(['2026-09-09']),
+      offDays('2026-09-09'),
     )
 
     expect(agenda.holiday).toBe(false)
@@ -221,7 +257,7 @@ describe('3. cross-midnight', () => {
     const withHolidayYesterday = buildAgenda(
       new Date(2026, 8, 10, 9, 0),
       new Set(),
-      new Set(['2026-09-09']),
+      offDays('2026-09-09'),
     )
     const plain = buildAgenda(new Date(2026, 8, 10, 9, 0))
 
@@ -278,7 +314,7 @@ describe('4. Foundation is unaffected by Holiday', () => {
   })
 
   it('treats the day boundary as local midnight', () => {
-    const days = new Set(['2026-09-10'])
+    const days = offDays('2026-09-10')
     // 23:59 on the Holiday, and 00:01 the next day.
     expect(buildAgenda(new Date(2026, 8, 10, 23, 59), new Set(), days).holiday).toBe(true)
     expect(buildAgenda(new Date(2026, 8, 11, 0, 1), new Set(), days).holiday).toBe(false)
@@ -533,5 +569,195 @@ describe('7. the header day mode', () => {
     await waitFor(() => expect(headerText()).toContain('Home Mode'))
     expect(headerText()).not.toContain('Day mode unavailable')
     errors.mockRestore()
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* 5. Round 13 - Training Off and Training On                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A Holiday suspends the WORK day, not the training day.
+ *
+ * Training Off is fully exempt. Training On restores exactly one thing: the
+ * session that weekday already planned. Work and Back home never come back,
+ * because those are what a Holiday removes.
+ *
+ * 2026-09-14 is a Monday, 2026-09-15 a Tuesday, 2026-09-12 a Saturday.
+ */
+describe('5. training on a Holiday', () => {
+  const MONDAY = '2026-09-14'
+  const TUESDAY = '2026-09-15'
+  const SATURDAY = '2026-09-12'
+
+  function agendaOn(date: string, days: Map<string, { name: string; trainingOn: boolean }>) {
+    const [year, month, day] = date.split('-').map(Number)
+    return buildAgenda(new Date(year, month - 1, day, 9, 0), new Set(), days)
+  }
+
+  function named(date: string, name: string, trainingOn: boolean) {
+    return new Map([[date, { name, trainingOn }]])
+  }
+
+  it('leaves an ordinary Monday completely alone', () => {
+    const agenda = agendaOn(MONDAY, new Map())
+    expect(agenda.holiday).toBe(false)
+    expect(agenda.route.id).toBe('home')
+    const titles = titlesOf(agenda)
+    expect(titles).toContain('Work')
+    expect(titles).toContain('Back home')
+    expect(titles).toContain('Gym training')
+  })
+
+  it('gives a Training-Off Monday Holiday the recovery base', () => {
+    const agenda = agendaOn(MONDAY, offDays(MONDAY))
+    expect(agenda.route.id).toBe('holiday')
+    expect(titlesOf(agenda)).toContain('Natural wake')
+  })
+
+  it('removes Work from a Training-Off Monday Holiday', () => {
+    expect(titlesOf(agendaOn(MONDAY, offDays(MONDAY)))).not.toContain('Work')
+  })
+
+  it('removes Back home from a Training-Off Monday Holiday', () => {
+    expect(titlesOf(agendaOn(MONDAY, offDays(MONDAY)))).not.toContain('Back home')
+  })
+
+  it('asks for no gym session on a Training-Off Monday Holiday', () => {
+    expect(titlesOf(agendaOn(MONDAY, offDays(MONDAY)))).not.toContain('Gym training')
+  })
+
+  it('keeps the real date and carries the Holiday name', () => {
+    const agenda = agendaOn(MONDAY, named(MONDAY, 'Merdeka Day', false))
+    expect(agenda.day).toBe(MONDAY)
+    expect(agenda.route.name).toBe('Merdeka Day')
+    expect(agenda.route.label).toBe('Holiday')
+    expect(agenda.route.trainingOn).toBe(false)
+  })
+
+  it('keeps the recovery base when training is on', () => {
+    const agenda = agendaOn(MONDAY, onDays(MONDAY))
+    expect(agenda.route.id).toBe('holiday')
+    const titles = titlesOf(agenda)
+    expect(titles).toContain('Natural wake')
+    expect(titles).toContain('Room reset')
+  })
+
+  it('adds exactly the Monday session, linked to it', () => {
+    const agenda = agendaOn(MONDAY, onDays(MONDAY))
+    const gym = agenda.entries.filter((entry) => entry.item.title === 'Gym training')
+    expect(gym).toHaveLength(1)
+    expect(gym[0].item.to).toBe('/training/monday')
+    expect(agenda.route.trainingOn).toBe(true)
+    // The accepted slot, not a second copy of it.
+    expect(gym[0].start).toBe(20 * 60 + 30)
+    expect(gym[0].end).toBe(21 * 60 + 30)
+  })
+
+  it('still refuses to bring Work or Back home back', () => {
+    const titles = titlesOf(agendaOn(MONDAY, onDays(MONDAY)))
+    expect(titles).not.toContain('Work')
+    expect(titles).not.toContain('Back home')
+  })
+
+  it('links a Tuesday Holiday to the Tuesday session', () => {
+    const agenda = agendaOn(TUESDAY, onDays(TUESDAY))
+    const gym = agenda.entries.find((entry) => entry.item.title === 'Gym training')
+    expect(gym?.item.to).toBe('/training/tuesday')
+  })
+
+  it('invents no session for a weekend Holiday, however it was stored', () => {
+    // Fail-safe: even with training marked on, Saturday has no planned
+    // session to restore, so none is conjured.
+    const agenda = agendaOn(SATURDAY, onDays(SATURDAY))
+    expect(agenda.route.id).toBe('holiday')
+    expect(agenda.route.trainingOn).toBe(false)
+    expect(titlesOf(agenda)).not.toContain('Gym training')
+  })
+
+  it('drops the "no gym today" line when a session is restored', () => {
+    // The note would sit directly above the session it contradicts.
+    const on = agendaOn(MONDAY, onDays(MONDAY))
+    expect(on.entries.map((entry) => entry.item.note ?? '')).not.toContain('No gym today.')
+
+    // With training off it is still true, and still shown.
+    const off = agendaOn(MONDAY, offDays(MONDAY))
+    expect(off.entries.map((entry) => entry.item.note ?? '')).toContain('No gym today.')
+  })
+
+  it('says nothing contradictory anywhere in a Training-On day', () => {
+    const agenda = agendaOn(MONDAY, onDays(MONDAY))
+    const text = [
+      agenda.route.summary,
+      ...agenda.entries.map((entry) => `${entry.item.title} ${entry.item.note ?? ''}`),
+    ].join(' | ')
+    expect(text).not.toMatch(/no gym/i)
+  })
+
+  it('suppresses yesterday spillover on a Training-On Holiday too', () => {
+    const [year, month, day] = MONDAY.split('-').map(Number)
+    // 00:15, when the previous day's 23:30-00:30 block would still be running.
+    const agenda = buildAgenda(
+      new Date(year, month - 1, day, 0, 15),
+      new Set(),
+      onDays(MONDAY),
+    )
+    expect(agenda.entries.every((entry) => !entry.spillover)).toBe(true)
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* 6. Round 13 - the page shows which kind of Holiday it is            */
+/* ------------------------------------------------------------------ */
+
+describe('6. the Holiday banner', () => {
+  it('shows the name and the Training Off state', async () => {
+    vi.setSystemTime(new Date(2026, 8, 14, 9, 0))
+    server.seed(holiday('h1', '2026-09-14', '2026-09-14', { name: 'Merdeka Day' }))
+    await renderToday()
+    await waitFor(() => expect(holidayCard()).not.toBeNull())
+
+    expect(mainText()).toMatch(/Merdeka Day/)
+    expect(holidayCard()?.getAttribute('data-today-training')).toBe('off')
+    expect(mainText()).toMatch(/Training off/i)
+  })
+
+  it('shows Training On and the restored session', async () => {
+    vi.setSystemTime(new Date(2026, 8, 14, 9, 0))
+    server.seed(
+      holiday('h1', '2026-09-14', '2026-09-14', { name: 'Merdeka Day', trainingOn: true }),
+    )
+    await renderToday()
+    await waitFor(() => expect(holidayCard()).not.toBeNull())
+
+    expect(holidayCard()?.getAttribute('data-today-training')).toBe('on')
+    const text = mainText()
+    expect(text).toMatch(/Training on/i)
+    expect(text).toMatch(/gym training/i)
+    // Still not a work day.
+    expect(text).not.toMatch(/back home/i)
+  })
+
+  it('keeps the real weekday in the header, never renaming it Sunday', async () => {
+    vi.setSystemTime(new Date(2026, 8, 14, 9, 0))
+    server.seed(holiday('h1', '2026-09-14', '2026-09-14', { name: 'Merdeka Day' }))
+    await renderToday()
+    await waitFor(() => expect(holidayCard()).not.toBeNull())
+
+    const text = mainText()
+    expect(text).toMatch(/Monday 14 September/)
+    expect(text).not.toMatch(/Sunday/)
+  })
+
+  it('offers a way to change the choice rather than a second toggle', async () => {
+    vi.setSystemTime(new Date(2026, 8, 14, 9, 0))
+    server.seed(holiday('h1', '2026-09-14', '2026-09-14', { name: 'Merdeka Day' }))
+    await renderToday()
+    await waitFor(() => expect(holidayCard()).not.toBeNull())
+
+    expect(screen.getByRole('link', { name: /Open Calendar/ })).toHaveAttribute(
+      'href',
+      '/calendar',
+    )
   })
 })

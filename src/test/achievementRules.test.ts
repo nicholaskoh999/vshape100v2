@@ -7,6 +7,7 @@ import {
   type MilestoneId,
 } from '@/features/achievements/model/milestones'
 import { scheduledDayFor } from '@/features/achievements/model/schedule'
+import { sessionIdForWeekday } from '@/features/today/model/routines'
 import {
   bestStreak,
   buildQualifyingIndex,
@@ -71,8 +72,26 @@ function finished(date: string, sessionId: string): WorkoutHistoryEntry {
   return entry(date, sessionId, { total: 4, completed: 4, skipped: 0 })
 }
 
-function holiday(id: string, startDate: string, endDate = startDate): HolidayRecord {
-  return { id, startDate, endDate, createdAt: 1, updatedAt: 1 }
+/**
+ * A Holiday record. Training Off by default — the exempt default, and the
+ * behaviour every Round 12 assertion below was written against.
+ */
+function holiday(
+  id: string,
+  startDate: string,
+  endDate = startDate,
+  overrides: Partial<Pick<HolidayRecord, 'name' | 'source' | 'trainingOn'>> = {},
+): HolidayRecord {
+  return {
+    id,
+    startDate,
+    endDate,
+    name: overrides.name ?? '',
+    source: overrides.source ?? 'custom',
+    trainingOn: overrides.trainingOn ?? false,
+    createdAt: 1,
+    updatedAt: 1,
+  }
 }
 
 /** Streak sources with everything settled, so a test states only its subject. */
@@ -805,5 +824,196 @@ describe('9. an old run still counts, years later', () => {
     const list = buildMilestones({ streak, foundation: foundationStatus(MUCH_LATER) })
     expect(milestone(list, 'consistency').state.status).toBe('locked')
     expect(milestone(list, 'full-week').state.status).toBe('unlocked')
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* 10. Round 13 - Holiday training and the streak                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A Holiday no longer means "no training".
+ *
+ * Training Off stays fully exempt: neutral, neither counted nor broken.
+ * Training On makes that weekday a scheduled training day again, judged by
+ * exactly the same success rule as any other day.
+ *
+ * The weekend rule is the fail-safe: a Saturday or Sunday is neutral however
+ * the preference was stored, so corrupted or forged data cannot manufacture a
+ * missed session out of a rest day.
+ *
+ * 2026-09-14 is a Monday, 2026-09-15 a Tuesday, 2026-09-12 a Saturday.
+ */
+
+/** A Holiday the user chose to keep training on. */
+function trainingHoliday(id: string, startDate: string, endDate = startDate) {
+  return holiday(id, startDate, endDate, { trainingOn: true })
+}
+
+describe('10. Holiday training', () => {
+  it('is neutral while training is off', () => {
+    const days = [holiday('h1', '2026-09-14')]
+    expect(scheduledDayFor('2026-09-14', days)).toEqual({
+      kind: 'neutral',
+      date: '2026-09-14',
+      reason: 'holiday',
+    })
+  })
+
+  it('becomes that weekday"s scheduled training day when training is on', () => {
+    const days = [trainingHoliday('h1', '2026-09-14')]
+    expect(scheduledDayFor('2026-09-14', days)).toEqual({
+      kind: 'training',
+      date: '2026-09-14',
+      sessionId: 'monday',
+    })
+  })
+
+  it('increments the streak when that session is finished', () => {
+    const holidays = [trainingHoliday('h1', '2026-09-14')]
+    const entries = [finished('2026-09-14', 'monday')]
+    const result = facts({ entries, holidays, today: '2026-09-14', from: '2026-09-14' })
+    expect(result.current).toBe(1)
+    expect(result.best).toBe(1)
+  })
+
+  it('breaks the streak when a past Training-On day was missed', () => {
+    // Friday finished, then a Training-On Monday with nothing recorded.
+    const holidays = [trainingHoliday('h1', '2026-09-14')]
+    const entries = [finished('2026-09-11', 'friday')]
+    const result = facts({ entries, holidays, today: '2026-09-15', from: '2026-09-11' })
+    // The Monday is a real missed training day now, so the run is over.
+    expect(result.current).toBe(0)
+    expect(result.best).toBe(1)
+  })
+
+  it('does not break while a Training-On today is still unfinished', () => {
+    const holidays = [trainingHoliday('h1', '2026-09-15')]
+    const entries = [finished('2026-09-14', 'monday')]
+    expect(
+      outcomeFor('2026-09-15', {
+        today: '2026-09-15',
+        holidays,
+        qualifying: buildQualifyingIndex(entries),
+      }),
+    ).toBe('pending')
+
+    const result = facts({ entries, holidays, today: '2026-09-15', from: '2026-09-14' })
+    expect(result.current).toBe(1)
+  })
+
+  it('keeps a weekend Holiday neutral even when training is on', () => {
+    // The fail-safe. There is no Saturday session to restore, so nothing is
+    // scheduled and nothing can be missed.
+    const holidays = [trainingHoliday('h1', '2026-09-12')]
+    expect(scheduledDayFor('2026-09-12', holidays)).toEqual({
+      kind: 'neutral',
+      date: '2026-09-12',
+      reason: 'holiday',
+    })
+    const result = facts({ holidays, today: '2026-09-12', from: '2026-09-12' })
+    expect(result.current).toBe(0)
+    expect(result.best).toBe(0)
+  })
+
+  it('keeps weekend days inside a Training-On RANGE neutral', () => {
+    // Saturday through Monday with training on: only the Monday is scheduled.
+    const holidays = [trainingHoliday('h1', '2026-09-12', '2026-09-14')]
+    expect(scheduledDayFor('2026-09-12', holidays)?.kind).toBe('neutral')
+    expect(scheduledDayFor('2026-09-13', holidays)?.kind).toBe('neutral')
+    expect(scheduledDayFor('2026-09-14', holidays)).toEqual({
+      kind: 'training',
+      date: '2026-09-14',
+      sessionId: 'monday',
+    })
+  })
+
+  it('is not satisfied by the wrong session', () => {
+    const holidays = [trainingHoliday('h1', '2026-09-14')]
+    // A finished Friday log on a Training-On Monday is not that day"s session.
+    const entries = [finished('2026-09-14', 'friday')]
+    expect(
+      outcomeFor('2026-09-14', {
+        today: '2026-09-15',
+        holidays,
+        qualifying: buildQualifyingIndex(entries),
+      }),
+    ).toBe('failure')
+  })
+
+  it('is not satisfied by a session that was only skipped', () => {
+    const holidays = [trainingHoliday('h1', '2026-09-14')]
+    const entries = [entry('2026-09-14', 'monday', { total: 4, completed: 0, skipped: 4 })]
+    expect(
+      outcomeFor('2026-09-14', {
+        today: '2026-09-15',
+        holidays,
+        qualifying: buildQualifyingIndex(entries),
+      }),
+    ).toBe('failure')
+  })
+
+  it('is not satisfied by a session that is still unfinished', () => {
+    const holidays = [trainingHoliday('h1', '2026-09-14')]
+    const entries = [entry('2026-09-14', 'monday', { total: 4, completed: 2, skipped: 0 })]
+    expect(
+      outcomeFor('2026-09-14', {
+        today: '2026-09-15',
+        holidays,
+        qualifying: buildQualifyingIndex(entries),
+      }),
+    ).toBe('failure')
+  })
+
+  it('counts a Training-Off finished session without moving the streak', () => {
+    // The accepted asymmetry, restated against Round 13: the work happened,
+    // so it counts, but the day itself stays exempt.
+    const holidays = [holiday('h1', '2026-09-14')]
+    const entries = [finished('2026-09-14', 'monday')]
+    const result = facts({ entries, holidays, today: '2026-09-14', from: '2026-09-14' })
+
+    expect(result.qualifyingSessions).toBe(1)
+    expect(result.current).toBe(0)
+    expect(result.best).toBe(0)
+  })
+
+  it('lets Training On make that same session satisfy the day as well', () => {
+    const holidays = [trainingHoliday('h1', '2026-09-14')]
+    const entries = [finished('2026-09-14', 'monday')]
+    const result = facts({ entries, holidays, today: '2026-09-14', from: '2026-09-14' })
+
+    expect(result.qualifyingSessions).toBe(1)
+    expect(result.current).toBe(1)
+  })
+
+  it('leaves Foundation untouched either way', () => {
+    // Holiday never pauses the calendar, and neither choice changes it.
+    for (const holidays of [[holiday('h1', '2026-09-09')], [trainingHoliday('h1', '2026-09-09')]]) {
+      const streak = evaluateStreaks(
+        sources({ holidays, today: '2026-09-09', from: '2026-08-31' }),
+      )
+      const list = buildMilestones({ streak, foundation: foundationStatus('2026-09-09') })
+      // 2026-09-09 is Foundation Day 10 whatever the day is called.
+      expect(milestone(list, 'day-10').state.status).toBe('unlocked')
+    }
+  })
+
+  it('reads the session from the one accepted weekday mapping', () => {
+    // No second Monday-to-Friday table: a Training-On Holiday resolves to
+    // exactly what sessionIdForWeekday says, for every weekday.
+    const weekdays = ['2026-09-14', '2026-09-15', '2026-09-16', '2026-09-17', '2026-09-18']
+    for (const date of weekdays) {
+      const day = scheduledDayFor(date, [trainingHoliday(`h-${date}`, date)])
+      const weekday = new Date(
+        Number(date.slice(0, 4)),
+        Number(date.slice(5, 7)) - 1,
+        Number(date.slice(8, 10)),
+      ).getDay()
+      expect(day, date).toEqual({
+        kind: 'training',
+        date,
+        sessionId: sessionIdForWeekday(weekday),
+      })
+    }
   })
 })

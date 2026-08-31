@@ -42,6 +42,13 @@ function toRecord(raw: unknown): HolidayRecord | null {
     id: row.id,
     startDate: row.startDate,
     endDate: row.endDate,
+    name: typeof row.name === 'string' ? row.name : '',
+    // Anything the server did not explicitly call a company date is treated as
+    // the user's own, which is the permission-safe direction: a mislabelled
+    // company record would become editable, never the reverse.
+    source: row.source === 'company' ? 'company' : 'custom',
+    // Training On must be stated. Absent reads as Off — the exempt default.
+    trainingOn: row.trainingOn === true,
     createdAt: typeof row.createdAt === 'number' ? row.createdAt : 0,
     updatedAt: typeof row.updatedAt === 'number' ? row.updatedAt : 0,
   }
@@ -75,7 +82,7 @@ export async function fetchHolidays(
 
 /** Create a Holiday. Throws `HolidayApiError` with status 409 on overlap. */
 export async function createHoliday(
-  input: { startDate: string; endDate: string },
+  input: { startDate: string; endDate: string; name?: string; trainingOn?: boolean },
   signal?: AbortSignal,
 ): Promise<HolidayRecord | null> {
   const body = await ensureOk(
@@ -93,7 +100,7 @@ export async function createHoliday(
 /** Move, shorten or extend an existing Holiday. */
 export async function updateHoliday(
   id: string,
-  input: { startDate: string; endDate: string },
+  input: { startDate: string; endDate: string; name?: string; trainingOn?: boolean },
   signal?: AbortSignal,
 ): Promise<HolidayRecord | null> {
   const body = await ensureOk(
@@ -117,4 +124,28 @@ export async function deleteHoliday(id: string, signal?: AbortSignal): Promise<v
       signal,
     }),
   )
+}
+
+/**
+ * Turn training on or off for a Holiday.
+ *
+ * One call for both sources: a company date and a custom range are the same
+ * question here, so the rule that a weekend-only Holiday cannot train lives on
+ * the server in exactly one place and cannot be reached around.
+ */
+export async function setHolidayTraining(
+  id: string,
+  trainingOn: boolean,
+  signal?: AbortSignal,
+): Promise<HolidayRecord | null> {
+  const body = await ensureOk(
+    await fetch(`${BASE}/${encodeURIComponent(id)}/training`, {
+      ...REQUEST_INIT,
+      method: 'PUT',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ trainingOn }),
+      signal,
+    }),
+  )
+  return toRecord(body.holiday)
 }

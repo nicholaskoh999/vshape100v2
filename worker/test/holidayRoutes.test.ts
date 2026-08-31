@@ -75,6 +75,20 @@ function dates(body: Record<string, never>) {
   )
 }
 
+/**
+ * Only the account's own custom ranges.
+ *
+ * The approved company calendar is part of every read now, so a test about
+ * custom CRUD filters it out rather than restating 16 fixed dates.
+ */
+function customDates(body: Record<string, never>) {
+  return (
+    body.holidays as unknown as { startDate: string; endDate: string; source: string }[]
+  )
+    .filter((h) => h.source === 'custom')
+    .map((h) => `${h.startDate}..${h.endDate}`)
+}
+
 /* ------------------------------------------------------------------ */
 /* Auth and isolation                                                  */
 /* ------------------------------------------------------------------ */
@@ -159,7 +173,8 @@ describe('account isolation', () => {
   it('A cannot read B’s Holiday', async () => {
     const { db, tokenB } = await twoAccounts()
     const { body } = await list(db, tokenB)
-    expect(body.holidays).toEqual([])
+    // B sees the shared company calendar, and none of A's own records.
+    expect(customDates(body)).toEqual([])
   })
 
   it('A cannot edit B’s Holiday', async () => {
@@ -229,8 +244,8 @@ describe('create', () => {
     const { db, holidays } = createFakeD1()
     const token = await seedToken(db, 'sub-a', 'a@example.com')
     // A date that a UTC-midnight interpretation would shift a day earlier.
-    await create(db, token, '2026-01-01')
-    expect([...holidays.values()][0].start_date).toBe('2026-01-01')
+    await create(db, token, '2026-01-02')
+    expect([...holidays.values()][0].start_date).toBe('2026-01-02')
   })
 })
 
@@ -346,9 +361,9 @@ describe('overlap', () => {
 
   it.each([
     ['partial overlap at the start', '2026-09-08', '2026-09-11'],
-    ['partial overlap at the end', '2026-09-13', '2026-09-18'],
+    ['partial overlap at the end', '2026-09-13', '2026-09-15'],
     ['fully contained', '2026-09-11', '2026-09-12'],
-    ['fully enclosing', '2026-09-01', '2026-09-30'],
+    ['fully enclosing', '2026-09-01', '2026-09-15'],
     ['identical', '2026-09-10', '2026-09-14'],
     ['single day inside', '2026-09-12', '2026-09-12'],
   ])('rejects a create that is %s', async (_label, startDate, endDate) => {
@@ -371,7 +386,7 @@ describe('overlap', () => {
     const { db, token, holidays } = await withRange()
 
     const before = await create(db, token, '2026-09-08', '2026-09-09')
-    const after = await create(db, token, '2026-09-15', '2026-09-16')
+    const after = await create(db, token, '2026-09-15', '2026-09-15')
 
     expect(before.response.status).toBe(201)
     expect(after.response.status).toBe(201)
@@ -450,9 +465,9 @@ describe('update', () => {
       method: 'PUT',
       origin: ORIGIN,
       path: `/${id}`,
-      body: { startDate: '2026-09-08', endDate: '2026-09-20' },
+      body: { startDate: '2026-09-08', endDate: '2026-09-15' },
     })
-    expect(dates((await list(db, token)).body)).toEqual(['2026-09-08..2026-09-20'])
+    expect(customDates((await list(db, token)).body)).toEqual(['2026-09-08..2026-09-15'])
   })
 
   it('moves a range', async () => {
@@ -465,7 +480,7 @@ describe('update', () => {
       body: { startDate: '2026-10-01', endDate: '2026-10-03' },
     })
 
-    expect(dates((await list(db, token)).body)).toEqual(['2026-10-01..2026-10-03'])
+    expect(customDates((await list(db, token)).body)).toEqual(['2026-10-01..2026-10-03'])
     // Moved, not duplicated.
     expect(holidays.size).toBe(1)
   })
@@ -517,7 +532,8 @@ describe('delete', () => {
     expect(response.status).toBe(200)
     expect(body.deleted).toBe(true)
     expect(holidays.size).toBe(0)
-    expect(dates((await list(db, token)).body)).toEqual([])
+    // The account's own record is gone; the company calendar is untouched.
+    expect(customDates((await list(db, token)).body)).toEqual([])
   })
 
   it('404s an unknown id rather than reporting success', async () => {
@@ -540,7 +556,7 @@ describe('delete', () => {
     await create(db, token, '2026-09-10', '2026-09-12')
 
     await call(db, { token, method: 'DELETE', origin: ORIGIN, path: `/${idOf(first.body)}` })
-    expect(dates((await list(db, token)).body)).toEqual(['2026-09-10..2026-09-12'])
+    expect(customDates((await list(db, token)).body)).toEqual(['2026-09-10..2026-09-12'])
     expect(holidays.size).toBe(1)
   })
 })
@@ -554,7 +570,9 @@ describe('read', () => {
     const fake = createFakeD1()
     const token = await seedToken(fake.db, 'sub-a', 'a@example.com')
     await create(fake.db, token, '2026-09-10', '2026-09-14')
-    await create(fake.db, token, '2026-08-28', '2026-09-02') // spans into September
+    // Spans a month boundary. September into October, because every
+    // August-into-September range would cross Merdeka Day.
+    await create(fake.db, token, '2026-09-28', '2026-10-02')
     await create(fake.db, token, '2026-11-01', '2026-11-03')
     return { ...fake, token }
   }
@@ -562,14 +580,20 @@ describe('read', () => {
   it('returns only ranges intersecting the requested span', async () => {
     const { db, token } = await seeded()
     const { body } = await list(db, token, '2026-09-01', '2026-09-30')
-    expect(dates(body)).toEqual(['2026-08-28..2026-09-02', '2026-09-10..2026-09-14'])
+    // Malaysia Day is an approved company date inside the span, so it is part
+    // of the answer — one model, both sources.
+    expect(dates(body)).toEqual([
+      '2026-09-10..2026-09-14',
+      '2026-09-16..2026-09-16',
+      '2026-09-28..2026-10-02',
+    ])
   })
 
   it('includes a range that only clips the edge of the span', async () => {
     const { db, token } = await seeded()
-    // The span touches only the final day of the August range.
-    expect(dates((await list(db, token, '2026-09-02', '2026-09-02')).body)).toEqual([
-      '2026-08-28..2026-09-02',
+    // The span touches only the final day of the month-spanning range.
+    expect(dates((await list(db, token, '2026-10-02', '2026-10-02')).body)).toEqual([
+      '2026-09-28..2026-10-02',
     ])
   })
 
@@ -580,20 +604,19 @@ describe('read', () => {
 
   it('is deterministic and stable', async () => {
     const { db, token } = await seeded()
-    const first = dates((await list(db, token)).body)
-    const second = dates((await list(db, token)).body)
+    // A span with no approved company date in it, so the order under test is
+    // the custom ordering alone.
+    const first = dates((await list(db, token, '2026-09-17', '2026-11-07')).body)
+    const second = dates((await list(db, token, '2026-09-17', '2026-11-07')).body)
     expect(first).toEqual(second)
-    expect(first).toEqual([
-      '2026-08-28..2026-09-02',
-      '2026-09-10..2026-09-14',
-      '2026-11-01..2026-11-03',
-    ])
+    expect(first).toEqual(['2026-09-28..2026-10-02', '2026-11-01..2026-11-03'])
   })
 
   it('returns an empty list honestly', async () => {
     const { db } = createFakeD1()
     const token = await seedToken(db, 'sub-a', 'a@example.com')
-    const { response, body } = await list(db, token, '2026-09-01', '2026-09-30')
+    // A window the approved calendar leaves clear, so empty really is empty.
+    const { response, body } = await list(db, token, '2026-09-01', '2026-09-10')
     expect(response.status).toBe(200)
     expect(body.holidays).toEqual([])
   })
@@ -615,5 +638,165 @@ describe('storage failure', () => {
     expect(body.error).toBe('server_error')
     expect(JSON.stringify(body)).not.toContain('SELECT')
     errors.mockRestore()
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* Round 13 — name and training on a custom Holiday                    */
+/* ------------------------------------------------------------------ */
+
+describe('custom name and training', () => {
+  async function make(
+    db: D1Database,
+    token: string,
+    body: Record<string, unknown>,
+  ) {
+    return call(db, { token, method: 'POST', origin: ORIGIN, body })
+  }
+
+  it('stores a name and reads it back', async () => {
+    const { db } = createFakeD1()
+    const token = await seedToken(db, 'sub-a', 'a@example.com')
+
+    const created = await make(db, token, {
+      startDate: '2026-10-05',
+      endDate: '2026-10-09',
+      name: 'Family trip',
+    })
+    expect(created.response.status).toBe(201)
+    expect(created.body.holiday).toMatchObject({ name: 'Family trip', source: 'custom' })
+
+    const listed = (await list(db, token, '2026-10-01', '2026-10-31')).body
+    expect((listed.holidays as unknown as { name: string }[])[0].name).toBe('Family trip')
+  })
+
+  it('defaults to no name and Training Off', async () => {
+    const { db } = createFakeD1()
+    const token = await seedToken(db, 'sub-a', 'a@example.com')
+
+    const created = await make(db, token, { startDate: '2026-10-05', endDate: '2026-10-05' })
+    expect(created.body.holiday).toMatchObject({ name: '', trainingOn: false })
+  })
+
+  it('trims a name and refuses one that is too long', async () => {
+    const { db } = createFakeD1()
+    const token = await seedToken(db, 'sub-a', 'a@example.com')
+
+    const trimmed = await make(db, token, {
+      startDate: '2026-10-05',
+      endDate: '2026-10-05',
+      name: '   Family trip   ',
+    })
+    expect(trimmed.body.holiday).toMatchObject({ name: 'Family trip' })
+
+    const long = await make(db, token, {
+      startDate: '2026-10-07',
+      endDate: '2026-10-07',
+      name: 'x'.repeat(81),
+    })
+    expect(long.response.status).toBe(400)
+    expect(long.body.field).toBe('name')
+  })
+
+  it('keeps a training preference across a re-read', async () => {
+    const { db } = createFakeD1()
+    const token = await seedToken(db, 'sub-a', 'a@example.com')
+    const created = await make(db, token, {
+      startDate: '2026-10-05',
+      endDate: '2026-10-09',
+      name: 'Working trip',
+      trainingOn: true,
+    })
+    expect(created.body.holiday).toMatchObject({ trainingOn: true })
+
+    const listed = (await list(db, token, '2026-10-01', '2026-10-31')).body
+    expect((listed.holidays as unknown as { trainingOn: boolean }[])[0].trainingOn).toBe(true)
+  })
+
+  it('toggles training through the shared endpoint', async () => {
+    const { db } = createFakeD1()
+    const token = await seedToken(db, 'sub-a', 'a@example.com')
+    const created = await make(db, token, { startDate: '2026-10-05', endDate: '2026-10-09' })
+    const id = (created.body.holiday as unknown as { id: string }).id
+
+    const on = await call(db, {
+      token,
+      method: 'PUT',
+      origin: ORIGIN,
+      path: `/${id}/training`,
+      body: { trainingOn: true },
+    })
+    expect(on.response.status).toBe(200)
+    expect(on.body.holiday).toMatchObject({ trainingOn: true })
+
+    // Toggling training must not move or rename the Holiday.
+    expect(on.body.holiday).toMatchObject({ startDate: '2026-10-05', endDate: '2026-10-09' })
+  })
+
+  it('refuses Training On for a weekend-only custom Holiday', async () => {
+    const { db, holidays } = createFakeD1()
+    const token = await seedToken(db, 'sub-a', 'a@example.com')
+
+    // 2026-10-10 is a Saturday and 2026-10-11 a Sunday.
+    const created = await make(db, token, {
+      startDate: '2026-10-10',
+      endDate: '2026-10-11',
+      trainingOn: true,
+    })
+    expect(created.response.status).toBe(400)
+    expect(created.body.field).toBe('training')
+    expect(holidays.size).toBe(0)
+  })
+
+  it('refuses to switch a weekend-only Holiday on afterwards', async () => {
+    const { db } = createFakeD1()
+    const token = await seedToken(db, 'sub-a', 'a@example.com')
+    const created = await make(db, token, { startDate: '2026-10-10', endDate: '2026-10-11' })
+    const id = (created.body.holiday as unknown as { id: string }).id
+
+    const { response, body } = await call(db, {
+      token,
+      method: 'PUT',
+      origin: ORIGIN,
+      path: `/${id}/training`,
+      body: { trainingOn: true },
+    })
+    expect(response.status).toBe(400)
+    expect(body.error).toBe('holiday_not_trainable')
+  })
+
+  it('allows Training On for a range that includes a weekday', async () => {
+    const { db } = createFakeD1()
+    const token = await seedToken(db, 'sub-a', 'a@example.com')
+    // Saturday through Monday: the Monday is the day that can train.
+    const created = await make(db, token, {
+      startDate: '2026-10-10',
+      endDate: '2026-10-12',
+      trainingOn: true,
+    })
+    expect(created.response.status).toBe(201)
+    expect(created.body.holiday).toMatchObject({ trainingOn: true })
+  })
+
+  it('never lets one account set another"s training preference', async () => {
+    const { db } = createFakeD1()
+    const a = await seedToken(db, 'sub-a', 'a@example.com')
+    const b = await seedToken(db, 'sub-b', 'b@example.com')
+
+    const created = await make(db, a, { startDate: '2026-10-05', endDate: '2026-10-09' })
+    const id = (created.body.holiday as unknown as { id: string }).id
+
+    const { response, body } = await call(db, {
+      token: b,
+      method: 'PUT',
+      origin: ORIGIN,
+      path: `/${id}/training`,
+      body: { trainingOn: true },
+    })
+    expect(response.status).toBe(404)
+    expect(body.error).toBe('holiday_not_found')
+
+    const mine = (await list(db, a, '2026-10-01', '2026-10-31')).body
+    expect((mine.holidays as unknown as { trainingOn: boolean }[])[0].trainingOn).toBe(false)
   })
 })

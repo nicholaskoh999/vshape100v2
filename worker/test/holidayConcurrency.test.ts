@@ -18,6 +18,14 @@ import { createFakeD1 } from './fakeD1'
 
 const ACCOUNT = 'google-sub-a'
 
+/**
+ * A plain range input. These tests are about the non-overlap guarantee, so
+ * every one of them uses an unnamed, Training-Off Holiday.
+ */
+function input(startDate: string, endDate: string) {
+  return { startDate, endDate, name: '', trainingOn: false }
+}
+
 function makeStore(): { store: HolidayStore; db: ReturnType<typeof createFakeD1> } {
   const db = createFakeD1()
   return { store: createD1HolidayStore(db.db), db }
@@ -60,14 +68,14 @@ describe('concurrent creates', () => {
     const first = createHoliday(
       store,
       ACCOUNT,
-      { startDate: '2026-09-10', endDate: '2026-09-14' },
+      input('2026-09-10', '2026-09-14'),
       1_000,
       'holiday-first',
     )
     const second = createHoliday(
       store,
       ACCOUNT,
-      { startDate: '2026-09-12', endDate: '2026-09-18' },
+      input('2026-09-12', '2026-09-15'),
       2_000,
       'holiday-second',
     )
@@ -98,14 +106,14 @@ describe('concurrent creates', () => {
     const first = createHoliday(
       store,
       ACCOUNT,
-      { startDate: '2026-09-10', endDate: '2026-09-14' },
+      input('2026-09-10', '2026-09-14'),
       1_000,
       'holiday-first',
     )
     const second = createHoliday(
       store,
       ACCOUNT,
-      { startDate: '2026-09-12', endDate: '2026-09-18' },
+      input('2026-09-12', '2026-09-15'),
       2_000,
       'holiday-second',
     )
@@ -116,7 +124,7 @@ describe('concurrent creates', () => {
     // The second arrived later, so it is the one refused.
     expect(b.ok).toBe(false)
     if (!b.ok && b.reason === 'conflict') {
-      expect(b.conflict).toMatchObject({ startDate: '2026-09-10', endDate: '2026-09-14' })
+      expect(b.conflict).toMatchObject(input('2026-09-10', '2026-09-14'))
     }
     expect(ranges(db)).toEqual(['2026-09-10..2026-09-14'])
   })
@@ -125,8 +133,8 @@ describe('concurrent creates', () => {
     const { store, db } = makeStore()
 
     const release = db.holdHolidayWrites()
-    const first = createHoliday(store, ACCOUNT, { startDate: '2026-09-10', endDate: '2026-09-10' }, 1, 'a')
-    const second = createHoliday(store, ACCOUNT, { startDate: '2026-09-10', endDate: '2026-09-10' }, 2, 'b')
+    const first = createHoliday(store, ACCOUNT, input('2026-09-10', '2026-09-10'), 1, 'a')
+    const second = createHoliday(store, ACCOUNT, input('2026-09-10', '2026-09-10'), 2, 'b')
     await flushMicrotasks()
     release()
     const [a, b] = await Promise.all([first, second])
@@ -139,8 +147,8 @@ describe('concurrent creates', () => {
     const { store, db } = makeStore()
 
     const release = db.holdHolidayWrites()
-    const mine = createHoliday(store, 'sub-a', { startDate: '2026-09-10', endDate: '2026-09-14' }, 1, 'a')
-    const theirs = createHoliday(store, 'sub-b', { startDate: '2026-09-10', endDate: '2026-09-14' }, 2, 'b')
+    const mine = createHoliday(store, 'sub-a', input('2026-09-10', '2026-09-14'), 1, 'a')
+    const theirs = createHoliday(store, 'sub-b', input('2026-09-10', '2026-09-14'), 2, 'b')
     await flushMicrotasks()
     release()
     const [a, b] = await Promise.all([mine, theirs])
@@ -162,8 +170,8 @@ describe('concurrent adjacent creates', () => {
 
     const release = db.holdHolidayWrites()
     // 09-05 ends the day before 09-06 begins: adjacent, not overlapping.
-    const before = createHoliday(store, ACCOUNT, { startDate: '2026-09-01', endDate: '2026-09-05' }, 1, 'a')
-    const after = createHoliday(store, ACCOUNT, { startDate: '2026-09-06', endDate: '2026-09-10' }, 2, 'b')
+    const before = createHoliday(store, ACCOUNT, input('2026-09-01', '2026-09-05'), 1, 'a')
+    const after = createHoliday(store, ACCOUNT, input('2026-09-06', '2026-09-10'), 2, 'b')
 
     await flushMicrotasks()
     expect(db.holidays.size).toBe(0)
@@ -190,14 +198,14 @@ describe('concurrent updates', () => {
     await createHoliday(
       made.store,
       ACCOUNT,
-      { startDate: '2026-09-01', endDate: '2026-09-05' },
+      input('2026-09-01', '2026-09-05'),
       1,
       'left',
     )
     await createHoliday(
       made.store,
       ACCOUNT,
-      { startDate: '2026-09-20', endDate: '2026-09-24' },
+      input('2026-09-20', '2026-09-24'),
       2,
       'right',
     )
@@ -212,14 +220,8 @@ describe('concurrent updates', () => {
     //   right → 10..24  (clears left's current 01..05)
     // Together they would overlap across 10..12.
     const release = db.holdHolidayWrites()
-    const growLeft = updateHoliday(store, ACCOUNT, 'left', {
-      startDate: '2026-09-01',
-      endDate: '2026-09-12',
-    })
-    const growRight = updateHoliday(store, ACCOUNT, 'right', {
-      startDate: '2026-09-10',
-      endDate: '2026-09-24',
-    })
+    const growLeft = updateHoliday(store, ACCOUNT, 'left', input('2026-09-01', '2026-09-12'))
+    const growRight = updateHoliday(store, ACCOUNT, 'right', input('2026-09-10', '2026-09-24'))
 
     await flushMicrotasks()
     // Neither has committed, so each still sees the other's original range.
@@ -242,14 +244,8 @@ describe('concurrent updates', () => {
     const { store, db } = await seeded()
 
     const release = db.holdHolidayWrites()
-    const growLeft = updateHoliday(store, ACCOUNT, 'left', {
-      startDate: '2026-09-01',
-      endDate: '2026-09-12',
-    })
-    const growRight = updateHoliday(store, ACCOUNT, 'right', {
-      startDate: '2026-09-10',
-      endDate: '2026-09-24',
-    })
+    const growLeft = updateHoliday(store, ACCOUNT, 'left', input('2026-09-01', '2026-09-12'))
+    const growRight = updateHoliday(store, ACCOUNT, 'right', input('2026-09-10', '2026-09-24'))
     await flushMicrotasks()
     release()
     const [left, right] = await Promise.all([growLeft, growRight])
@@ -269,14 +265,8 @@ describe('concurrent updates', () => {
 
     const release = db.holdHolidayWrites()
     // Shortening one and extending the other, staying clear of each other.
-    const shrinkLeft = updateHoliday(store, ACCOUNT, 'left', {
-      startDate: '2026-09-01',
-      endDate: '2026-09-03',
-    })
-    const shrinkRight = updateHoliday(store, ACCOUNT, 'right', {
-      startDate: '2026-09-22',
-      endDate: '2026-09-24',
-    })
+    const shrinkLeft = updateHoliday(store, ACCOUNT, 'left', input('2026-09-01', '2026-09-03'))
+    const shrinkRight = updateHoliday(store, ACCOUNT, 'right', input('2026-09-22', '2026-09-24'))
     await flushMicrotasks()
     release()
     const [a, b] = await Promise.all([shrinkLeft, shrinkRight])
@@ -291,14 +281,11 @@ describe('concurrent updates', () => {
     const { store, db } = await seeded()
 
     const release = db.holdHolidayWrites()
-    const grow = updateHoliday(store, ACCOUNT, 'left', {
-      startDate: '2026-09-01',
-      endDate: '2026-09-12',
-    })
+    const grow = updateHoliday(store, ACCOUNT, 'left', input('2026-09-01', '2026-09-12'))
     const insert = createHoliday(
       store,
       ACCOUNT,
-      { startDate: '2026-09-08', endDate: '2026-09-15' },
+      input('2026-09-08', '2026-09-15'),
       9,
       'new',
     )

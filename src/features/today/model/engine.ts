@@ -25,7 +25,17 @@ import {
  */
 
 const EMPTY_COMPLETED: ReadonlySet<string> = new Set<string>()
-const EMPTY_HOLIDAYS: ReadonlySet<string> = new Set<string>()
+
+/**
+ * What a Holiday date carries.
+ *
+ * A date maps to its name and the user's training choice, not merely to
+ * "is a Holiday" — the route now depends on all of it.
+ */
+export type HolidayDay = { name: string; trainingOn: boolean }
+export type HolidayDays = ReadonlyMap<string, HolidayDay>
+
+const EMPTY_HOLIDAYS: HolidayDays = new Map<string, HolidayDay>()
 
 /** Local `YYYY-MM-DD` for a date — the identity of a routine day. */
 export function dayKey(date: Date): string {
@@ -135,58 +145,63 @@ export function completionDayRange(now: Date): { from: string; to: string } {
   return { from: dayKey(addDays(today, -1)), to: dayKey(today) }
 }
 
+/** The route a date follows, Holiday included. */
+function routeFor(date: Date, holidayDays: HolidayDays): Route {
+  const holiday = holidayDays.get(dayKey(date))
+  if (!holiday) return routeForDate(date)
+  // The weekday is the REAL weekday. A Holiday changes the routine, never
+  // what day of the week the date actually is, and Training On restores the
+  // session that real weekday plans.
+  return holidayRoute({
+    name: holiday.name,
+    trainingOn: holiday.trainingOn,
+    weekday: date.getDay(),
+  })
+}
+
 export function buildAgenda(
   now: Date,
   completed: ReadonlySet<string> = EMPTY_COMPLETED,
-  holidayDays: ReadonlySet<string> = EMPTY_HOLIDAYS,
+  holidayDays: HolidayDays = EMPTY_HOLIDAYS,
 ): TodayAgenda {
   const today = startOfLocalDay(now)
   const yesterday = addDays(today, -1)
   const nowMinutes = minutesOfDay(now)
   const todayKey = dayKey(today)
 
-  // A Holiday suspends the day entirely. Returning no entries is what makes
-  // that honest: there is nothing to be late for, and nothing is marked done
-  // in order to achieve it. Yesterday's spillover is dropped too, so a normal
-  // day rolling into a Holiday cannot put routine pressure on it.
-  if (holidayDays.has(todayKey)) {
-    return {
-      day: todayKey,
-      route: holidayRoute(),
-      nowMinutes,
-      entries: [],
-      holiday: true,
-    }
-  }
-
-  const todayRoute = routeForDate(today)
-  // A Holiday has no items, so a Holiday yesterday spills nothing into today
-  // — today's normal route simply resumes.
-  const yesterdayRoute = holidayDays.has(dayKey(yesterday))
-    ? holidayRoute()
-    : routeForDate(yesterday)
+  const holidayToday = holidayDays.get(todayKey)
+  const todayRoute = routeFor(today, holidayDays)
 
   const entries: TodayEntry[] = []
   let order = 0
 
-  for (const item of yesterdayRoute.items) {
-    const span = itemSpan(item)
-    // Only occurrences that reach past local midnight can belong to today...
-    if (span.end <= MINUTES_PER_DAY) continue
-    // ...and only for as long as they are actually running.
-    const start = span.start - MINUTES_PER_DAY
-    const end = span.end - MINUTES_PER_DAY
-    if (nowMinutes < start || nowMinutes >= end) continue
-    entries.push(
-      toEntry({
-        item,
-        route: yesterdayRoute,
-        anchor: yesterday,
-        offset: -MINUTES_PER_DAY,
-        spillover: true,
-        order: order++,
-      }),
-    )
+  // A Holiday suspends the day's pressure, and that includes pressure
+  // arriving from yesterday: a normal day rolling into a Holiday must not be
+  // able to make the Holiday late for anything. Its own items still stand —
+  // a Holiday is a day to live, not an empty one — and with Training On its
+  // restored session is a real, ordinary part of it.
+  if (!holidayToday) {
+    const yesterdayRoute = routeFor(yesterday, holidayDays)
+
+    for (const item of yesterdayRoute.items) {
+      const span = itemSpan(item)
+      // Only occurrences that reach past local midnight can belong to today...
+      if (span.end <= MINUTES_PER_DAY) continue
+      // ...and only for as long as they are actually running.
+      const start = span.start - MINUTES_PER_DAY
+      const end = span.end - MINUTES_PER_DAY
+      if (nowMinutes < start || nowMinutes >= end) continue
+      entries.push(
+        toEntry({
+          item,
+          route: yesterdayRoute,
+          anchor: yesterday,
+          offset: -MINUTES_PER_DAY,
+          spillover: true,
+          order: order++,
+        }),
+      )
+    }
   }
 
   for (const item of todayRoute.items) {
@@ -225,5 +240,11 @@ export function buildAgenda(
   }
   if (next) next.status = 'NEXT'
 
-  return { day: todayKey, route: todayRoute, nowMinutes, entries, holiday: false }
+  return {
+    day: todayKey,
+    route: todayRoute,
+    nowMinutes,
+    entries,
+    holiday: holidayToday !== undefined,
+  }
 }

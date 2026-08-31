@@ -1,19 +1,25 @@
 /**
- * Holiday Mode HTTP surface.
+ * Holiday HTTP surface.
  *
  *   GET    /api/holidays?from=YYYY-MM-DD&to=YYYY-MM-DD
  *   POST   /api/holidays
  *   PUT    /api/holidays/:id
+ *   PUT    /api/holidays/:id/training
  *   DELETE /api/holidays/:id
  *
  * Every route requires the existing app-owned session. The account is always
  * the `google_sub` on that session — the client never supplies an identity,
- * and one is never read from a body, query string or header. `google_sub` is
- * part of every lookup, so another account's record is simply not found.
+ * and one is never read from a body, query string, path or header. `google_sub`
+ * is part of every account-scoped lookup, so another account's record is
+ * simply not found.
  *
- * Session handling, the same-origin guard, the JSON envelope and the rolling
- * Set-Cookie propagation come from ../http/authenticated, shared with Today,
- * exercise media and workouts.
+ * `:id/training` is the ONE place a Training preference is written, for
+ * company and custom Holidays alike. Keeping it single means the rule that a
+ * weekend-only Holiday cannot train lives in exactly one place and cannot be
+ * bypassed by using the other endpoint.
+ *
+ * No GET writes anything. The company calendar is seeded by migration and read
+ * only; nothing here creates a company row on demand.
  */
 
 import type { Env } from '../auth/config'
@@ -30,6 +36,8 @@ import {
   listHolidays,
   parseHolidayId,
   parseHolidayInput,
+  parseTrainingPreference,
+  setTrainingPreference,
   updateHoliday,
   MAX_HOLIDAY_RANGE_DAYS,
   type HolidayRecord,
@@ -45,6 +53,9 @@ function toPublicHoliday(record: HolidayRecord) {
     id: record.id,
     startDate: record.startDate,
     endDate: record.endDate,
+    name: record.name,
+    source: record.source,
+    trainingOn: record.trainingOn,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   }
@@ -76,29 +87,34 @@ async function handleList(
   return json({ from: span.from, to: span.to, holidays: records.map(toPublicHoliday) })
 }
 
+/** Read a JSON body, or the 400 that replaces it. */
+async function readJson(request: Request): Promise<{ body: unknown } | { response: Response }> {
+  try {
+    return { body: await request.json() }
+  } catch {
+    return { response: json({ error: 'invalid_json' }, { status: 400 }) }
+  }
+}
+
 /** POST /api/holidays */
 async function handleCreate(
   request: Request,
   store: HolidayStore,
   googleSub: string,
 ): Promise<Response> {
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return json({ error: 'invalid_json' }, { status: 400 })
-  }
+  const read = await readJson(request)
+  if ('response' in read) return read.response
 
-  const parsed = parseHolidayInput(body)
+  const parsed = parseHolidayInput(read.body)
   if (!parsed.ok) {
     return json({ error: 'invalid_holiday', field: parsed.field }, { status: 400 })
   }
 
   const outcome = await createHoliday(store, googleSub, parsed.value)
   if (!outcome.ok) {
-    // Ranges never merge, so an overlap is reported rather than absorbed.
-    // The blocking range is looked up after the refusal, so it can be absent
-    // if that record was itself removed in between. The refusal still stands.
+    // Ranges never merge, so an overlap is reported rather than absorbed. The
+    // blocking range can be an approved company date, which the user cannot
+    // edit — the message names it either way.
     return json(
       {
         error: 'holiday_conflict',
@@ -117,25 +133,23 @@ async function handleUpdate(
   googleSub: string,
   id: string,
 ): Promise<Response> {
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return json({ error: 'invalid_json' }, { status: 400 })
-  }
+  const read = await readJson(request)
+  if ('response' in read) return read.response
 
-  const parsed = parseHolidayInput(body)
+  const parsed = parseHolidayInput(read.body)
   if (!parsed.ok) {
     return json({ error: 'invalid_holiday', field: parsed.field }, { status: 400 })
   }
 
   const outcome = await updateHoliday(store, googleSub, id, parsed.value)
   if (!outcome.ok) {
+    if (outcome.reason === 'immutable') {
+      // A company date is the company's calendar, not the account's.
+      return json({ error: 'holiday_immutable' }, { status: 403 })
+    }
     if (outcome.reason === 'not_found') {
       return json({ error: 'holiday_not_found' }, { status: 404 })
     }
-    // The blocking range is looked up after the refusal, so it can be absent
-    // if that record was itself removed in between. The refusal still stands.
     return json(
       {
         error: 'holiday_conflict',
@@ -147,6 +161,33 @@ async function handleUpdate(
   return json({ holiday: toPublicHoliday(outcome.record) })
 }
 
+/** PUT /api/holidays/:id/training */
+async function handleTraining(
+  request: Request,
+  store: HolidayStore,
+  googleSub: string,
+  id: string,
+): Promise<Response> {
+  const read = await readJson(request)
+  if ('response' in read) return read.response
+
+  const trainingOn = parseTrainingPreference(read.body)
+  if (trainingOn === null) {
+    return json({ error: 'invalid_training' }, { status: 400 })
+  }
+
+  const outcome = await setTrainingPreference(store, googleSub, id, trainingOn)
+  if (!outcome.ok) {
+    if (outcome.reason === 'not_trainable') {
+      // A Saturday/Sunday-only Holiday has no planned session to restore, so
+      // the preference is refused rather than stored and quietly ignored.
+      return json({ error: 'holiday_not_trainable' }, { status: 400 })
+    }
+    return json({ error: 'holiday_not_found' }, { status: 404 })
+  }
+  return json({ holiday: toPublicHoliday(outcome.record) })
+}
+
 /** DELETE /api/holidays/:id */
 async function handleDelete(
   store: HolidayStore,
@@ -154,7 +195,12 @@ async function handleDelete(
   id: string,
 ): Promise<Response> {
   const outcome = await deleteHoliday(store, googleSub, id)
-  if (!outcome.ok) return json({ error: 'holiday_not_found' }, { status: 404 })
+  if (!outcome.ok) {
+    if (outcome.reason === 'immutable') {
+      return json({ error: 'holiday_immutable' }, { status: 403 })
+    }
+    return json({ error: 'holiday_not_found' }, { status: 404 })
+  }
   // The dates it covered now have no override, so they fall back to the
   // normal Home-derived route.
   return json({ id, deleted: true })
@@ -183,8 +229,22 @@ export async function handleHolidayRequest(
     if (isCollection && method !== 'GET' && method !== 'POST') {
       return json({ error: 'method_not_allowed' }, { status: 405 })
     }
-    if (isItem && method !== 'PUT' && method !== 'DELETE') {
-      return json({ error: 'method_not_allowed' }, { status: 405 })
+
+    // Everything under the collection is a single record, optionally with the
+    // `training` sub-resource. Both accept writes only.
+    const segments = isItem ? pathname.slice(COLLECTION.length + 1).split('/') : []
+    const isTraining = segments.length === 2 && segments[1] === 'training'
+
+    if (isItem) {
+      if (segments.length > 2) {
+        return json({ error: 'not_found' }, { status: 404 })
+      }
+      if (isTraining && method !== 'PUT') {
+        return json({ error: 'method_not_allowed' }, { status: 405 })
+      }
+      if (!isTraining && method !== 'PUT' && method !== 'DELETE') {
+        return json({ error: 'method_not_allowed' }, { status: 405 })
+      }
     }
 
     const account = await requireAccount(request, env)
@@ -208,16 +268,9 @@ export async function handleHolidayRequest(
       )
     }
 
-    const rawId = pathname.slice(COLLECTION.length + 1)
-    // Nothing is nested under a Holiday, so a deeper path is a route that does
-    // not exist rather than a malformed id.
-    if (rawId.includes('/')) {
-      return withSessionHeaders(json({ error: 'not_found' }, { status: 404 }), sessionHeaders)
-    }
-
     let decoded: string
     try {
-      decoded = decodeURIComponent(rawId)
+      decoded = decodeURIComponent(segments[0] ?? '')
     } catch {
       return withSessionHeaders(
         json({ error: 'invalid_holiday_id' }, { status: 400 }),
@@ -229,6 +282,13 @@ export async function handleHolidayRequest(
     if (!id) {
       return withSessionHeaders(
         json({ error: 'invalid_holiday_id' }, { status: 400 }),
+        sessionHeaders,
+      )
+    }
+
+    if (isTraining) {
+      return withSessionHeaders(
+        await handleTraining(request, store, account.googleSub, id),
         sessionHeaders,
       )
     }

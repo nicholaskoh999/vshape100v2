@@ -13,9 +13,9 @@
  * a date is: there is one mapping, read from here.
  */
 
-import { dayTypeFor } from '@/features/calendar/calendarModel'
+import { dayTypeFor, holidayFor } from '@/features/calendar/calendarModel'
 import { sessionIdForWeekday } from '@/features/today/model/routines'
-import type { HolidayRecord } from '@shared/holiday'
+import { trainingAppliesOn, type HolidayRecord } from '@shared/holiday'
 import { isLocalDate, weekdayOf } from '@shared/localDate'
 
 /**
@@ -41,9 +41,25 @@ export function scheduledDayFor(
 ): ScheduledDay | null {
   if (!isLocalDate(date)) return null
 
-  // Holiday wins over the weekday here exactly as it does on the Calendar.
+  // Holiday wins over the weekday here exactly as it does on the Calendar —
+  // but a Holiday is no longer automatically exempt from TRAINING.
+  const covering = holidayFor(date, holidays)
+  if (covering) {
+    // Fail-safe, and re-derived rather than trusted: `trainingAppliesOn`
+    // rejects Saturday and Sunday whatever the stored preference says, so
+    // corrupted or forged data can never make a weekend a scheduled day.
+    if (!trainingAppliesOn(date, covering)) {
+      return { kind: 'neutral', date, reason: 'holiday' }
+    }
+    const holidayWeekday = weekdayOf(date)
+    const holidaySession =
+      holidayWeekday === null ? null : sessionIdForWeekday(holidayWeekday)
+    // No session to restore means nothing was scheduled, so still neutral.
+    if (holidaySession === null) return { kind: 'neutral', date, reason: 'holiday' }
+    return { kind: 'training', date, sessionId: holidaySession }
+  }
+
   const type = dayTypeFor(date, holidays)
-  if (type === 'holiday') return { kind: 'neutral', date, reason: 'holiday' }
   if (type === 'saturday') return { kind: 'neutral', date, reason: 'saturday' }
   if (type === 'sunday') return { kind: 'neutral', date, reason: 'sunday' }
 

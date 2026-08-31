@@ -46,6 +46,28 @@ export function sessionIdForWeekday(weekday: number): string | null {
 }
 
 /**
+ * The accepted evening gym slot.
+ *
+ * The one definition of when training happens and where it links. The Holiday
+ * overlay reuses it rather than restating 20:30–21:30, so a Training-On
+ * Holiday can never disagree with the ordinary weekday about the session.
+ */
+export function gymTrainingItem(sessionId: string | null): RoutineItem {
+  return {
+    kind: 'interval',
+    id: 'gym-training',
+    title: 'Gym training',
+    start: at(20, 30),
+    end: at(21, 30),
+    icon: 'gym',
+    ...(sessionId ? { to: `/training/${sessionId}` } : {}),
+  }
+}
+
+/** The copy that is only true while nothing is planned. */
+const NO_GYM_NOTE = 'No gym today.'
+
+/**
  * Home Mode — Monday to Friday.
  *
  * `weekday` is a JS day index (1 = Monday … 5 = Friday); it only decides which
@@ -81,15 +103,7 @@ function homeRoute(weekday: number): Route {
       end: at(20, 30),
       icon: 'dinner',
     },
-    {
-      kind: 'interval',
-      id: 'gym-training',
-      title: 'Gym training',
-      start: at(20, 30),
-      end: at(21, 30),
-      icon: 'gym',
-      ...(sessionId ? { to: `/training/${sessionId}` } : {}),
-    },
+    gymTrainingItem(sessionId),
     {
       kind: 'interval',
       id: 'shower-rest',
@@ -174,12 +188,16 @@ function saturdayRoute(): Route {
 }
 
 /**
- * Sunday — Recovery route.
+ * The Sunday recovery items.
  *
- * Nothing on Sunday has an accepted clock time, so every item is a window.
+ * Extracted because a Holiday borrows this exact template as its base. One
+ * definition means "Sunday" and "the Holiday base day" cannot drift apart —
+ * changing the recovery day changes both, which is the point.
+ *
+ * Nothing here has an accepted clock time, so every item is a window.
  */
-function sundayRoute(): Route {
-  const items: RoutineItem[] = [
+function recoveryItems(): RoutineItem[] {
+  return [
     {
       kind: 'window',
       id: 'natural-wake',
@@ -217,30 +235,74 @@ function sundayRoute(): Route {
       end: dayPart.dayEnd,
       icon: 'chill',
       windowLabel: 'Whenever',
-      note: 'No gym today.',
+      note: NO_GYM_NOTE,
     },
   ]
+}
 
+/** Sunday — Recovery route. */
+function sundayRoute(): Route {
   return {
     id: 'sunday',
     label: 'Recovery route',
     summary: 'Natural wake, weekly progress check, room reset. No gym.',
-    items,
+    items: recoveryItems(),
   }
+}
+
+/** What a Holiday date needs to know about itself to build its route. */
+export type HolidayRouteOptions = {
+  /** Human-readable name, e.g. "Merdeka Day". Empty when unnamed. */
+  name?: string
+  /** Did the user choose to keep training on this Holiday? */
+  trainingOn?: boolean
+  /** JS weekday of the actual date (0 = Sunday), so Training On can pick the
+   *  session that weekday already plans. The weekday is NOT changed by the
+   *  Holiday — only the routine is. */
+  weekday?: number
 }
 
 /**
  * The route for a Holiday date.
  *
- * Deliberately empty. Holiday is EXEMPT: suspending the day's pressure means
- * there is nothing to do, not a list of things quietly marked complete.
+ * A Holiday suspends the WORK day, so it borrows the Sunday recovery template
+ * rather than being empty: there is still a day to live, just not a work one.
+ * Work and Back home do not return, because those are what a Holiday removes.
+ *
+ * Training On adds exactly one thing — the gym session that weekday already
+ * planned — and removes the "No gym today" line, which would otherwise
+ * contradict the session sitting right below it.
+ *
+ * Saturday and Sunday Holidays never gain a session: there is no underlying
+ * weekday plan to restore, and inventing one would be inventing training the
+ * user never scheduled.
  */
-export function holidayRoute(): Route {
+export function holidayRoute(options: HolidayRouteOptions = {}): Route {
+  const { name = '', trainingOn = false, weekday } = options
+
+  const sessionId =
+    trainingOn && weekday !== undefined ? sessionIdForWeekday(weekday) : null
+  const training = sessionId !== null
+
+  const items: RoutineItem[] = recoveryItems().map((item) => {
+    if (!training || item.note !== NO_GYM_NOTE) return item
+    // Drop the note rather than blanking it, so no empty line is rendered.
+    const withoutNote = { ...item }
+    delete withoutNote.note
+    return withoutNote
+  })
+
+  if (training) items.push(gymTrainingItem(sessionId))
+
   return {
     id: 'holiday',
     label: 'Holiday',
-    summary: 'A planned pause from the normal routine. Foundation Day continues.',
-    items: [],
+    name,
+    trainingOn: training,
+    summary: training
+      ? 'A planned pause from work. Training is still on. Foundation Day continues.'
+      : 'A planned pause from the normal routine. Foundation Day continues.',
+    items,
   }
 }
 

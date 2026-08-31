@@ -7,7 +7,7 @@ import { PageHeader } from '@/components/ui/PageHeader'
 import { listItemVariants, listVariants, press } from '@/design/motion'
 import { localWorkoutDate } from '@/features/training/workoutPlan'
 import { cn } from '@/lib/utils'
-import type { HolidayRecord } from '@shared/holiday'
+import { rangeCanTrain, type HolidayRecord } from '@shared/holiday'
 import {
   buildMonthGrid,
   DAY_TYPE_LABEL,
@@ -22,7 +22,13 @@ import {
   type CalendarDay,
   type DayType,
 } from './calendarModel'
-import { createHoliday, deleteHoliday, updateHoliday, HolidayApiError } from './holidayApi'
+import {
+  createHoliday,
+  deleteHoliday,
+  setHolidayTraining,
+  updateHoliday,
+  HolidayApiError,
+} from './holidayApi'
 import { useHolidays } from './useHolidays'
 
 /**
@@ -56,6 +62,8 @@ export function CalendarPage() {
   const [anchor, setAnchor] = useState<string | null>(null)
   const [selection, setSelection] = useState<{ start: string; end: string } | null>(null)
   const [editing, setEditing] = useState<HolidayRecord | null>(null)
+  /** The name being typed. Only a custom Holiday's name is the user's. */
+  const [name, setName] = useState('')
   const [feedback, setFeedback] = useState<Feedback>({ state: 'idle' })
 
   // A mutation in flight. A ref so the double-submit guard is decided
@@ -83,6 +91,7 @@ export function CalendarPage() {
     setAnchor(null)
     setSelection(null)
     setEditing(null)
+    setName('')
     setFeedback({ state: 'idle' })
   }
 
@@ -104,6 +113,7 @@ export function CalendarPage() {
     setAnchor(null)
     setSelection(null)
     setEditing(null)
+    setName('')
   }
 
   function handleDayClick(day: CalendarDay) {
@@ -115,9 +125,21 @@ export function CalendarPage() {
     // re-drawing its range. Without that exception a saved Holiday could never
     // be shortened, because every click inside it would just reopen it whole.
     const covering = day.holiday
+
+    // An approved company date is not the user's to redraw, so ANY click on
+    // one simply opens it. Only its Training preference is theirs to change.
+    if (covering !== null && covering.source === 'company') {
+      setEditing(covering)
+      setSelection({ start: covering.startDate, end: covering.endDate })
+      setName(covering.name)
+      setAnchor(null)
+      return
+    }
+
     if (covering !== null && covering.id !== editing?.id && anchor === null) {
       setEditing(covering)
       setSelection({ start: covering.startDate, end: covering.endDate })
+      setName(covering.name)
       return
     }
 
@@ -172,7 +194,16 @@ export function CalendarPage() {
 
   function handleSave() {
     if (!selection) return
-    const input = { startDate: selection.start, endDate: selection.end }
+    // A company date has no Save path at all; this is custom-only.
+    if (editing?.source === 'company') return
+    const input = {
+      startDate: selection.start,
+      endDate: selection.end,
+      name,
+      // Editing dates or the name must not silently change the training
+      // choice, so the existing one is carried through.
+      trainingOn: editing?.trainingOn ?? false,
+    }
     const target = editing
     void runMutation(
       async () => {
@@ -184,8 +215,28 @@ export function CalendarPage() {
     )
   }
 
+  /**
+   * Turn training on or off for the open Holiday.
+   *
+   * One call for both sources — the server owns the rule that a weekend-only
+   * Holiday cannot train, so there is no second copy of it here.
+   */
+  function handleTraining(trainingOn: boolean) {
+    const target = editing
+    if (!target) return
+    void runMutation(
+      async () => {
+        await setHolidayTraining(target.id, trainingOn)
+      },
+      { state: 'saving' },
+      { state: 'saved' },
+    )
+  }
+
   function handleDelete() {
     if (!editing) return
+    // A company date is the company's calendar, not the account's.
+    if (editing.source === 'company') return
     const target = editing
     void runMutation(
       async () => {
@@ -242,6 +293,9 @@ export function CalendarPage() {
           <HolidayEditor
             selection={selection}
             editing={editing}
+            name={name}
+            onNameChange={setName}
+            onTraining={handleTraining}
             anchorPending={anchor !== null}
             // Saving against a month we cannot see could silently overlap a
             // Holiday that is already there.
@@ -445,6 +499,9 @@ function Legend() {
 function HolidayEditor({
   selection,
   editing,
+  name,
+  onNameChange,
+  onTraining,
   anchorPending,
   busy,
   feedback,
@@ -453,12 +510,20 @@ function HolidayEditor({
 }: {
   selection: { start: string; end: string } | null
   editing: HolidayRecord | null
+  name: string
+  onNameChange: (value: string) => void
+  onTraining: (trainingOn: boolean) => void
   anchorPending: boolean
   busy: boolean
   feedback: Feedback
   onSave: () => void
   onDelete: () => void
 }) {
+  const company = editing?.source === 'company'
+  // Training can only be chosen once a Holiday exists — the preference belongs
+  // to a record, not to a selection that has not been saved yet.
+  const canTrain =
+    editing !== null && rangeCanTrain(editing.startDate, editing.endDate)
   return (
     <Card className="p-5">
       {/* Card does not forward extra props, so the marker lives here. */}
@@ -472,7 +537,7 @@ function HolidayEditor({
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-ink-faint">
-            Holiday Mode
+            {company ? 'Company Holiday' : 'Holiday Mode'}
           </p>
 
           {!selection ? (
@@ -482,24 +547,93 @@ function HolidayEditor({
             </p>
           ) : (
             <>
-              <p className="mt-1 text-[17px] font-extrabold tracking-tight text-offwhite">
+              {/* The name leads when there is one — it is what the day IS. */}
+              {editing?.name ? (
+                <p className="mt-1 text-[17px] font-extrabold tracking-tight text-offwhite">
+                  {editing.name}
+                </p>
+              ) : null}
+              <p
+                className={cn(
+                  'tracking-tight text-offwhite',
+                  editing?.name
+                    ? 'mt-0.5 text-[13px] font-semibold text-ink-dim'
+                    : 'mt-1 text-[17px] font-extrabold',
+                )}
+              >
                 {formatRange(selection.start, selection.end)}
               </p>
               <p className="mt-0.5 text-[12px] font-semibold text-ink-faint">
                 {selectionLength(selection.start, selection.end)}{' '}
                 {selectionLength(selection.start, selection.end) === 1 ? 'day' : 'days'}
-                {anchorPending
-                  ? ' · pick a second day to finish the range'
-                  : editing
-                    ? ' · editing a saved Holiday'
-                    : ''}
+                {company
+                  ? ' · company date — only training is yours to change'
+                  : anchorPending
+                    ? ' · pick a second day to finish the range'
+                    : editing
+                      ? ' · editing a saved Holiday'
+                      : ''}
               </p>
+
+              {/* Training state is always stated, never left to be inferred. */}
+              {editing && (
+                <p
+                  data-holiday-training={editing.trainingOn ? 'on' : 'off'}
+                  className="mt-2 inline-flex items-center rounded-control border border-edge px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-faint"
+                >
+                  {editing.trainingOn ? 'Training on' : 'Training off'}
+                </p>
+              )}
             </>
           )}
         </div>
       </div>
 
-      {selection && (
+      {/* Naming is only meaningful for a Holiday the user owns. */}
+      {selection && !company && (
+        <label className="mt-4 block">
+          <span className="text-[12px] font-semibold text-ink-faint">Name (optional)</span>
+          <input
+            type="text"
+            value={name}
+            maxLength={80}
+            onChange={(event) => onNameChange(event.target.value)}
+            placeholder="e.g. Family trip"
+            data-holiday-name-input
+            className="mt-1 w-full rounded-control border border-edge bg-surface-overlay px-3 py-2.5 text-[13px] font-semibold text-offwhite placeholder:text-ink-faint focus:border-blue/60 focus:outline-none"
+          />
+        </label>
+      )}
+
+      {/*
+        Training On restores only that weekday's planned session. A
+        Saturday/Sunday-only Holiday has no session to restore, so the control
+        is not offered there rather than being offered and refused.
+      */}
+      {editing && canTrain && (
+        <div data-holiday-training-control className="mt-4 flex flex-wrap items-center gap-2">
+          {([false, true] as const).map((value) => (
+            <button
+              key={String(value)}
+              type="button"
+              onClick={() => onTraining(value)}
+              disabled={busy}
+              aria-pressed={editing.trainingOn === value}
+              data-training-option={value ? 'on' : 'off'}
+              className={cn(
+                'inline-flex items-center rounded-control border px-3.5 py-2.5 text-[13px] font-bold transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40',
+                editing.trainingOn === value
+                  ? 'border-blue bg-blue/15 text-offwhite'
+                  : 'border-edge-strong text-ink-dim hover:text-offwhite',
+              )}
+            >
+              {value ? 'Training on' : 'Training off'}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {selection && !company && (
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <button
             type="button"

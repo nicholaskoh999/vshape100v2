@@ -89,6 +89,21 @@ export type Route = {
   /** One line describing the shape of the day. */
   summary: string
   items: RoutineItem[]
+  /**
+   * The Holiday's human-readable name, e.g. "Merdeka Day".
+   *
+   * Only a Holiday route carries one. It never replaces the weekday: a
+   * Holiday changes the routine, not what day of the week it actually is.
+   */
+  name?: string
+  /**
+   * Did the user keep training on this Holiday?
+   *
+   * Present only on a Holiday route, and true only when a session was
+   * genuinely restored — a weekend Holiday reports false however the
+   * preference was stored.
+   */
+  trainingOn?: boolean
 }
 
 /** The five accepted Today states. */

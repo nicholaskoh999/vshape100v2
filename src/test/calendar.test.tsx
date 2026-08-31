@@ -109,10 +109,17 @@ describe('1. month view', () => {
     expect(typeOf('2026-09-06')).toBe('sunday')
   })
 
-  it('shows a month with no Holiday as entirely normal', async () => {
+  it('shows only the approved company dates as Holiday when the user saved none', async () => {
     await renderCalendar()
     await settleTypes()
-    expect(document.querySelectorAll('[data-day-type="holiday"]')).toHaveLength(0)
+
+    // The September 2026 grid spans Merdeka Day and Malaysia Day; every other
+    // day is an ordinary one.
+    const marked = [...document.querySelectorAll('[data-day-type="holiday"]')].map((cell) =>
+      cell.getAttribute('data-day'),
+    )
+    expect(marked).toEqual(['2026-08-31', '2026-09-16'])
+    expect(server.rows.size).toBe(0)
   })
 })
 
@@ -389,12 +396,13 @@ describe('6. editing and deleting', () => {
 
     await u.click(cell('2026-09-11')) // open for editing
     await u.click(cell('2026-09-10')) // re-anchor
-    await u.click(cell('2026-09-16'))
+    // Stops short of Malaysia Day, which the company calendar owns.
+    await u.click(cell('2026-09-15'))
     await u.click(screen.getByRole('button', { name: /Update Holiday|Save Holiday/ }))
 
     // Extending over its own days must not be a false overlap.
     await screen.findByText('Saved')
-    await waitFor(() => expect(typeOf('2026-09-16')).toBe('holiday'))
+    await waitFor(() => expect(typeOf('2026-09-15')).toBe('holiday'))
     expect(server.rows.size).toBe(1)
   })
 
@@ -641,5 +649,219 @@ describe('8. interaction state after a mutation', () => {
     expect(selectedDates()).toEqual(['2026-09-09', '2026-09-10', '2026-09-11'])
     expect(screen.getByRole('button', { name: /Save Holiday/ })).toBeInTheDocument()
     errors.mockRestore()
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* 9. Round 13 - company Holidays, names and Training Off / On         */
+/* ------------------------------------------------------------------ */
+
+/** The Training control, when the open Holiday is eligible for one. */
+function trainingControl(): HTMLElement | null {
+  return document.querySelector('[data-holiday-training-control]')
+}
+
+function trainingOption(value: 'on' | 'off'): HTMLElement | null {
+  return document.querySelector(`[data-training-option="${value}"]`)
+}
+
+/** Step forward `count` months. */
+async function nextMonths(u: ReturnType<typeof user>, count: number) {
+  for (let i = 0; i < count; i += 1) {
+    await u.click(screen.getByRole('button', { name: 'Next month' }))
+  }
+}
+
+describe('9. company Holidays', () => {
+  it('marks the approved dates on the month grid', async () => {
+    await renderCalendar()
+    await settleTypes()
+
+    // Merdeka Day and Malaysia Day both fall inside the September 2026 grid.
+    expect(typeOf('2026-08-31')).toBe('holiday')
+    expect(typeOf('2026-09-16')).toBe('holiday')
+  })
+
+  it('shows the Holiday name when one is opened', async () => {
+    const u = await renderCalendar()
+    await waitFor(() => expect(typeOf('2026-09-16')).toBe('holiday'))
+
+    await u.click(cell('2026-09-16'))
+    const text = editor().textContent ?? ''
+    expect(text).toMatch(/Malaysia Day/)
+    expect(text).toMatch(/Company Holiday/)
+    // The date is still shown, so name and date are both visible at once.
+    expect(text).toMatch(/16 Sep 2026/)
+  })
+
+  it('states the Training choice rather than leaving it to be inferred', async () => {
+    const u = await renderCalendar()
+    await waitFor(() => expect(typeOf('2026-09-16')).toBe('holiday'))
+
+    await u.click(cell('2026-09-16'))
+    expect(document.querySelector('[data-holiday-training]')?.getAttribute(
+      'data-holiday-training',
+    )).toBe('off')
+    expect(editor().textContent).toMatch(/Training off/i)
+  })
+
+  it('offers Training Off / On for a weekday company Holiday', async () => {
+    const u = await renderCalendar()
+    await waitFor(() => expect(typeOf('2026-09-16')).toBe('holiday'))
+
+    await u.click(cell('2026-09-16'))
+    expect(trainingControl()).not.toBeNull()
+    expect(trainingOption('on')).not.toBeNull()
+    expect(trainingOption('off')).not.toBeNull()
+  })
+
+  it('turns training on and keeps it', async () => {
+    const u = await renderCalendar()
+    await waitFor(() => expect(typeOf('2026-09-16')).toBe('holiday'))
+
+    await u.click(cell('2026-09-16'))
+    await u.click(trainingOption('on') as HTMLElement)
+    await screen.findByText('Saved')
+
+    expect(server.companyPreferences.get('2026-09-16')).toBe(true)
+
+    // And it reads back that way when reopened.
+    await u.click(cell('2026-09-16'))
+    await waitFor(() =>
+      expect(
+        document.querySelector('[data-holiday-training]')?.getAttribute('data-holiday-training'),
+      ).toBe('on'),
+    )
+  })
+
+  it('does not offer Training On for a weekend company Holiday', async () => {
+    const u = await renderCalendar()
+    await settleTypes()
+    // Deepavali 2026 is a Sunday: no session exists to restore.
+    await nextMonths(u, 2)
+    await waitFor(() => expect(typeOf('2026-11-08')).toBe('holiday'))
+
+    await u.click(cell('2026-11-08'))
+    expect(editor().textContent).toMatch(/Deepavali/)
+    expect(trainingControl()).toBeNull()
+  })
+
+  it('offers no way to move, rename or delete a company date', async () => {
+    const u = await renderCalendar()
+    await waitFor(() => expect(typeOf('2026-09-16')).toBe('holiday'))
+
+    await u.click(cell('2026-09-16'))
+    // Its date and name are the company"s, not the account"s.
+    expect(screen.queryByRole('button', { name: /Save Holiday|Update Holiday/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Delete$/ })).toBeNull()
+    expect(document.querySelector('[data-holiday-name-input]')).toBeNull()
+  })
+
+  it('cannot be dragged into a range by clicking across it', async () => {
+    const u = await renderCalendar()
+    await waitFor(() => expect(typeOf('2026-09-16')).toBe('holiday'))
+
+    // Start a selection, then click the company date: it opens rather than
+    // extending a range over a day it owns.
+    await u.click(cell('2026-09-14'))
+    await u.click(cell('2026-09-16'))
+    expect(editor().textContent).toMatch(/Malaysia Day/)
+    expect(screen.queryByRole('button', { name: /Save Holiday/ })).toBeNull()
+  })
+
+  it('refuses a custom range drawn across a company date', async () => {
+    const u = await renderCalendar()
+    await settleTypes()
+
+    // Anchor before Malaysia Day and close after it, so the range spans a
+    // date the company calendar owns.
+    await u.click(cell('2026-09-15'))
+    await u.click(cell('2026-09-17'))
+    await u.click(screen.getByRole('button', { name: /Save Holiday/ }))
+
+    expect(await screen.findByText(/overlaps an existing Holiday/)).toBeInTheDocument()
+    expect(screen.getByText(/16 Sep 2026/)).toBeInTheDocument()
+    // Nothing was written, and the company date is untouched.
+    expect(server.rows.size).toBe(0)
+    expect(typeOf('2026-09-16')).toBe('holiday')
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* 10. Round 13 - naming and training a custom Holiday                 */
+/* ------------------------------------------------------------------ */
+
+describe('10. custom Holidays keep their own truth', () => {
+  it('saves a name typed into the editor', async () => {
+    const u = await renderCalendar()
+    await settleTypes()
+
+    await u.click(cell('2026-09-21'))
+    await u.click(cell('2026-09-23'))
+    const input = document.querySelector('[data-holiday-name-input]') as HTMLInputElement
+    await u.type(input, 'Family trip')
+    await u.click(screen.getByRole('button', { name: /Save Holiday/ }))
+    await screen.findByText('Saved')
+
+    expect([...server.rows.values()][0]).toMatchObject({
+      name: 'Family trip',
+      startDate: '2026-09-21',
+      endDate: '2026-09-23',
+    })
+  })
+
+  it('shows a saved name when the Holiday is reopened', async () => {
+    server.seed(holiday('h1', '2026-09-21', '2026-09-23', { name: 'Family trip' }))
+    const u = await renderCalendar()
+    await waitFor(() => expect(typeOf('2026-09-21')).toBe('holiday'))
+
+    await u.click(cell('2026-09-22'))
+    expect(editor().textContent).toMatch(/Family trip/)
+  })
+
+  it('still allows edit and delete on a custom Holiday', async () => {
+    server.seed(holiday('h1', '2026-09-21', '2026-09-23', { name: 'Family trip' }))
+    const u = await renderCalendar()
+    await waitFor(() => expect(typeOf('2026-09-21')).toBe('holiday'))
+
+    await u.click(cell('2026-09-22'))
+    expect(screen.getByRole('button', { name: /Update Holiday/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Delete$/ })).toBeInTheDocument()
+    expect(document.querySelector('[data-holiday-name-input]')).not.toBeNull()
+  })
+
+  it('offers Training Off / On for a weekday custom Holiday', async () => {
+    server.seed(holiday('h1', '2026-09-21', '2026-09-23', { name: 'Family trip' }))
+    const u = await renderCalendar()
+    await waitFor(() => expect(typeOf('2026-09-21')).toBe('holiday'))
+
+    await u.click(cell('2026-09-22'))
+    expect(trainingControl()).not.toBeNull()
+
+    await u.click(trainingOption('on') as HTMLElement)
+    await screen.findByText('Saved')
+    expect([...server.rows.values()][0].trainingOn).toBe(true)
+  })
+
+  it('offers none for a weekend-only custom Holiday', async () => {
+    // 2026-09-26 is a Saturday and 2026-09-27 a Sunday.
+    server.seed(holiday('h1', '2026-09-26', '2026-09-27', { name: 'Quiet weekend' }))
+    const u = await renderCalendar()
+    await waitFor(() => expect(typeOf('2026-09-26')).toBe('holiday'))
+
+    await u.click(cell('2026-09-26'))
+    expect(editor().textContent).toMatch(/Quiet weekend/)
+    expect(trainingControl()).toBeNull()
+  })
+
+  it('is not actionable while the month state is unknown', async () => {
+    const release = server.holdReads()
+    renderApp('/calendar')
+    await screen.findByRole('heading', { level: 1, name: 'Calendar' })
+
+    // Nothing may be drawn or toggled against a month we cannot see.
+    expect(trainingControl()).toBeNull()
+    expect(screen.queryByRole('button', { name: /Save Holiday/ })).toBeNull()
+    release()
   })
 })

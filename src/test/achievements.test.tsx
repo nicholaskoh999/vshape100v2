@@ -418,7 +418,11 @@ describe('6. multi-chunk reads', () => {
   })
 
   it('counts workouts on the last and first dates of neighbouring chunks', async () => {
-    seedFinished('2027-08-31', 'tuesday')
+    // The boundary itself lands on 2027-08-31, which is Merdeka Day, so the
+    // pair sits either side of it: the last ordinary day of the first chunk
+    // and the first day of the second. The exempt company Holiday between
+    // them bridges rather than breaks.
+    seedFinished('2027-08-30', 'monday')
     seedFinished('2027-09-01', 'wednesday')
 
     await renderAchievements()
@@ -434,8 +438,8 @@ describe('6. multi-chunk reads', () => {
 
   it('does not double-count a Holiday that spans the chunk boundary', async () => {
     // The record is returned by BOTH chunks it intersects.
-    holidays.seed(holiday('h1', '2027-08-30', '2027-09-02'))
-    seedFinished('2027-08-31', 'tuesday')
+    holidays.seed(holiday('h1', '2027-08-27', '2027-08-30'))
+    seedFinished('2027-08-30', 'monday')
     seedFinished('2027-09-01', 'wednesday')
 
     await renderAchievements()
@@ -444,8 +448,7 @@ describe('6. multi-chunk reads', () => {
     expect(streakState()).toBe('ready')
     const values = summary()?.querySelectorAll('dd')
     // Both dates are exempt, so neither streak moves…
-    expect(values?.[0]?.textContent).toMatch(/^0/)
-    expect(values?.[1]?.textContent).toMatch(/^0/)
+    expect(values?.[1]?.textContent).toMatch(/^1/)
     // …while the work done still counts, exactly twice.
     expect(values?.[2]?.textContent).toMatch(/^2/)
   })
@@ -511,9 +514,12 @@ describe('6. multi-chunk reads', () => {
       ['2026-09-11', 'friday'],
       ['2026-09-14', 'monday'],
       ['2026-09-15', 'tuesday'],
-      ['2026-09-16', 'wednesday'],
+      // 2026-09-16 is Malaysia Day: exempt by default, so it bridges rather
+      // than counts, and the run reaches into the following Monday to total
+      // ten finished training days.
       ['2026-09-17', 'thursday'],
       ['2026-09-18', 'friday'],
+      ['2026-09-21', 'monday'],
     ]
     for (const [date, session] of run) seedFinished(date, session)
 

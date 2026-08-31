@@ -1,3 +1,5 @@
+import { COMPANY_HOLIDAYS } from '../../shared/companyHolidays'
+
 /**
  * Minimal in-memory stand-in for D1, covering exactly the statements the
  * Worker issues against `auth_sessions`, `today_completions`,
@@ -47,7 +49,21 @@ type HolidayRow = {
   google_sub: string
   start_date: string
   end_date: string
+  name: string
+  /** 0 / 1, exactly as SQLite stores it. */
+  training_on: number
   created_at: number
+  updated_at: number
+}
+
+/** One approved company date. Global: seeded by migration, never per account. */
+type CompanyHolidayRow = { holiday_date: string; name: string }
+
+/** One account's Training choice for a company date. */
+type CompanyPreferenceRow = {
+  google_sub: string
+  holiday_date: string
+  training_on: number
   updated_at: number
 }
 
@@ -110,6 +126,12 @@ export function createFakeD1() {
   const completions = new Map<string, CompletionRow>()
   const media = new Map<string, MediaRow>()
   const holidays = new Map<string, HolidayRow>()
+  // Seeded, because migration 0006 seeds it globally. A request path must
+  // never write here, and no branch below does.
+  const companyHolidays = new Map<string, CompanyHolidayRow>(
+    COMPANY_HOLIDAYS.map((row) => [row.date, { holiday_date: row.date, name: row.name }]),
+  )
+  const companyPreferences = new Map<string, CompanyPreferenceRow>()
   const occurrences = new Map<string, OccurrenceRow>()
   const workoutSets = new Map<string, WorkoutSetRow>()
   /** Set to make every `today_completions` statement throw, as D1 would. */
@@ -140,6 +162,56 @@ export function createFakeD1() {
   }
 
   function execute(sql: string, args: unknown[]) {
+    if (sql.includes('company_holiday_preferences')) {
+      if (holidayFailure) throw holidayFailure
+
+      if (sql.includes('INSERT INTO company_holiday_preferences')) {
+        const [google_sub, holiday_date, training_on, updated_at] = args as [
+          string, string, number, number,
+        ]
+        // Upsert: the account may change its mind any number of times.
+        companyPreferences.set(`${google_sub}\u0000${holiday_date}`, {
+          google_sub,
+          holiday_date,
+          training_on,
+          updated_at,
+        })
+        return 1
+      }
+
+      if (sql.includes('SELECT')) {
+        const [google_sub, from, to] = args as [string, string, string]
+        return [...companyPreferences.values()].filter(
+          (row) =>
+            row.google_sub === google_sub &&
+            row.holiday_date >= from &&
+            row.holiday_date <= to,
+        )
+      }
+
+      throw new Error(`fakeD1 received an unexpected statement: ${sql}`)
+    }
+
+    if (sql.includes('company_holidays')) {
+      if (holidayFailure) throw holidayFailure
+
+      // Read-only by construction: there is no write branch here, so a GET
+      // cannot seed the company calendar on demand.
+      if (sql.includes('holiday_date = ?')) {
+        const [date] = args as [string]
+        return companyHolidays.get(date) ?? null
+      }
+
+      if (sql.includes('SELECT')) {
+        const [from, to] = args as [string, string]
+        return [...companyHolidays.values()]
+          .filter((row) => row.holiday_date >= from && row.holiday_date <= to)
+          .sort((a, b) => a.holiday_date.localeCompare(b.holiday_date))
+      }
+
+      throw new Error(`fakeD1 received an unexpected statement: ${sql}`)
+    }
+
     if (sql.includes('holiday_overrides')) {
       if (holidayFailure) throw holidayFailure
 
@@ -167,12 +239,17 @@ export function createFakeD1() {
           google_sub,
           start_date,
           end_date,
+          name,
+          training_on,
           created_at,
           updated_at,
           guard_sub,
           guard_end,
           guard_start,
-        ] = args as [string, string, string, string, number, number, string, string, string]
+        ] = args as [
+          string, string, string, string, string, number, number, number,
+          string, string, string,
+        ]
 
         // WHERE NOT EXISTS (anything of this account intersecting the range).
         // Evaluated inside the statement, so a losing concurrent create writes
@@ -184,9 +261,24 @@ export function createFakeD1() {
           google_sub,
           start_date,
           end_date,
+          name,
+          training_on,
           created_at,
           updated_at,
         })
+        return 1
+      }
+
+      // Training-only update: dates and name are absent from the statement,
+      // so toggling training cannot move or rename the Holiday.
+      if (sql.includes('UPDATE holiday_overrides') && sql.includes('SET training_on')) {
+        const [training_on, updated_at, google_sub, id] = args as [
+          number, number, string, string,
+        ]
+        const key = holidayId(google_sub, id)
+        const row = holidays.get(key)
+        if (!row) return 0
+        holidays.set(key, { ...row, training_on, updated_at })
         return 1
       }
 
@@ -194,6 +286,8 @@ export function createFakeD1() {
         const [
           start_date,
           end_date,
+          name,
+          training_on,
           updated_at,
           google_sub,
           id,
@@ -201,7 +295,10 @@ export function createFakeD1() {
           guard_id,
           guard_end,
           guard_start,
-        ] = args as [string, string, number, string, string, string, string, string, string]
+        ] = args as [
+          string, string, string, number, number, string, string,
+          string, string, string, string,
+        ]
 
         const key = holidayId(google_sub, id)
         const row = holidays.get(key)
@@ -212,7 +309,7 @@ export function createFakeD1() {
         // days is never a conflict with itself.
         if (overlapping(guard_sub, guard_start, guard_end, guard_id)) return 0
 
-        holidays.set(key, { ...row, start_date, end_date, updated_at })
+        holidays.set(key, { ...row, start_date, end_date, name, training_on, updated_at })
         return 1
       }
 
@@ -746,6 +843,8 @@ export function createFakeD1() {
     occurrences,
     workoutSets,
     holidays,
+    companyHolidays,
+    companyPreferences,
     breakCompletions(error = new Error('D1 unavailable')) {
       completionsFailure = error
     },

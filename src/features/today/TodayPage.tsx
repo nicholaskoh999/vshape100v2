@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/ui/PageHeader'
 import type { HolidayStatus } from '@/features/calendar/useHolidays'
 import { foundationStatus } from '@/features/progress/foundation'
 import { localDateOf } from '@shared/localDate'
+import type { Route } from './model/types'
 import { TodayHero } from './components/TodayHero'
 import { TodaySection } from './components/TodaySection'
 import { TodayStatusNotice } from './components/TodayStatusNotice'
@@ -20,10 +21,13 @@ import { useToday } from './useToday'
  * out to be exempt. The body is already neutral while the mode is unknown; the
  * header has to be too, or it states a resolved mode we do not have.
  */
-function dayModeLabel(status: HolidayStatus, routeLabel: string): string {
+function dayModeLabel(status: HolidayStatus, route: Route): string {
   if (status === 'loading') return 'Checking day mode'
   if (status === 'error') return 'Day mode unavailable'
-  return routeLabel
+  // A Holiday names itself, but never renames the day: the weekday and date
+  // in front of this stay exactly what the calendar says.
+  if (route.id === 'holiday' && route.name) return `${route.name} · ${route.label}`
+  return route.label
 }
 
 /**
@@ -113,7 +117,7 @@ export function TodayPage() {
       <PageHeader
         eyebrow={foundationEyebrow(now)}
         title="Today"
-        subline={`${dateLabel} · ${dayModeLabel(holidayStatus, agenda.route.label)}`}
+        subline={`${dateLabel} · ${dayModeLabel(holidayStatus, agenda.route)}`}
         actions={<ClockChip now={now} />}
       />
 
@@ -127,9 +131,9 @@ export function TodayPage() {
       {holidayStatus === 'loading' && <TodayChecking />}
       {holidayStatus === 'error' && <TodayHolidayError onRetry={retryHolidays} />}
 
-      {holidayStatus === 'ready' && agenda.holiday && <HolidayToday />}
+      {holidayStatus === 'ready' && agenda.holiday && <HolidayToday route={agenda.route} />}
 
-      {holidayStatus === 'ready' && !agenda.holiday && (
+      {holidayStatus === 'ready' && (
       <>
       <TodayStatusNotice
         hydration={hydration}
@@ -263,17 +267,21 @@ function TodayHolidayError({ onRetry }: { onRetry: () => void }) {
 }
 
 /**
- * Today on a Holiday date.
+ * The Holiday banner.
  *
- * EXEMPT, not missed. The normal agenda is not rendered at all, so nothing can
- * read as late — and nothing is marked complete to achieve that. Training stays
- * reachable for anyone who genuinely wants it, but nothing here asks for it.
+ * A Holiday suspends the WORK day, not the day itself, so this sits above a
+ * real agenda rather than replacing it: the recovery template still applies,
+ * and with Training On the weekday's own session is part of it.
+ *
+ * Which it is has to be visible. "Exempt" and "Training on" are genuinely
+ * different days, and the difference decides whether a streak moves.
  */
-function HolidayToday() {
+function HolidayToday({ route }: { route: Route }) {
+  const trainingOn = route.trainingOn === true
   return (
     <Card className="p-5 md:p-6">
       {/* Card does not forward extra props, so the marker lives here. */}
-      <div data-today-holiday>
+      <div data-today-holiday data-today-training={trainingOn ? 'on' : 'off'}>
       <div className="flex items-start gap-4">
         <span
           aria-hidden="true"
@@ -283,14 +291,18 @@ function HolidayToday() {
         </span>
         <div className="min-w-0">
           <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-holiday">
-            Holiday · Exempt
+            Holiday · {trainingOn ? 'Training on' : 'Exempt'}
           </p>
           <h2 className="mt-1 text-xl font-extrabold tracking-tight text-offwhite md:text-2xl">
-            A planned pause from the normal routine.
+            {route.name || 'A planned pause from the normal routine.'}
           </h2>
           <p className="mt-1.5 text-[13px] leading-relaxed text-ink-faint">
-            Nothing is due today and nothing is counted as missed. Foundation Day keeps
-            counting.
+            {trainingOn
+              ? 'Work is paused, and you chose to keep training. Only today’s session is below. Foundation Day keeps counting.'
+              : 'Nothing is due today and nothing is counted as missed. Foundation Day keeps counting.'}
+          </p>
+          <p className="mt-2 inline-flex items-center rounded-control border border-edge px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-faint">
+            {trainingOn ? 'Training on' : 'Training off'}
           </p>
         </div>
       </div>
@@ -303,13 +315,15 @@ function HolidayToday() {
           <CalendarRange className="size-4" aria-hidden="true" />
           Open Calendar
         </Link>
-        <Link
-          to="/training"
-          className="inline-flex h-11 items-center justify-center gap-1.5 rounded-control border border-edge px-4 text-[13px] font-bold text-ink-faint transition-colors duration-150 hover:border-edge-strong hover:text-offwhite"
-        >
-          <Dumbbell className="size-4" aria-hidden="true" />
-          Train anyway
-        </Link>
+        {!trainingOn && (
+          <Link
+            to="/training"
+            className="inline-flex h-11 items-center justify-center gap-1.5 rounded-control border border-edge px-4 text-[13px] font-bold text-ink-faint transition-colors duration-150 hover:border-edge-strong hover:text-offwhite"
+          >
+            <Dumbbell className="size-4" aria-hidden="true" />
+            Train anyway
+          </Link>
+        )}
       </div>
       </div>
     </Card>
