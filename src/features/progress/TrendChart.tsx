@@ -79,12 +79,22 @@ export function TrendChart({
   points,
   label,
   unitLabel,
+  plots,
 }: {
   points: readonly TrendPoint[];
   /** What the chart is of, e.g. "Body weight". Used for the accessible name. */
   label: string;
   /** Column heading for the value, e.g. "Weight". */
   unitLabel: string;
+  /**
+   * What the LINE encodes, when that is only part of each point.
+   *
+   * A loaded set is a load and a rep count, and a line can only carry one of
+   * them. Plotting load means 50 kg x 8 followed by 50 kg x 10 draws flat even
+   * though the second set was better, so the chart has to say which half it is
+   * drawing instead of letting the shape imply it was the whole thing.
+   */
+  plots?: string;
 }) {
   const tableId = useId();
 
@@ -156,6 +166,10 @@ export function TrendChart({
         <span>{formatShortDate(first.date)}</span>
         {points.length > 1 && <span>{formatShortDate(last.date)}</span>}
       </div>
+
+      {plots && (
+        <p className="mt-1 text-[12px] font-semibold text-ink-faint">{plots}</p>
+      )}
 
       <figcaption className="sr-only">
         {label}: {points.length} recorded {points.length === 1 ? "point" : "points"} between{" "}

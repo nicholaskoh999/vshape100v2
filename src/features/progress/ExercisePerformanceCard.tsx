@@ -174,11 +174,25 @@ function SelectedVariant({ variant }: { variant: PerformanceVariant }) {
             points={points}
             label={`${variant.exerciseName} performance`}
             unitLabel={valueHeading(variant)}
+            plots={plotsLabel(variant)}
           />
         </div>
       )}
     </div>
   );
+}
+
+/**
+ * What the line encodes, said out loud when it is only half of each set.
+ *
+ * Combining load and reps into one plotted number would be inventing a
+ * strength score, which Round 15 does not do. So the line carries the load and
+ * the sentence carries the rest.
+ */
+function plotsLabel(variant: PerformanceVariant): string | undefined {
+  if (variant.resultKind === "seconds") return undefined;
+  if (variant.loadMode === "none") return undefined;
+  return "The line shows load. Reps for each workout are in the table below.";
 }
 
 /**

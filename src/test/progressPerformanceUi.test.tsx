@@ -74,11 +74,16 @@ function seed(variants: unknown[]) {
   server.setPerformance({ complete: true, examined: 99, variants })
 }
 
+/*
+ * userEvent drives the FAKE clock rather than waiting on the real one. Without
+ * this, every keystroke and click sits through its own real delay, which turns
+ * a form test into seconds of wall time and loads the whole parallel run.
+ */
 async function renderProgress() {
   renderApp('/progress')
   await screen.findByRole('heading', { level: 1, name: 'Progress' })
   await waitFor(() => expect(pbState()).not.toBe('loading'))
-  return userEvent.setup()
+  return userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
 }
 
 /* ------------------------------------------------------------------ */
@@ -354,6 +359,80 @@ describe('2. exercise performance', () => {
   it('reports an empty history honestly', async () => {
     await renderProgress()
     expect(perfCard()?.textContent).toMatch(/no completed sets recorded yet/i)
+  })
+
+  it('says that the line shows load, not the whole set', async () => {
+    // 50 kg x 8 then 50 kg x 10 draws FLAT, because the line carries load. The
+    // second set was better, so the chart has to say which half it is drawing
+    // rather than letting a flat shape imply nothing changed.
+    seed([
+      variant({
+        key: 'a',
+        points: [
+          { date: '2026-08-03', loadValue: 50, result: 8 },
+          { date: '2026-08-24', loadValue: 50, result: 10 },
+        ],
+      }),
+    ])
+    const user = await renderProgress()
+
+    const card = perfCard() as HTMLElement
+    expect(card.textContent).toMatch(/the line shows load/i)
+
+    // And the reps it does not draw are one keystroke away.
+    await user.click(within(card).getByText(/show the 2 recorded values/i))
+    const table = within(card).getByRole('table')
+    expect(within(table).getByText('50 kg × 8 reps')).toBeInTheDocument()
+    expect(within(table).getByText('50 kg × 10 reps')).toBeInTheDocument()
+  })
+
+  it('says nothing extra when the line already is the whole result', async () => {
+    seed([
+      variant({
+        key: 'plank',
+        exerciseName: 'Plank',
+        resultKind: 'seconds',
+        loadMode: 'none',
+        points: [
+          { date: '2026-08-03', result: 45 },
+          { date: '2026-08-24', result: 75 },
+        ],
+      }),
+    ])
+    await renderProgress()
+
+    // A timed hold has one axis, so there is nothing to disclaim.
+    expect(perfCard()?.textContent).not.toMatch(/the line shows/i)
+  })
+
+  it('drops a point whose date cannot be read rather than drawing it at day zero', async () => {
+    server.setPerformance({
+      complete: true,
+      variants: [
+        {
+          key: 'a',
+          exerciseId: 'a',
+          exerciseName: 'Lat Pulldown',
+          resultKind: 'reps',
+          loadMode: 'kg',
+          perSide: false,
+          personalBest: { date: '2026-08-24', sessionId: 'monday', loadValue: 50, result: 8 },
+          points: [
+            { date: 'yesterday', sessionId: 'monday', loadValue: 45, result: 10 },
+            { date: '2026-08-17', sessionId: 'monday', loadValue: 47.5, result: 9 },
+            { date: '2026-08-24', sessionId: 'monday', loadValue: 50, result: 8 },
+          ],
+          lastPerformed: '2026-08-24',
+        },
+      ],
+    })
+    await renderProgress()
+
+    // Two readable points are drawn; the unreadable one is not placed at the
+    // epoch, where it would drag the whole axis with it.
+    expect((perfCard() as HTMLElement).querySelectorAll('[data-trend-chart] circle')).toHaveLength(
+      2,
+    )
   })
 
   it('shows no trend when the history could not be fully read', async () => {

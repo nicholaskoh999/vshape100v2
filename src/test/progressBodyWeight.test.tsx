@@ -36,11 +36,16 @@ afterEach(() => {
 const card = () => document.querySelector('[data-body-weight]') as HTMLElement | null
 const state = () => card()?.getAttribute('data-body-weight-state') ?? null
 
+/*
+ * userEvent drives the FAKE clock rather than waiting on the real one. Without
+ * this, every keystroke and click sits through its own real delay, which turns
+ * a form test into seconds of wall time and loads the whole parallel run.
+ */
 async function renderProgress() {
   renderApp('/progress')
   await screen.findByRole('heading', { level: 1, name: 'Progress' })
   await waitFor(() => expect(state()).not.toBe('loading'))
-  return userEvent.setup()
+  return userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
 }
 
 /* ------------------------------------------------------------------ */

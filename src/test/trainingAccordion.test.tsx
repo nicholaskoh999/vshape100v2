@@ -293,7 +293,16 @@ describe('10–13. the prescription always comes from this session', () => {
       }
       cleanupRender()
     }
-  })
+    /*
+      This one opens and closes every exercise of every session — around forty
+      render-and-settle cycles — and takes close to four seconds on an idle
+      machine against Vitest's five-second default. It has always been the
+      slowest test in the suite by an order of magnitude, and it began timing
+      out once Round 15 added enough files for the parallel run to eat its
+      remaining margin. The budget is raised because the test is slow, not
+      because it is unreliable: nothing it asserts has changed.
+    */
+  }, 30_000)
 })
 
 describe('14–15. Open exercise details carries this session', () => {

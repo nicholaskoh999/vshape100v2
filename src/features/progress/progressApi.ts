@@ -1,4 +1,5 @@
 import type { BodyWeightRange } from '@shared/bodyWeight'
+import { isLocalDate } from '@shared/localDate'
 import type { WorkoutLoadMode, WorkoutResultKind } from '@shared/workoutLog'
 
 /**
@@ -68,7 +69,10 @@ export type WeightHistory = {
 function toWeightPoint(raw: unknown): WeightPoint | null {
   if (typeof raw !== 'object' || raw === null) return null
   const row = raw as Record<string, unknown>
-  if (typeof row.date !== 'string' || row.date.length === 0) return null
+  // A real calendar date, not merely a string. The chart positions points by
+  // the calendar, and an unparseable date would silently land at day zero and
+  // drag the whole axis with it.
+  if (!isLocalDate(row.date)) return null
   if (typeof row.tenths !== 'number' || !Number.isFinite(row.tenths)) return null
   if (typeof row.weightKg !== 'number' || !Number.isFinite(row.weightKg)) return null
   return { date: row.date, weightKg: row.weightKg, tenths: row.tenths }
@@ -194,7 +198,7 @@ const LOAD_MODES: readonly string[] = ['none', 'kg', 'kg_each']
 function toPerformancePoint(raw: unknown): PerformancePoint | null {
   if (typeof raw !== 'object' || raw === null) return null
   const row = raw as Record<string, unknown>
-  if (typeof row.date !== 'string' || typeof row.sessionId !== 'string') return null
+  if (!isLocalDate(row.date) || typeof row.sessionId !== 'string') return null
   if (typeof row.result !== 'number' || !Number.isFinite(row.result)) return null
   const loadValue =
     typeof row.loadValue === 'number' && Number.isFinite(row.loadValue) ? row.loadValue : null
