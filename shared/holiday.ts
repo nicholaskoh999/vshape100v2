@@ -7,15 +7,20 @@
  *
  * ## What Holiday means
  *
- * Holiday is EXEMPT, not missed. A Holiday date suspends the normal routine's
- * pressure; it never marks anything failed, completed, or skipped, and it
- * never touches Foundation — the day number keeps advancing by real calendar
- * date whether or not the day is a Holiday.
+ * A Holiday suspends the WORK day. It never marks anything failed, completed
+ * or skipped, and it never touches Foundation — the day number keeps advancing
+ * by real calendar date whether or not the day is a Holiday.
  *
- * ## Only two modes
+ * Whether it suspends the TRAINING day is a separate, explicit choice:
+ * `trainingOn`. Off is the default and is fully exempt; On restores only that
+ * weekday's planned session. Off is the default because it is the safe one:
+ * a day nobody has decided about must never read as a missed session.
  *
- * Home and Holiday. There is no Work Trip, Sick, Busy or custom type, and a
- * record carries no label for that reason: a stored range simply *is* Holiday.
+ * ## Still only two modes
+ *
+ * Home and Holiday. There is no Work Trip, Sick or Busy: `name` is a label
+ * for a Holiday, never a third mode, and `source` says who owns the record,
+ * never what kind of day it is.
  */
 
 import { addLocalDays, daysBetween, isLocalDate, rangesOverlap, weekdayOf } from './localDate'

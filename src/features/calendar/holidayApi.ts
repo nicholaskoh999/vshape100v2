@@ -7,6 +7,7 @@
  */
 
 import type { HolidayRecord } from '@shared/holiday'
+import { isLocalDate } from '@shared/localDate'
 
 export type { HolidayRecord }
 
@@ -32,26 +33,59 @@ const REQUEST_INIT: RequestInit = {
 
 const JSON_HEADERS = { Accept: 'application/json', 'Content-Type': 'application/json' }
 
-/** Returns null for anything that is not a full record. */
-function toRecord(raw: unknown): HolidayRecord | null {
-  if (typeof raw !== 'object' || raw === null) return null
+/** Status used when the server answered, but not with a Holiday we can trust. */
+export const MALFORMED_HOLIDAY_STATUS = 502
+
+/**
+ * One record, or null when ANY required field is missing or the wrong shape.
+ *
+ * Deliberately strict. Two of these fields decide things a default must never
+ * decide for the user:
+ *
+ *   `source`     grants or withholds permission to rename, move and delete.
+ *                Defaulting it to "custom" would hand the editor control of a
+ *                canonical company date.
+ *   `trainingOn` decides whether the day is a scheduled training day at all.
+ *                Defaulting it to false would silently discard an explicit
+ *                Training On and could turn a trained day into a missed one.
+ *
+ * Neither is guessed. Nothing here is inferred from absence.
+ */
+function parseRecord(raw: unknown): HolidayRecord | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
   const row = raw as Record<string, unknown>
-  if (typeof row.id !== 'string') return null
-  if (typeof row.startDate !== 'string' || typeof row.endDate !== 'string') return null
+
+  if (typeof row.id !== 'string' || row.id.length === 0) return null
+  if (!isLocalDate(row.startDate) || !isLocalDate(row.endDate)) return null
+  if (row.startDate > row.endDate) return null
+  if (typeof row.name !== 'string') return null
+  // Exactly one of the two known sources. An unknown value is not "custom".
+  if (row.source !== 'company' && row.source !== 'custom') return null
+  if (typeof row.trainingOn !== 'boolean') return null
+  if (typeof row.createdAt !== 'number' || typeof row.updatedAt !== 'number') return null
+
   return {
     id: row.id,
     startDate: row.startDate,
     endDate: row.endDate,
-    name: typeof row.name === 'string' ? row.name : '',
-    // Anything the server did not explicitly call a company date is treated as
-    // the user's own, which is the permission-safe direction: a mislabelled
-    // company record would become editable, never the reverse.
-    source: row.source === 'company' ? 'company' : 'custom',
-    // Training On must be stated. Absent reads as Off — the exempt default.
-    trainingOn: row.trainingOn === true,
-    createdAt: typeof row.createdAt === 'number' ? row.createdAt : 0,
-    updatedAt: typeof row.updatedAt === 'number' ? row.updatedAt : 0,
+    name: row.name,
+    source: row.source,
+    trainingOn: row.trainingOn,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
   }
+}
+
+/**
+ * The record a 409 names, read leniently.
+ *
+ * Deliberately NOT strict: the server documents that the blocking range may
+ * already be gone by the time it is described. The refusal still stands, so an
+ * unreadable description degrades to "an existing Holiday" rather than turning
+ * a correct refusal into an error.
+ */
+function parseConflict(raw: unknown): HolidayRecord | null {
+  return parseRecord(raw)
 }
 
 async function ensureOk(response: Response): Promise<Record<string, unknown>> {
@@ -62,7 +96,7 @@ async function ensureOk(response: Response): Promise<Record<string, unknown>> {
   throw new HolidayApiError(
     `Holiday request failed (${response.status})`,
     response.status,
-    toRecord(body.conflict),
+    parseConflict(body.conflict),
   )
 }
 
@@ -75,9 +109,24 @@ export async function fetchHolidays(
   const body = await ensureOk(
     await fetch(`${BASE}?${query.toString()}`, { ...REQUEST_INIT, signal }),
   )
-  return Array.isArray(body.holidays)
-    ? body.holidays.map(toRecord).filter((row): row is HolidayRecord => row !== null)
-    : []
+  // Fail closed. A malformed row is NOT dropped from the list: doing so would
+  // turn "we cannot read this Holiday" into "there is no Holiday here", and a
+  // resolved empty span is exactly what makes Today claim Home, the Calendar
+  // become actionable, and Achievements judge the day. The whole read fails
+  // instead, and flows through the hook's existing error state.
+  if (!Array.isArray(body.holidays)) {
+    throw new HolidayApiError('Holiday response was malformed', MALFORMED_HOLIDAY_STATUS)
+  }
+
+  const records: HolidayRecord[] = []
+  for (const raw of body.holidays) {
+    const record = parseRecord(raw)
+    if (record === null) {
+      throw new HolidayApiError('Holiday response was malformed', MALFORMED_HOLIDAY_STATUS)
+    }
+    records.push(record)
+  }
+  return records
 }
 
 /** Create a Holiday. Throws `HolidayApiError` with status 409 on overlap. */
@@ -94,7 +143,9 @@ export async function createHoliday(
       signal,
     }),
   )
-  return toRecord(body.holiday)
+  // Advisory only. Every caller reloads afterwards, and THAT read is strict,
+  // so an unreadable echo cannot become trusted state.
+  return parseRecord(body.holiday)
 }
 
 /** Move, shorten or extend an existing Holiday. */
@@ -112,7 +163,9 @@ export async function updateHoliday(
       signal,
     }),
   )
-  return toRecord(body.holiday)
+  // Advisory only. Every caller reloads afterwards, and THAT read is strict,
+  // so an unreadable echo cannot become trusted state.
+  return parseRecord(body.holiday)
 }
 
 /** Delete a Holiday. Its dates fall back to the normal Home-derived route. */
@@ -147,5 +200,7 @@ export async function setHolidayTraining(
       signal,
     }),
   )
-  return toRecord(body.holiday)
+  // Advisory only. Every caller reloads afterwards, and THAT read is strict,
+  // so an unreadable echo cannot become trusted state.
+  return parseRecord(body.holiday)
 }

@@ -299,9 +299,11 @@ export function holidayRoute(options: HolidayRouteOptions = {}): Route {
     label: 'Holiday',
     name,
     trainingOn: training,
+    // The summary describes what is actually on screen. A Holiday is not an
+    // empty day, so it must not be described as one.
     summary: training
-      ? 'A planned pause from work. Training is still on. Foundation Day continues.'
-      : 'A planned pause from the normal routine. Foundation Day continues.',
+      ? 'Work is paused. The recovery-day schedule, plus today’s training session.'
+      : 'Work is paused. The recovery-day schedule, and no training required.',
     items,
   }
 }

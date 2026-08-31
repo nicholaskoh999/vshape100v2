@@ -298,8 +298,8 @@ function HolidayToday({ route }: { route: Route }) {
           </h2>
           <p className="mt-1.5 text-[13px] leading-relaxed text-ink-faint">
             {trainingOn
-              ? 'Work is paused, and you chose to keep training. Only today’s session is below. Foundation Day keeps counting.'
-              : 'Nothing is due today and nothing is counted as missed. Foundation Day keeps counting.'}
+              ? 'Your work routine stays paused, and the recovery-day schedule stays in place with today’s training session added. Foundation Day keeps counting.'
+              : 'Your work routine is paused and today follows the recovery-day schedule. No training is required, and nothing is counted as missed. Foundation Day keeps counting.'}
           </p>
           <p className="mt-2 inline-flex items-center rounded-control border border-edge px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-faint">
             {trainingOn ? 'Training on' : 'Training off'}

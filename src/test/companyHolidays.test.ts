@@ -175,8 +175,12 @@ describe('2. migration 0006', () => {
     )
   })
 
-  it('can be re-run without duplicating a date', () => {
+  it('seeds with a statement that cannot duplicate or overwrite a date', () => {
+    // Precision matters here: the migration as a whole is additive and is
+    // applied ONCE by the ledger - its ALTER TABLE statements would error if
+    // replayed. It is the seed statement alone that is idempotent.
     expect(migrationSql()).toMatch(/INSERT OR IGNORE/)
+    expect(migrationSql()).toMatch(/applied ONCE, by the migration ledger/)
   })
 })
 

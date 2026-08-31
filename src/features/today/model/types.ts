@@ -19,8 +19,15 @@
  * Which accepted route a day follows.
  *
  * `holiday` is an OVERRIDE rather than a weekday: a Holiday date replaces
- * whatever route it would otherwise have had. It is EXEMPT, not missed — it
- * carries no items, so nothing on a Holiday can become LATE.
+ * whatever route it would otherwise have had. What it replaces is the WORK
+ * day: it borrows the Sunday recovery items, and adds that weekday's gym
+ * session when the user chose to keep training.
+ *
+ * Those items are ordinary occurrences and use the ordinary status engine, so
+ * a recovery item can be NOW, NEXT, LATER, LATE or DONE_EARLIER exactly as it
+ * can on a Sunday. What a Holiday exempts is the routine's PRESSURE: no work
+ * blocks, no required session unless the user asked for one, and no spillover
+ * from the previous day.
  */
 export type RouteId = 'home' | 'saturday' | 'sunday' | 'holiday'
 
@@ -155,9 +162,9 @@ export type TodayAgenda = {
   /**
    * True when the day carries a Holiday override.
    *
-   * A Holiday agenda has no entries at all, so the normal routine's pressure
-   * simply does not exist for that day — nothing is late, and nothing is
-   * marked done to achieve that.
+   * A Holiday agenda is NOT empty: it holds the recovery items, plus the
+   * restored gym session when training is on. What it never holds is the work
+   * day, or anything carried over from yesterday.
    */
   holiday: boolean
 }

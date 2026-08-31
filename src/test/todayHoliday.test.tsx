@@ -249,7 +249,9 @@ describe('3. cross-midnight', () => {
 
     expect(agenda.holiday).toBe(false)
     expect(agenda.route.id).toBe('home')
-    // A Holiday has no items, so nothing spills out of it.
+    // A Holiday has items, but none of them reach past midnight: the
+    // recovery windows end with the day and the restored session ends at
+    // 21:30. So there is nothing to spill, and nothing is invented.
     expect(agenda.entries.every((entry) => !entry.spillover)).toBe(true)
   })
 
@@ -759,5 +761,125 @@ describe('6. the Holiday banner', () => {
       'href',
       '/calendar',
     )
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* 7. Round 13 correction 1 - the copy must match the agenda           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A Holiday renders the Sunday recovery agenda, and those items use the
+ * ordinary status engine. So a recovery item CAN be late on a Holiday evening,
+ * exactly as it can on a Sunday evening.
+ *
+ * That makes "Nothing is due today" a false statement, and it is the reason
+ * this section exists: the words on the page have to describe what is on the
+ * page. What a Holiday exempts is the work day and the training requirement,
+ * not the existence of a day.
+ */
+describe('7. a Training-Off Holiday tells the truth', () => {
+  // 2026-09-14 is a Monday. 23:30 is late enough that the morning and evening
+  // recovery windows have passed.
+  const MONDAY = '2026-09-14'
+  const LATE_EVENING = new Date(2026, 8, 14, 23, 30)
+
+  function offMonday() {
+    return new Map([[MONDAY, { name: 'Merdeka Day', trainingOn: false }]])
+  }
+
+  it('still produces late recovery items in the engine', () => {
+    const agenda = buildAgenda(LATE_EVENING, new Set(), offMonday())
+
+    expect(agenda.holiday).toBe(true)
+    expect(agenda.entries.length).toBeGreaterThan(0)
+    // The ordinary engine, not a special Holiday one.
+    const late = agenda.entries.filter((entry) => entry.status === 'LATE')
+    expect(late.length).toBeGreaterThan(0)
+  })
+
+  it('shows the banner and the recovery agenda together', async () => {
+    vi.setSystemTime(LATE_EVENING)
+    server.seed(holiday('h1', MONDAY, MONDAY, { name: 'Merdeka Day' }))
+    await renderToday()
+    await waitFor(() => expect(holidayCard()).not.toBeNull())
+
+    const text = mainText()
+    expect(text).toMatch(/Merdeka Day/)
+    // The recovery day is genuinely on screen.
+    expect(text).toMatch(/Natural wake/)
+    expect(text).toMatch(/Free time/)
+  })
+
+  it('surfaces a late recovery item under Needs attention', async () => {
+    vi.setSystemTime(LATE_EVENING)
+    server.seed(holiday('h1', MONDAY, MONDAY, { name: 'Merdeka Day' }))
+    await renderToday()
+    await waitFor(() => expect(holidayCard()).not.toBeNull())
+
+    // The accepted behaviour: recovery items are ordinary occurrences.
+    expect(mainText()).toMatch(/Needs attention/i)
+  })
+
+  it('still removes the work day and asks for no session', async () => {
+    vi.setSystemTime(LATE_EVENING)
+    server.seed(holiday('h1', MONDAY, MONDAY, { name: 'Merdeka Day' }))
+    await renderToday()
+    await waitFor(() => expect(holidayCard()).not.toBeNull())
+
+    const text = mainText()
+    expect(text).not.toMatch(/back home/i)
+    expect(text).not.toMatch(/gym training/i)
+    // "Work" only as part of "work routine is paused", never as the work block.
+    expect(text).not.toMatch(/08:00/)
+  })
+
+  it('never claims nothing is due, or that the day is empty', async () => {
+    vi.setSystemTime(LATE_EVENING)
+    server.seed(holiday('h1', MONDAY, MONDAY, { name: 'Merdeka Day' }))
+    await renderToday()
+    await waitFor(() => expect(holidayCard()).not.toBeNull())
+
+    const text = mainText()
+    for (const lie of [
+      /nothing is due/i,
+      /no routine/i,
+      /empty/i,
+      /only today.s session is below/i,
+    ]) {
+      expect(text, String(lie)).not.toMatch(lie)
+    }
+  })
+
+  it('says what it actually does: work paused, recovery day, no training due', async () => {
+    vi.setSystemTime(LATE_EVENING)
+    server.seed(holiday('h1', MONDAY, MONDAY, { name: 'Merdeka Day' }))
+    await renderToday()
+    await waitFor(() => expect(holidayCard()).not.toBeNull())
+
+    const text = mainText()
+    expect(text).toMatch(/work routine is paused/i)
+    expect(text).toMatch(/recovery-day schedule/i)
+    expect(text).toMatch(/no training is required/i)
+    // The exemption that matters is still stated.
+    expect(text).toMatch(/nothing is counted as missed/i)
+    expect(text).toMatch(/Foundation Day keeps counting/i)
+  })
+
+  it('describes a Training-On day without contradicting the agenda either', async () => {
+    vi.setSystemTime(LATE_EVENING)
+    server.seed(
+      holiday('h1', MONDAY, MONDAY, { name: 'Merdeka Day', trainingOn: true }),
+    )
+    await renderToday()
+    await waitFor(() => expect(holidayCard()).not.toBeNull())
+
+    const text = mainText()
+    expect(text).toMatch(/recovery-day schedule stays in place/i)
+    expect(text).toMatch(/training session added/i)
+    // The recovery items really are still there alongside the session.
+    expect(text).toMatch(/Natural wake/)
+    expect(text).toMatch(/gym training/i)
+    expect(text).not.toMatch(/only today.s session is below/i)
   })
 })

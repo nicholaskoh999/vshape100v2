@@ -3,6 +3,11 @@
 -- Three additive changes. Nothing existing is dropped, renamed or rewritten,
 -- and no row of any other table is touched.
 --
+-- On repetition: this file is applied ONCE, by the migration ledger. The two
+-- ALTER TABLE ADD COLUMN statements are ledger-once operations and would
+-- error if replayed; only the company seed below is itself idempotent, via
+-- INSERT OR IGNORE. The migration as a whole is additive, not re-runnable.
+--
 -- 1. company_holidays — the approved company calendar, seeded GLOBALLY. One
 --    row per approved date for everyone, never one copy per account. No
 --    google_sub appears here, so a future account sees the same calendar the
@@ -22,7 +27,8 @@ CREATE TABLE IF NOT EXISTS company_holidays (
   name TEXT NOT NULL CHECK (length(name) > 0)
 );
 
--- Idempotent: re-running the migration cannot duplicate or overwrite a date.
+-- INSERT OR IGNORE: this statement alone is idempotent, so re-seeding the
+-- approved calendar can neither duplicate nor overwrite a date.
 INSERT OR IGNORE INTO company_holidays (holiday_date, name) VALUES
   ('2026-01-01', 'New Year''s Day'),
   ('2026-02-17', 'Chinese New Year'),
