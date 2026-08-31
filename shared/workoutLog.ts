@@ -1,4 +1,4 @@
-import { isLocalDate } from './localDate'
+import { daysBetween, isLocalDate } from './localDate'
 
 /**
  * Workout logging contract and validation.
@@ -431,6 +431,46 @@ export function parseHistoryLimit(raw: string | null | undefined): number | null
   if (!Number.isInteger(value)) return null
   if (value < 1 || value > MAX_HISTORY_LIMIT) return null
   return value
+}
+
+/**
+ * Most days one range read may span.
+ *
+ * Matches the Holiday range bound, so a caller asking both surfaces about the
+ * same window can never be answered by one and refused by the other.
+ */
+export const MAX_HISTORY_RANGE_DAYS = 366
+
+/**
+ * Most rows one range read may return.
+ *
+ * A bound is required even with a bounded range, because a single date can
+ * hold more than one session. When it truncates, the response says so rather
+ * than presenting a partial answer as the whole truth.
+ */
+export const MAX_HISTORY_RANGE_ROWS = 400
+
+/** A validated inclusive `from`/`to` span. */
+export type HistoryRange = { from: string; to: string }
+
+/**
+ * Validate a `?from=&to=` pair.
+ *
+ * Returns null when either is absent, so a caller can tell "no range asked
+ * for" from "a range was asked for and it was wrong" — those are a normal
+ * paged read and a 400 respectively.
+ */
+export function parseHistoryRange(
+  from: string | null | undefined,
+  to: string | null | undefined,
+): { present: false } | { present: true; range: HistoryRange | null } {
+  if ((from ?? '') === '' && (to ?? '') === '') return { present: false }
+  if (!isWorkoutDate(from) || !isWorkoutDate(to)) return { present: true, range: null }
+  if (from > to) return { present: true, range: null }
+
+  const span = daysBetween(from, to)
+  if (span === null || span + 1 > MAX_HISTORY_RANGE_DAYS) return { present: true, range: null }
+  return { present: true, range: { from, to } }
 }
 
 /**

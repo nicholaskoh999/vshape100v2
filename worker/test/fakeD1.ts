@@ -250,9 +250,22 @@ export function createFakeD1() {
     if (sql.includes('LEFT JOIN workout_sets')) {
       if (workoutFailure) throw workoutFailure
 
-      const [google_sub, limit] = args as [string, number]
+      // Two shapes share this branch: the newest-N page binds
+      // (google_sub, limit), and the range read binds (google_sub, from, to,
+      // limit). An inclusive local-date span is plain text comparison.
+      const ranged = sql.includes('o.workout_date >=')
+      const [google_sub] = args as [string]
+      const from = ranged ? (args[1] as string) : null
+      const to = ranged ? (args[2] as string) : null
+      const limit = (ranged ? args[3] : args[1]) as number
+
       return [...occurrences.values()]
         .filter((row) => row.google_sub === google_sub)
+        .filter((row) =>
+          from === null || to === null
+            ? true
+            : row.workout_date >= from && row.workout_date <= to,
+        )
         // ORDER BY workout_date DESC, started_at DESC, session_id ASC — a
         // total order, so the newest-first page is stable.
         .sort((a, b) => {

@@ -31,13 +31,28 @@ export const dayPart = {
 const weekdaySessionIds = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
 
 /**
+ * The training session a weekday plans, or null when it plans none.
+ *
+ * `weekday` is a JS day index (0 = Sunday … 6 = Saturday). Saturday and Sunday
+ * plan no gym, so they answer null rather than naming a session that does not
+ * exist.
+ *
+ * This is the ONLY Monday-to-Friday mapping in the app. Today's route builds
+ * its gym link from it, and anything deriving training days from the calendar
+ * reads the same function, so the two cannot drift apart.
+ */
+export function sessionIdForWeekday(weekday: number): string | null {
+  return weekdaySessionIds[weekday - 1] ?? null
+}
+
+/**
  * Home Mode — Monday to Friday.
  *
  * `weekday` is a JS day index (1 = Monday … 5 = Friday); it only decides which
  * training session the gym slot links to.
  */
 function homeRoute(weekday: number): Route {
-  const sessionId = weekdaySessionIds[weekday - 1]
+  const sessionId = sessionIdForWeekday(weekday)
 
   const items: RoutineItem[] = [
     { kind: 'moment', id: 'wake-up', title: 'Wake up', at: at(7, 30), icon: 'sunrise' },

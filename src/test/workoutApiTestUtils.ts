@@ -59,6 +59,8 @@ export type WorkoutServer = {
   hold: () => () => void
   /** Hold every read until the returned function is called. */
   holdReads: () => () => void
+  /** Return at most `rows` for a range read, so it reports itself incomplete. */
+  capRange: (rows: number | null) => void
   handle: (url: string, init?: RequestInit) => Promise<Response>
 }
 
@@ -90,6 +92,8 @@ export function createWorkoutServer(): WorkoutServer {
   let gate: Promise<void> | null = null
   let readGate: Promise<void> | null = null
   let clock = 1
+  // null = a range read returns everything it found, and says so.
+  let rangeCap: number | null = null
 
   async function handle(url: string, init?: RequestInit): Promise<Response> {
     const method = init?.method ?? 'GET'
@@ -106,15 +110,7 @@ export function createWorkoutServer(): WorkoutServer {
         return jsonResponse({ error: 'server_error' }, 500)
       }
 
-      const raw = new URLSearchParams(search ?? '').get('limit')
-      let limit = 20
-      if (raw !== null && raw !== '') {
-        const value = Number(raw)
-        if (!Number.isInteger(value) || value < 1 || value > 50) {
-          return jsonResponse({ error: 'invalid_limit' }, 400)
-        }
-        limit = value
-      }
+      const params = new URLSearchParams(search ?? '')
 
       const all = [...workouts.values()].sort((a, b) => {
         if (a.occurrence.date !== b.occurrence.date) {
@@ -129,26 +125,63 @@ export function createWorkoutServer(): WorkoutServer {
       const everySet = all.flatMap((entry) => entry.sets)
       const completed = everySet.filter((set) => set.status === 'completed').length
       const skipped = everySet.filter((set) => set.status === 'skipped').length
+      const totals = {
+        workouts: all.length,
+        sets: everySet.length,
+        completed,
+        skipped,
+        resolved: completed + skipped,
+      }
+
+      const toRow = (entry: Stored) => ({
+        date: entry.occurrence.date,
+        sessionId: entry.occurrence.sessionId,
+        day: entry.occurrence.day,
+        focus: entry.occurrence.focus,
+        intensity: entry.occurrence.intensity,
+        startedAt: entry.occurrence.startedAt,
+        updatedAt: entry.occurrence.updatedAt,
+        progress: summarise(entry.sets),
+      })
+
+      // Range read: everything inside an inclusive local-date window.
+      const from = params.get('from')
+      const to = params.get('to')
+      if ((from ?? '') !== '' || (to ?? '') !== '') {
+        const shape = /^\d{4}-\d{2}-\d{2}$/
+        if (from === null || to === null || !shape.test(from) || !shape.test(to) || from > to) {
+          return jsonResponse({ error: 'invalid_range' }, 400)
+        }
+        const inRange = all.filter(
+          (entry) => entry.occurrence.date >= from && entry.occurrence.date <= to,
+        )
+        // A cap lets a test reproduce a truncated read, where absence proves
+        // nothing and no streak may be claimed.
+        const cap = rangeCap ?? inRange.length
+        return jsonResponse({
+          from,
+          to,
+          workouts: inRange.slice(0, cap).map(toRow),
+          totals,
+          complete: inRange.length <= cap,
+        })
+      }
+
+      const raw = params.get('limit')
+      let limit = 20
+      if (raw !== null && raw !== '') {
+        const value = Number(raw)
+        if (!Number.isInteger(value) || value < 1 || value > 50) {
+          return jsonResponse({ error: 'invalid_limit' }, 400)
+        }
+        limit = value
+      }
 
       return jsonResponse({
         limit,
-        workouts: all.slice(0, limit).map((entry) => ({
-          date: entry.occurrence.date,
-          sessionId: entry.occurrence.sessionId,
-          day: entry.occurrence.day,
-          focus: entry.occurrence.focus,
-          intensity: entry.occurrence.intensity,
-          startedAt: entry.occurrence.startedAt,
-          updatedAt: entry.occurrence.updatedAt,
-          progress: summarise(entry.sets),
-        })),
-        totals: {
-          workouts: all.length,
-          sets: everySet.length,
-          completed,
-          skipped,
-          resolved: completed + skipped,
-        },
+        workouts: all.slice(0, limit).map(toRow),
+        totals,
+        complete: Math.min(limit, all.length) >= all.length,
       })
     }
     const [date, sessionId] = segments
@@ -333,6 +366,9 @@ export function createWorkoutServer(): WorkoutServer {
         gate = null
         release()
       }
+    },
+    capRange: (rows: number | null) => {
+      rangeCap = rows
     },
     holdReads: () => {
       let release!: () => void

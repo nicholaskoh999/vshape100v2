@@ -18,6 +18,17 @@ export type WorkoutHistory = {
   limit: number
   workouts: WorkoutHistoryEntry[]
   totals: WorkoutHistoryTotals
+  /**
+   * Did this read return EVERY workout it was asked about?
+   *
+   * False means absence proves nothing: a date with no workout here might
+   * simply be outside what the server returned. Anything deriving "not
+   * trained" from a missing row must refuse to answer unless this is true.
+   *
+   * Absent from the body is read as false, never as true — an older response
+   * that cannot say is not evidence that it covered everything.
+   */
+  complete: boolean
 }
 
 export class WorkoutHistoryApiError extends Error {
@@ -98,13 +109,25 @@ function toTotals(raw: unknown): WorkoutHistoryTotals {
   }
 }
 
-/** Recent recorded workouts for the signed-in account, newest first. */
+/**
+ * Recorded workouts for the signed-in account, newest first.
+ *
+ * Two shapes, deliberately: `limit` asks for the newest N, while `from`/`to`
+ * asks for everything inside a local-date window. Only the second can prove a
+ * date was NOT trained, which is why the streak read uses it.
+ */
 export async function fetchWorkoutHistory(
-  options: { limit?: number } = {},
+  options: { limit?: number; from?: string; to?: string } = {},
   signal?: AbortSignal,
 ): Promise<WorkoutHistory> {
-  const query =
-    options.limit === undefined ? '' : `?${new URLSearchParams({ limit: String(options.limit) })}`
+  const params = new URLSearchParams()
+  if (options.from !== undefined && options.to !== undefined) {
+    params.set('from', options.from)
+    params.set('to', options.to)
+  } else if (options.limit !== undefined) {
+    params.set('limit', String(options.limit))
+  }
+  const query = params.size === 0 ? '' : `?${params}`
 
   const response = await fetch(`${URL_PATH}${query}`, { ...REQUEST_INIT, signal })
   if (!response.ok) {
@@ -121,5 +144,7 @@ export async function fetchWorkoutHistory(
       ? body.workouts.map(toEntry).filter((row): row is WorkoutHistoryEntry => row !== null)
       : [],
     totals: toTotals(body.totals),
+    // Trusted only when the server actually says so.
+    complete: body.complete === true,
   }
 }

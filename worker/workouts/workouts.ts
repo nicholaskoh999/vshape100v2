@@ -24,7 +24,9 @@
  * exerciseMedia/media.ts.
  */
 
+import { MAX_HISTORY_RANGE_ROWS } from '../../shared/workoutLog'
 import type {
+  HistoryRange,
   WorkoutHistoryEntry,
   WorkoutHistoryTotals,
   WorkoutLoadMode,
@@ -139,6 +141,19 @@ export interface WorkoutStore {
    * workout that was not started.
    */
   listRecent(googleSub: string, limit: number): Promise<WorkoutHistoryEntry[]>
+
+  /**
+   * Recorded workouts inside an inclusive local-date span, newest first.
+   *
+   * Read-only, like listRecent. Bounded by BOTH the span and `limit`, so no
+   * caller can ask the database to walk everything.
+   */
+  listInRange(
+    googleSub: string,
+    from: string,
+    to: string,
+    limit: number,
+  ): Promise<WorkoutHistoryEntry[]>
 
   /** Totals across everything this account has recorded. */
   totals(googleSub: string): Promise<WorkoutHistoryTotals>
@@ -398,4 +413,33 @@ export async function readHistory(
     store.totals(googleSub),
   ])
   return { workouts, totals }
+}
+
+/**
+ * Recorded workouts across an inclusive local-date span.
+ *
+ * Exists because the paged read cannot PROVE a span: it returns the newest N
+ * workouts, so an absent date might simply be older than the page. Anything
+ * deriving "was this day trained" from absence needs to know the read actually
+ * covered the day, which is what `complete` reports.
+ *
+ * One row over the bound is requested so truncation is detected exactly rather
+ * than guessed from a full page.
+ */
+export async function readHistoryRange(
+  store: WorkoutStore,
+  googleSub: string,
+  range: HistoryRange,
+): Promise<{
+  workouts: WorkoutHistoryEntry[]
+  totals: WorkoutHistoryTotals
+  complete: boolean
+}> {
+  const [found, totals] = await Promise.all([
+    store.listInRange(googleSub, range.from, range.to, MAX_HISTORY_RANGE_ROWS + 1),
+    store.totals(googleSub),
+  ])
+
+  const complete = found.length <= MAX_HISTORY_RANGE_ROWS
+  return { workouts: complete ? found : found.slice(0, MAX_HISTORY_RANGE_ROWS), totals, complete }
 }

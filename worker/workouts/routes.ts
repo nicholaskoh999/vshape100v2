@@ -31,7 +31,9 @@ import {
   applySetUpdate,
   parseExerciseOrder,
   parseHistoryLimit,
+  parseHistoryRange,
   readHistory,
+  readHistoryRange,
   parseSessionId,
   parseSetIndex,
   parseSetUpdate,
@@ -110,12 +112,25 @@ async function handleHistory(
   store: WorkoutStore,
   googleSub: string,
 ): Promise<Response> {
-  const raw = new URL(request.url).searchParams.get('limit')
-  const limit = parseHistoryLimit(raw)
+  const params = new URL(request.url).searchParams
+
+  // A range read is a different question from a paged one: "everything in this
+  // window" rather than "the newest N". Anything deriving a fact from a date
+  // being ABSENT needs the first, and needs to know the read covered it.
+  const asked = parseHistoryRange(params.get('from'), params.get('to'))
+  if (asked.present) {
+    if (asked.range === null) return json({ error: 'invalid_range' }, { status: 400 })
+    const { from, to } = asked.range
+    const { workouts, totals, complete } = await readHistoryRange(store, googleSub, asked.range)
+    return json({ from, to, workouts, totals, complete })
+  }
+
+  const limit = parseHistoryLimit(params.get('limit'))
   if (limit === null) return json({ error: 'invalid_limit' }, { status: 400 })
 
   const { workouts, totals } = await readHistory(store, googleSub, limit)
-  return json({ limit, workouts, totals })
+  // A page proves everything only when it actually held everything recorded.
+  return json({ limit, workouts, totals, complete: workouts.length >= totals.workouts })
 }
 
 /** GET /api/workouts/:date/:sessionId */

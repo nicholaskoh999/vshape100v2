@@ -381,6 +381,35 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
       return (result.results ?? []).map(toHistoryEntry)
     },
 
+    async listInRange(googleSub, from, to, limit) {
+      // The same shape and ordering as listRecent, narrowed to an inclusive
+      // local-date span. Dates are zero-padded text, so a plain BETWEEN is
+      // exact calendar ordering. `google_sub` stays in the WHERE clause, so a
+      // range read can only ever see this account's own workouts.
+      const result = await db
+        .prepare(
+          `SELECT o.workout_date, o.session_id,
+                  o.session_day_snapshot, o.session_focus_snapshot,
+                  o.session_intensity_snapshot, o.started_at, o.updated_at,
+                  COUNT(s.set_index) AS total_sets,
+                  SUM(CASE WHEN s.status = 'completed' THEN 1 ELSE 0 END) AS completed_sets,
+                  SUM(CASE WHEN s.status = 'skipped'   THEN 1 ELSE 0 END) AS skipped_sets
+             FROM workout_occurrences o
+             LEFT JOIN workout_sets s
+               ON ${OWNERSHIP_JOIN}
+            WHERE o.google_sub = ?
+              AND o.workout_date >= ?
+              AND o.workout_date <= ?
+            GROUP BY o.workout_date, o.session_id, o.snapshot_id
+            ORDER BY o.workout_date DESC, o.started_at DESC, o.session_id ASC
+            LIMIT ?`,
+        )
+        .bind(googleSub, from, to, limit)
+        .all<HistoryRow>()
+
+      return (result.results ?? []).map(toHistoryEntry)
+    },
+
     async totals(googleSub) {
       const row = await db
         .prepare(
