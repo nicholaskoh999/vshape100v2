@@ -276,3 +276,101 @@ export function localDayIn(instant: Date, timeZone: string): string | null {
   const local = wallClockIn(instant, timeZone)
   return local ? dayKey(local) : null
 }
+
+/* ------------------------------------------------------------------ */
+/* The production retry driver                                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Backoff before each extra attempt, in milliseconds.
+ *
+ * One entry per retry beyond the first attempt, so the length is bounded by
+ * MAX_DELIVERY_ATTEMPTS. Short on purpose: these are exact-time reminders, and
+ * the whole sequence has to finish while "20:30" still means something. Eight
+ * seconds of total patience sits comfortably inside one cron minute and
+ * nowhere near the push TTL.
+ */
+export const RETRY_BACKOFF_MS = [2_000, 6_000]
+
+/** Real waiting. Injectable so a test does not have to sit through it. */
+const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+export type DeliveryRun = {
+  /** One entry per attempt actually made. */
+  attempts: SweepResult[]
+  /** Notifications delivered across the whole run. */
+  sent: number
+  /** Occurrences still refused when the run gave up. */
+  unresolved: number
+}
+
+/**
+ * Deliver one scheduled minute, retrying the refusals it is safe to retry.
+ *
+ * ## Why this exists
+ *
+ * Correction 1 made a refused occurrence RECLAIMABLE, but nothing ever came
+ * back to reclaim it: the scheduled handler ran one sweep and returned
+ * successfully, so a 503 became a `retryable` row that no code would ever pick
+ * up again. The reclaim was correct and unreachable.
+ *
+ * Rather than assume Cloudflare replays a scheduled event — which is not
+ * something to bet a feature on — the retry happens HERE, inside the same
+ * invocation, driven by what the sweep reports.
+ *
+ * ## The scheduled minute never moves
+ *
+ * Every attempt passes the ORIGINAL `scheduledTime`. That keeps one identity
+ * for the occurrence across the whole run: the same local wall clock is
+ * evaluated, the same trigger minute is claimed, and a device that already
+ * received its notification is excluded by its own `sent` claim rather than by
+ * anything this loop remembers.
+ *
+ * Everything else the claim already decides: `rejected`, `ambiguous` and
+ * `expired` are terminal, so a retry sweep simply does not re-claim them, and
+ * a device that succeeded on attempt one cannot be sent to on attempt two.
+ */
+export async function runScheduledDelivery(input: {
+  scheduledTime: number
+  store: PushStore
+  truth: ScheduleTruth
+  vapid: VapidConfig | null
+  now?: number
+  send?: SendFn
+  sleep?: (ms: number) => Promise<void>
+}): Promise<DeliveryRun> {
+  const sleep = input.sleep ?? realSleep
+  const attempts: SweepResult[] = []
+
+  for (let attempt = 0; attempt < MAX_DELIVERY_ATTEMPTS; attempt += 1) {
+    const result = await runScheduledSweep({
+      scheduledTime: input.scheduledTime,
+      store: input.store,
+      truth: input.truth,
+      vapid: input.vapid,
+      // The scheduled minute is the truth for every attempt; only the wall
+      // clock used for claim bookkeeping moves on.
+      now: input.now,
+      send: input.send,
+    })
+    attempts.push(result)
+
+    // Nothing was refused in a way worth retrying, so the run is done. This is
+    // also the exit for an unconfigured deployment, which reports no work.
+    if (result.retryable === 0) break
+
+    const backoff = RETRY_BACKOFF_MS[attempt]
+    // Out of budget: the remaining refusals stay `retryable` in the table,
+    // which is honest — they were not delivered and nothing pretended
+    // otherwise.
+    if (backoff === undefined) break
+
+    await sleep(backoff)
+  }
+
+  return {
+    attempts,
+    sent: attempts.reduce((total, result) => total + result.sent, 0),
+    unresolved: attempts[attempts.length - 1]?.retryable ?? 0,
+  }
+}

@@ -88,10 +88,19 @@ async function handleSave(
 /**
  * DELETE /api/notifications/subscription
  *
- * The endpoint identifies WHICH device to disable, and it is scoped to the
- * signed-in account, so this can neither silence another device of another
- * account nor probe whether one exists — an endpoint that is not this
- * account's simply reports nothing to remove.
+ * The endpoint identifies WHICH device to disable, and the delete itself is
+ * scoped to the signed-in account, so it can never silence another account's
+ * device.
+ *
+ * The RESPONSE is deliberately identical whichever of the three cases it was:
+ * the endpoint was this account's and is now gone, it belonged to someone
+ * else, or it never existed. Reporting `removed: true/false` would have
+ * answered a question the browser never needs to ask — "does this endpoint
+ * belong to me?" — and answering it turns this route into an ownership oracle
+ * for anyone holding a guessed endpoint.
+ *
+ * What the browser needs is only that it is not receiving reminders for this
+ * account, which is true in all three cases.
  */
 async function handleDelete(
   request: Request,
@@ -110,10 +119,10 @@ async function handleDelete(
     return json({ error: 'invalid_subscription', field: 'endpoint' }, { status: 400 })
   }
 
-  const removed = await removeSubscription(store, googleSub, endpoint)
-  // Deliberately the same answer either way: "it is not receiving reminders
-  // for you" is true whether it was yours and is gone, or was never yours.
-  return json({ removed, subscription: toStatus(null) })
+  // The result is deliberately not returned. Only this account's row can be
+  // removed, and the caller learns nothing about whose the endpoint was.
+  await removeSubscription(store, googleSub, endpoint)
+  return json({ subscription: toStatus(null) })
 }
 
 /**

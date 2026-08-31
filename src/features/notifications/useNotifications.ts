@@ -6,8 +6,8 @@ import {
   deviceTimeZone,
   disableOnThisDevice,
   isFullyDisabled,
-  existingSubscription,
   fetchConfig,
+  lookupSubscription,
   registerServiceWorker,
   requestPermission,
   saveSubscription,
@@ -104,10 +104,21 @@ export function useNotifications(): NotificationControls {
         return
       }
 
-      const subscription = await existingSubscription()
+      const lookup = await lookupSubscription()
       if (!active) return
 
-      if (permission === 'granted' && subscription) {
+      if (lookup.state === 'unavailable') {
+        // Neither Off nor On: the browser could not say whether this device is
+        // subscribed, and guessing either way would be a claim we cannot make.
+        setState({
+          status: 'error',
+          message: 'Could not read this device reminder state. Try again.',
+        })
+        return
+      }
+
+      if (permission === 'granted' && lookup.state === 'found') {
+        const subscription = lookup.subscription
         // A local PushSubscription is only half of "on". The other half is the
         // server knowing about it: without a registered row and a usable
         // timezone, nothing will ever be scheduled or delivered, so claiming
@@ -180,8 +191,11 @@ export function useNotifications(): NotificationControls {
           return
         }
 
+        // On an unavailable lookup, subscribing is still safe: a browser that
+        // already has one returns that same subscription rather than a second.
+        const found = await lookupSubscription()
         const subscription =
-          (await existingSubscription()) ?? (await subscribe(registration, key))
+          found.state === 'found' ? found.subscription : await subscribe(registration, key)
         if (!subscription) {
           setState({ status: 'error', message: 'This browser refused the subscription.' })
           return

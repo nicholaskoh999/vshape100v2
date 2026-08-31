@@ -102,15 +102,37 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
   }
 }
 
-/** The subscription this browser already has, if any. Never prompts. */
-export async function existingSubscription(): Promise<PushSubscription | null> {
-  if (!('serviceWorker' in navigator)) return null
+/**
+ * What the browser could tell us about this device's subscription.
+ *
+ * Three states, not two. "There is no subscription" and "I could not find out
+ * whether there is a subscription" look identical if both collapse to null,
+ * and treating the second as the first is how a device ends up reported as Off
+ * while it is still receiving pushes.
+ */
+export type SubscriptionLookup =
+  | { state: 'found'; subscription: PushSubscription }
+  /** The browser answered, and there is genuinely none. */
+  | { state: 'none' }
+  /** The browser could not answer. Nothing may be concluded from this. */
+  | { state: 'unavailable' }
+
+/**
+ * Look up this device's subscription. Never prompts for anything.
+ *
+ * Every failure path reports `unavailable` rather than `none`, so a caller has
+ * to decide what an unknown means for it instead of inheriting a wrong answer.
+ */
+export async function lookupSubscription(): Promise<SubscriptionLookup> {
+  if (!('serviceWorker' in navigator)) return { state: 'unavailable' }
   try {
     const registration = await navigator.serviceWorker.getRegistration('/')
-    if (!registration) return null
-    return await registration.pushManager.getSubscription()
+    // No registration at all is a real answer: nothing is subscribed here.
+    if (!registration) return { state: 'none' }
+    const subscription = await registration.pushManager.getSubscription()
+    return subscription ? { state: 'found', subscription } : { state: 'none' }
   } catch {
-    return null
+    return { state: 'unavailable' }
   }
 }
 
@@ -219,12 +241,19 @@ export function isFullyDisabled(result: DisableResult): boolean {
  * leaves a subscription that still works and can be tried again.
  */
 export async function disableOnThisDevice(): Promise<DisableResult> {
-  const subscription = await existingSubscription()
-  if (!subscription) return { had: false, server: true, local: true }
+  const lookup = await lookupSubscription()
+
+  // Confirmed none: nothing to retire, and that is a complete success.
+  if (lookup.state === 'none') return { had: false, server: true, local: true }
+
+  // Could not find out. There may well be a live subscription here, so this
+  // must NOT read as "already off" — it is an unconfirmed cleanup, and the
+  // caller surfaces that rather than promising silence.
+  if (lookup.state === 'unavailable') return { had: true, server: false, local: false }
 
   // Each half reports its own success; a thrown call counts as a failure.
-  const server = await forgetSubscription(subscription.endpoint).catch(() => false)
-  const local = await subscription.unsubscribe().catch(() => false)
+  const server = await forgetSubscription(lookup.subscription.endpoint).catch(() => false)
+  const local = await lookup.subscription.unsubscribe().catch(() => false)
 
   return { had: true, server, local }
 }

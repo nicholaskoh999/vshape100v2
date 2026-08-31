@@ -322,7 +322,7 @@ describe('4. disabling', () => {
     const token = await seedToken(db, 'sub-a', 'a@example.com')
     await enable(db, token)
 
-    const { response, body } = await call(db, {
+    const { response } = await call(db, {
       token,
       method: 'DELETE',
       origin: ORIGIN,
@@ -330,7 +330,6 @@ describe('4. disabling', () => {
     })
 
     expect(response.status).toBe(200)
-    expect(body.removed).toBe(true)
     expect(pushSubscriptions.size).toBe(0)
   })
 
@@ -347,12 +346,72 @@ describe('4. disabling', () => {
       body: { endpoint: ENDPOINT_A },
     })
 
-    // Answers the same either way, so it cannot be used to probe whether
-    // somebody else's device exists.
     expect(response.status).toBe(200)
-    expect(body.removed).toBe(false)
+    // The other account's row is untouched.
     expect(pushSubscriptions.size).toBe(1)
     expect([...pushSubscriptions.values()][0].google_sub).toBe('sub-a')
+    // And nothing in the answer says whose it was.
+    expect(JSON.stringify(body)).not.toContain('sub-a')
+  })
+
+  /**
+   * Round 14 correction 2 - the answer must not be an ownership oracle.
+   *
+   * Returning removed:true/false told the caller whether a guessed endpoint
+   * belonged to this account. Nothing in the browser needs that answer, and
+   * anyone holding a list of endpoints could have used it to work out which of
+   * them this account owns. All three cases now answer identically.
+   */
+  it('answers identically whether the endpoint was owned, foreign or unknown', async () => {
+    async function attempt(seed: 'owned' | 'foreign' | 'absent') {
+      const { db, pushSubscriptions } = createFakeD1()
+      const mine = await seedToken(db, 'sub-a', 'a@example.com')
+      const theirs = await seedToken(db, 'sub-b', 'b@example.com')
+      if (seed === 'owned') await enable(db, mine)
+      if (seed === 'foreign') await enable(db, theirs)
+
+      const { response, body } = await call(db, {
+        token: mine,
+        method: 'DELETE',
+        origin: ORIGIN,
+        body: { endpoint: ENDPOINT_A },
+      })
+      return { status: response.status, body: JSON.stringify(body), rows: pushSubscriptions.size }
+    }
+
+    const owned = await attempt('owned')
+    const foreign = await attempt('foreign')
+    const absent = await attempt('absent')
+
+    // Same status, byte-identical body: the three cases are indistinguishable.
+    expect(owned.status).toBe(200)
+    expect(foreign.status).toBe(owned.status)
+    expect(absent.status).toBe(owned.status)
+    expect(foreign.body).toBe(owned.body)
+    expect(absent.body).toBe(owned.body)
+
+    // Indistinguishable to the caller, but not identical in effect: only the
+    // owned row was actually deleted.
+    expect(owned.rows).toBe(0)
+    expect(foreign.rows).toBe(1)
+    expect(absent.rows).toBe(0)
+  })
+
+  it('reports no removal flag at all', async () => {
+    const { db } = createFakeD1()
+    const token = await seedToken(db, 'sub-a', 'a@example.com')
+    await enable(db, token)
+
+    const { body } = await call(db, {
+      token,
+      method: 'DELETE',
+      origin: ORIGIN,
+      body: { endpoint: ENDPOINT_A },
+    })
+
+    // Absent, not merely constant: a field that exists invites reading it.
+    expect(Object.keys(body as object)).toEqual(['subscription'])
+    expect('removed' in (body as object)).toBe(false)
   })
 
   it('leaves this account"s OTHER devices alone', async () => {

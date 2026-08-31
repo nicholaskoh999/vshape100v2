@@ -17,7 +17,7 @@ import { handleHolidayRequest } from './holiday/routes'
 import { readVapidConfig } from './notifications/config'
 import { createD1PushStore } from './notifications/d1Store'
 import { handleNotificationRequest } from './notifications/routes'
-import { runScheduledSweep } from './notifications/scheduler'
+import { runScheduledDelivery } from './notifications/scheduler'
 import { createD1ScheduleTruth } from './notifications/truth'
 import { handleTodayRequest } from './today/routes'
 import { handleWorkoutRequest } from './workouts/routes'
@@ -53,11 +53,16 @@ export default {
    * that begins at 20:30:20 is still the 20:30 event — using execution time
    * would silently skip the minute it was meant to serve.
    *
+   * A push service that explicitly refuses a message (408/429/5xx) has proven
+   * it did not deliver, so that occurrence is retried WITHIN this invocation,
+   * against the same scheduledTime. Nothing here relies on Cloudflare
+   * replaying a scheduled event.
+   *
    * Missing VAPID configuration is handled inside the sweep: it sends nothing
    * and reports why, rather than throwing once a minute.
    */
   async scheduled(event: ScheduledController, env: Env): Promise<void> {
-    await runScheduledSweep({
+    await runScheduledDelivery({
       scheduledTime: event.scheduledTime,
       store: createD1PushStore(env.DB),
       truth: createD1ScheduleTruth(env.DB),
