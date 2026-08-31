@@ -1,19 +1,22 @@
-# Local development configuration for the Worker.
-#
-# Copy to `.dev.vars` and fill in real values. `.dev.vars` is git-ignored and
-# must never be committed. In production these are Wrangler secrets, set
-# locally with `wrangler secret put <NAME>` — not stored in this repo.
+# Local development variables. Copy to .dev.vars and fill in.
+# .dev.vars is gitignored; never commit real values.
 
-# Google OAuth 2.0 / OIDC "Web application" client.
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
+ALLOWED_GOOGLE_EMAILS=
+APP_ORIGIN=
 
-# Comma-separated list of Google accounts allowed to sign in.
-# Foundation is single-user: normally exactly one address.
-ALLOWED_GOOGLE_EMAILS=you@example.com
-
-# Origin the app is served from. Determines the OAuth redirect URI and
-# whether session cookies are marked Secure.
-#   local:      http://localhost:5173
-#   production: https://vshapev2.nkmwei.de
-APP_ORIGIN=http://localhost:5173
+# Round 14 - Web Push (VAPID, RFC 8292).
+#
+# Generate a P-256 key pair and store both halves base64url-encoded:
+#   VAPID_PUBLIC_KEY   the 65-byte uncompressed point. PUBLIC by design - the
+#                      browser needs it to call PushManager.subscribe().
+#   VAPID_PRIVATE_KEY  the 32-byte scalar. SECRET. Never commit it, never log
+#                      it, never return it from an endpoint.
+#   VAPID_SUBJECT      a contact the push service can reach, mailto: or https:
+#
+# Leaving these empty is a supported state: notifications report themselves
+# unavailable and every other part of the app works exactly as before.
+VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
+VAPID_SUBJECT=

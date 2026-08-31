@@ -28,6 +28,14 @@
     // them. Worker-first on /api/* keeps the auth routes reachable.
     "run_worker_first": ["/api/*"]
   },
+  // Round 14: the reminder sweep. Every minute, because the routine is
+  // minute-accurate - a 20:30 item must notify at 20:30, not "some time in
+  // that hour". The handler derives what is due from the shared Today engine
+  // and sends nothing when VAPID is unconfigured.
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+
   "d1_databases": [
     {
       "binding": "DB",

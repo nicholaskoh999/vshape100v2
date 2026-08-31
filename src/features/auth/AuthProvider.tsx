@@ -7,6 +7,7 @@ import {
   type SessionEndReason,
   type SessionState,
 } from './api'
+import { disableOnThisDevice } from '@/features/notifications/pushClient'
 import { AuthContext, type AuthStatus, type AuthValue } from './AuthContext'
 
 /**
@@ -56,6 +57,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     setIsLoggingOut(true)
     try {
+      // Retire THIS device's reminders before the session goes.
+      //
+      // Signing out and then continuing to receive the signed-out account's
+      // routine on the lock screen would be a privacy leak, and it needs the
+      // session to undo — afterwards the DELETE would be unauthenticated. Only
+      // this device is affected; other devices keep their own reminders.
+      //
+      // A failure here must not trap someone in a session they asked to leave,
+      // so sign-out proceeds either way.
+      await disableOnThisDevice().catch(() => false)
       await postLogout()
     } finally {
       // Invalidate any in-flight refresh so it cannot resurrect the session.

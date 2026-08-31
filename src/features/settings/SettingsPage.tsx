@@ -1,4 +1,4 @@
-import { Bell, ChevronRight, Dumbbell, Home, Info, Loader2, LogOut } from 'lucide-react'
+import { ChevronRight, Dumbbell, Home, Info, Loader2, LogOut } from 'lucide-react'
 import { motion } from 'motion/react'
 import { Link, useNavigate } from 'react-router'
 
@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/Card'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { listItemVariants, listVariants, press } from '@/design/motion'
 import { useAuth } from '@/features/auth/AuthContext'
+import { NotificationSettingsCard } from '@/features/notifications/NotificationSettingsCard'
 
 const rows = [
   {
@@ -13,12 +14,6 @@ const rows = [
     label: 'Mode',
     value: 'Home',
     note: 'Holiday Mode is set from the Calendar.',
-  },
-  {
-    icon: Bell,
-    label: 'Notifications',
-    value: 'Later',
-    note: 'Web Push lands later in the Foundation build.',
   },
   {
     icon: Info,
@@ -72,6 +67,14 @@ export function SettingsPage() {
             </Card>
           </motion.div>
         )}
+
+        <motion.div variants={listItemVariants}>
+          {/*
+            Reminders are a setting for THIS device, so they live here rather
+            than becoming a destination: no route, no nav item, no inbox.
+          */}
+          <NotificationSettingsCard />
+        </motion.div>
 
         <motion.div variants={listItemVariants}>
           {/*

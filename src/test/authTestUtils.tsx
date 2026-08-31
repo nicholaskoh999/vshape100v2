@@ -49,6 +49,12 @@ export function mockAuthFetch(options: {
   media?: MediaServer
   workouts?: WorkoutServer
   holidays?: HolidayServer
+  /**
+   * Notification API stand-in. Absent means the deployment has no VAPID
+   * configuration, which is the honest default for a test that is not about
+   * reminders: Settings reports "unavailable" and asks the browser for nothing.
+   */
+  notifications?: (url: string, init?: RequestInit) => Promise<Response>
 }) {
   const today = options.today ?? createTodayServer()
   const media = options.media ?? createMediaServer()
@@ -74,6 +80,10 @@ export function mockAuthFetch(options: {
     }
     if (url.startsWith('/api/holidays')) {
       return holidays.handle(url, init)
+    }
+    if (url.startsWith('/api/notifications')) {
+      if (options.notifications) return options.notifications(url, init)
+      return jsonResponse({ available: false, publicKey: null })
     }
     throw new Error(`Unexpected fetch in test: ${url}`)
   }

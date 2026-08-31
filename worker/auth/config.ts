@@ -13,6 +13,12 @@ export type Env = {
   GOOGLE_CLIENT_SECRET?: string
   ALLOWED_GOOGLE_EMAILS?: string
   APP_ORIGIN?: string
+  /** VAPID public key, base64url. Public by design: browsers subscribe with it. */
+  VAPID_PUBLIC_KEY?: string
+  /** VAPID private key, base64url. SECRET. Never returned, never logged. */
+  VAPID_PRIVATE_KEY?: string
+  /** VAPID contact, `mailto:` or `https:` (RFC 8292). */
+  VAPID_SUBJECT?: string
 }
 
 export type AuthConfig = {

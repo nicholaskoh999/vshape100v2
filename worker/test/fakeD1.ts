@@ -56,6 +56,26 @@ type HolidayRow = {
   updated_at: number
 }
 
+type PushSubscriptionRowShape = {
+  id: string
+  google_sub: string
+  endpoint: string
+  endpoint_hash: string
+  p256dh: string
+  auth: string
+  timezone: string
+  created_at: number
+  updated_at: number
+}
+
+type DeliveryRowShape = {
+  subscription_id: string
+  google_sub: string
+  trigger_minute: number
+  claimed_at: number
+  status: string
+}
+
 /** One approved company date. Global: seeded by migration, never per account. */
 type CompanyHolidayRow = { holiday_date: string; name: string }
 
@@ -132,6 +152,10 @@ export function createFakeD1() {
     COMPANY_HOLIDAYS.map((row) => [row.date, { holiday_date: row.date, name: row.name }]),
   )
   const companyPreferences = new Map<string, CompanyPreferenceRow>()
+  // Keyed by endpoint_hash, mirroring the unique index: one browser endpoint
+  // exists exactly once, whichever account holds it.
+  const pushSubscriptions = new Map<string, PushSubscriptionRowShape>()
+  const notificationDeliveries = new Map<string, DeliveryRowShape>()
   const occurrences = new Map<string, OccurrenceRow>()
   const workoutSets = new Map<string, WorkoutSetRow>()
   /** Set to make every `today_completions` statement throw, as D1 would. */
@@ -162,6 +186,107 @@ export function createFakeD1() {
   }
 
   function execute(sql: string, args: unknown[]) {
+    if (sql.includes('notification_deliveries')) {
+      if (sql.includes('INSERT OR IGNORE INTO notification_deliveries')) {
+        const [subscription_id, google_sub, trigger_minute, claimed_at] = args as [
+          string, string, number, number,
+        ]
+        const key = `${subscription_id}\u0000${trigger_minute}`
+        // The primary key IS the claim: a second insert changes zero rows, so
+        // a retried or concurrent sweep knows it lost.
+        if (notificationDeliveries.has(key)) return 0
+        notificationDeliveries.set(key, {
+          subscription_id,
+          google_sub,
+          trigger_minute,
+          claimed_at,
+          status: 'claimed',
+        })
+        return 1
+      }
+
+      if (sql.includes('UPDATE notification_deliveries')) {
+        const [status, subscription_id, trigger_minute] = args as [string, string, number]
+        const key = `${subscription_id}\u0000${trigger_minute}`
+        const row = notificationDeliveries.get(key)
+        if (!row) return 0
+        notificationDeliveries.set(key, { ...row, status })
+        return 1
+      }
+
+      if (sql.includes('DELETE FROM notification_deliveries')) {
+        const [beforeMinute] = args as [number]
+        let removed = 0
+        for (const [key, row] of [...notificationDeliveries]) {
+          if (row.trigger_minute < beforeMinute) {
+            notificationDeliveries.delete(key)
+            removed += 1
+          }
+        }
+        return removed
+      }
+
+      throw new Error(`fakeD1 received an unexpected statement: ${sql}`)
+    }
+
+    if (sql.includes('push_subscriptions')) {
+      if (sql.includes('INSERT INTO push_subscriptions')) {
+        const [
+          id, google_sub, endpoint, endpoint_hash, p256dh, auth, timezone,
+          created_at, updated_at,
+        ] = args as [string, string, string, string, string, string, string, number, number]
+
+        // ON CONFLICT (endpoint_hash): re-enabling the same browser under a
+        // different account REPLACES the owner rather than adding a row.
+        const existing = pushSubscriptions.get(endpoint_hash)
+        pushSubscriptions.set(endpoint_hash, {
+          id,
+          google_sub,
+          endpoint,
+          endpoint_hash,
+          p256dh,
+          auth,
+          timezone,
+          created_at: existing ? existing.created_at : created_at,
+          updated_at,
+        })
+        return 1
+      }
+
+      if (sql.includes('DELETE FROM push_subscriptions')) {
+        if (sql.includes('google_sub = ? AND endpoint_hash = ?')) {
+          const [google_sub, endpoint_hash] = args as [string, string]
+          const row = pushSubscriptions.get(endpoint_hash)
+          // Account-scoped: another account's device is simply not matched.
+          if (!row || row.google_sub !== google_sub) return 0
+          pushSubscriptions.delete(endpoint_hash)
+          return 1
+        }
+        const [id] = args as [string]
+        for (const [key, row] of [...pushSubscriptions]) {
+          if (row.id === id) {
+            pushSubscriptions.delete(key)
+            return 1
+          }
+        }
+        return 0
+      }
+
+      if (sql.includes('WHERE endpoint_hash = ?')) {
+        const [endpoint_hash] = args as [string]
+        return pushSubscriptions.get(endpoint_hash) ?? null
+      }
+
+      if (sql.includes('SELECT')) {
+        const [limit] = args as [number]
+        return [...pushSubscriptions.values()]
+          .sort((a, b) => a.created_at - b.created_at)
+          .slice(0, limit)
+      }
+
+      throw new Error(`fakeD1 received an unexpected statement: ${sql}`)
+    }
+
     if (sql.includes('company_holiday_preferences')) {
       if (holidayFailure) throw holidayFailure
 
@@ -845,6 +970,8 @@ export function createFakeD1() {
     holidays,
     companyHolidays,
     companyPreferences,
+    pushSubscriptions,
+    notificationDeliveries,
     breakCompletions(error = new Error('D1 unavailable')) {
       completionsFailure = error
     },

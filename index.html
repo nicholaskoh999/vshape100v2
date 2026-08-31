@@ -8,6 +8,13 @@
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!--
+      Round 14: installable app. iOS only grants Web Push to an installed PWA,
+      so the manifest is what makes reminders possible there at all.
+    -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="VShape100" />
     <title>VShape100</title>
   </head>
   <body>

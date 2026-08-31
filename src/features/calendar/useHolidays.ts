@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import { addLocalDays } from '@shared/localDate'
 import { fetchHolidays, type HolidayRecord } from './holidayApi'
 
 /**
@@ -91,34 +90,6 @@ export function useHolidays(span: { from: string; to: string } | null): HolidayS
   return { status, holidays, reload }
 }
 
-/**
- * The Holiday dates in a span, each with the truth that date needs.
- *
- * Expanding a range into individual days keeps the consumer (Today) a simple
- * lookup rather than a second copy of the range logic. Each day carries the
- * record's name and training choice, because the route now depends on both.
- *
- * `trainingOn` is passed through as stored; whether it can actually APPLY to a
- * given date is decided downstream, where the weekend rule lives — a Saturday
- * inside a Training-On range never gains a session.
- */
-export function holidayDaysOf(
-  holidays: readonly HolidayRecord[],
-  span: { from: string; to: string },
-): Map<string, { name: string; trainingOn: boolean }> {
-  const days = new Map<string, { name: string; trainingOn: boolean }>()
-  for (const holiday of holidays) {
-    // Clip to the span so a long range cannot expand without bound.
-    const start = holiday.startDate < span.from ? span.from : holiday.startDate
-    const end = holiday.endDate > span.to ? span.to : holiday.endDate
-    for (let date: string | null = start; date !== null && date <= end; ) {
-      // Company dates cannot overlap custom ones — the server refuses it — so
-      // first-writer-wins here is never reached in practice.
-      if (!days.has(date)) {
-        days.set(date, { name: holiday.name, trainingOn: holiday.trainingOn })
-      }
-      date = addLocalDays(date, 1)
-    }
-  }
-  return days
-}
+// The expansion itself lives in shared/today so the notification scheduler
+// applies exactly the same Holiday truth the page does.
+export { holidayDaysOf } from '@shared/today/holidayDays'
