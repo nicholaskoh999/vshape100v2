@@ -100,6 +100,19 @@ type OccurrenceRow = {
   updated_at: number
 }
 
+type BodyWeightRow = {
+  google_sub: string
+  local_date: string
+  weight_tenths_kg: number
+  created_at: number
+  updated_at: number
+}
+
+/** `google_sub` + `local_date` — the body_weight_entries primary key. */
+function bodyWeightId(googleSub: string, localDate: string): string {
+  return `${googleSub}|${localDate}`
+}
+
 type WorkoutSetRow = {
   google_sub: string
   workout_date: string
@@ -159,6 +172,9 @@ export function createFakeD1() {
   const notificationDeliveries = new Map<string, DeliveryRowShape>()
   const occurrences = new Map<string, OccurrenceRow>()
   const workoutSets = new Map<string, WorkoutSetRow>()
+  const bodyWeights = new Map<string, BodyWeightRow>()
+  /** Set to make every Progress statement throw, as D1 would. */
+  let progressFailure: Error | null = null
   /** Set to make every `today_completions` statement throw, as D1 would. */
   let completionsFailure: Error | null = null
   /** Set to make every `exercise_media` statement throw, as D1 would. */
@@ -482,6 +498,98 @@ export function createFakeD1() {
       }
 
       throw new Error(`fakeD1 received an unexpected statement: ${sql}`)
+    }
+
+    if (sql.includes('body_weight_entries')) {
+      if (progressFailure) throw progressFailure
+
+      if (sql.includes('INSERT INTO body_weight_entries')) {
+        const [google_sub, local_date, weight_tenths_kg, created_at, updated_at] = args as [
+          string,
+          string,
+          number,
+          number,
+          number,
+        ]
+        const id = bodyWeightId(google_sub, local_date)
+        const existing = bodyWeights.get(id)
+        // ON CONFLICT (google_sub, local_date) DO UPDATE — the same date is
+        // one entry, so this replaces the weight and keeps created_at.
+        bodyWeights.set(id, {
+          google_sub,
+          local_date,
+          weight_tenths_kg,
+          created_at: existing?.created_at ?? created_at,
+          updated_at,
+        })
+        return { changes: 1 }
+      }
+
+      if (sql.includes('DELETE FROM body_weight_entries')) {
+        const [google_sub, local_date] = args as [string, string]
+        const existed = bodyWeights.delete(bodyWeightId(google_sub, local_date))
+        return { changes: existed ? 1 : 0 }
+      }
+
+      if (sql.includes('SELECT')) {
+        const [google_sub] = args as [string]
+        // The ranged read binds (google_sub, from, to); listAll binds only the
+        // account. Dates are zero-padded text, so comparison is exact.
+        const ranged = sql.includes('local_date >= ?')
+        const from = ranged ? (args[1] as string) : null
+        const to = ranged ? (args[2] as string) : null
+
+        return [...bodyWeights.values()]
+          .filter((row) => row.google_sub === google_sub)
+          .filter((row) =>
+            from === null || to === null
+              ? true
+              : row.local_date >= from && row.local_date <= to,
+          )
+          .sort((a, b) => a.local_date.localeCompare(b.local_date))
+      }
+
+      throw new Error(`fakeD1 received an unexpected statement: ${sql}`)
+    }
+
+    // The Progress completed-set read. Matched before the general workout
+    // branches, because it names both workout tables and would otherwise be
+    // misrouted. `LIMIT ? OFFSET ?` is unique to it: every other statement in
+    // the Worker either takes no page or pages by limit alone.
+    if (sql.includes('LIMIT ? OFFSET ?') && sql.includes('s.exercise_id_snapshot')) {
+      if (progressFailure) throw progressFailure
+      if (workoutFailure) throw workoutFailure
+
+      const [google_sub, limit, offset] = args as [string, number, number]
+
+      // ownedSets() IS the snapshot-token join: a set only counts under the
+      // occurrence whose token it carries, so a losing Start's rows cannot
+      // appear here any more than they can in D1.
+      return [...occurrences.values()]
+        .filter((row) => row.google_sub === google_sub)
+        .flatMap(ownedSets)
+        .filter((set) => set.status === 'completed' && set.actual_result !== null)
+        .sort((a, b) => {
+          if (a.workout_date !== b.workout_date) {
+            return a.workout_date.localeCompare(b.workout_date)
+          }
+          if (a.session_id !== b.session_id) return a.session_id.localeCompare(b.session_id)
+          if (a.exercise_order !== b.exercise_order) return a.exercise_order - b.exercise_order
+          return a.set_index - b.set_index
+        })
+        .slice(offset, offset + limit)
+        .map((set) => ({
+          exercise_id_snapshot: set.exercise_id_snapshot,
+          exercise_name_snapshot: set.exercise_name_snapshot,
+          result_kind_snapshot: set.result_kind_snapshot,
+          load_mode_snapshot: set.load_mode_snapshot,
+          per_side_snapshot: set.per_side_snapshot,
+          actual_load_value: set.actual_load_value,
+          actual_load_unit: set.actual_load_unit,
+          actual_result: set.actual_result,
+          workout_date: set.workout_date,
+          session_id: set.session_id,
+        }))
     }
 
     if (sql.includes('LEFT JOIN workout_sets')) {
@@ -987,6 +1095,7 @@ export function createFakeD1() {
     companyPreferences,
     pushSubscriptions,
     notificationDeliveries,
+    bodyWeights,
     breakCompletions(error = new Error('D1 unavailable')) {
       completionsFailure = error
     },
@@ -998,6 +1107,9 @@ export function createFakeD1() {
     },
     breakHolidays(error = new Error('D1 unavailable')) {
       holidayFailure = error
+    },
+    breakProgress(error = new Error('D1 unavailable')) {
+      progressFailure = error
     },
     /**
      * Hold every Holiday write until the returned function is called.

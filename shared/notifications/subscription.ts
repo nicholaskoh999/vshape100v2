@@ -21,12 +21,17 @@
  * than guessing a zone and buzzing at the wrong hour.
  */
 
+import { isIanaTimeZone, MAX_TIMEZONE_LENGTH } from '../timeZone'
+
+// Re-exported so existing importers of this module keep working unchanged.
+// The definition itself now lives in shared/timeZone.ts, because Round 15's
+// body-weight dates need the same truth and must not carry a second copy.
+export { isIanaTimeZone, MAX_TIMEZONE_LENGTH }
+
 /** Longest push endpoint accepted. Real endpoints are far shorter. */
 export const MAX_ENDPOINT_LENGTH = 1024
 /** Longest base64url key material accepted. */
 export const MAX_KEY_LENGTH = 256
-/** Longest IANA zone name accepted, e.g. 'America/Argentina/Buenos_Aires'. */
-export const MAX_TIMEZONE_LENGTH = 64
 
 /** What the browser sends when enabling reminders on this device. */
 export type PushSubscriptionInput = {
@@ -97,26 +102,6 @@ export function isP256dhKey(value: unknown, maxLength = MAX_KEY_LENGTH): value i
 export function isAuthSecret(value: unknown, maxLength = MAX_KEY_LENGTH): value is string {
   if (!isBase64Url(value, maxLength)) return false
   return decodedLength(value) === AUTH_BYTES
-}
-
-/**
- * Is this a real IANA timezone?
- *
- * Asked of the platform rather than matched against a list: `Intl` already
- * carries the zone database and throws for anything it does not know, which
- * is exactly the check we want and cannot go stale.
- */
-export function isIanaTimeZone(value: unknown): value is string {
-  if (typeof value !== 'string') return false
-  if (value.length === 0 || value.length > MAX_TIMEZONE_LENGTH) return false
-  // 'UTC' and 'Area/Location' shapes only; no offsets, no free text.
-  if (!/^[A-Za-z][A-Za-z0-9+_-]*(\/[A-Za-z0-9+_-]+)*$/.test(value)) return false
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone: value })
-    return true
-  } catch {
-    return false
-  }
 }
 
 /**

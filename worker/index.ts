@@ -17,6 +17,7 @@ import { handleHolidayRequest } from './holiday/routes'
 import { readVapidConfig } from './notifications/config'
 import { createD1PushStore } from './notifications/d1Store'
 import { handleNotificationRequest } from './notifications/routes'
+import { handleProgressRequest } from './progress/routes'
 import { runScheduledDelivery } from './notifications/scheduler'
 import { createD1ScheduleTruth } from './notifications/truth'
 import { handleTodayRequest } from './today/routes'
@@ -41,6 +42,9 @@ export default {
 
     const notificationResponse = await handleNotificationRequest(request, env)
     if (notificationResponse) return notificationResponse
+
+    const progressResponse = await handleProgressRequest(request, env)
+    if (progressResponse) return progressResponse
 
     return env.ASSETS.fetch(request)
   },
