@@ -19,7 +19,7 @@ const ERROR_MESSAGES: Record<string, string> = {
 
 export function LoginPage() {
   const [params] = useSearchParams()
-  const { status, endReason } = useAuth()
+  const { status, endReason, signOutNotice } = useAuth()
   const [trustDevice, setTrustDevice] = useState(false)
   const [isRedirecting, setIsRedirecting] = useState(false)
 
@@ -87,6 +87,26 @@ export function LoginPage() {
           >
             <AlertCircle className="mt-px size-4 shrink-0" aria-hidden="true" />
             {errorMessage}
+          </motion.p>
+        )}
+
+        {/*
+          Sign-out worked, but retiring this device's reminders could not be
+          confirmed. That is privacy-relevant, so it is surfaced here rather
+          than swallowed — and only once, without blocking anything, so nobody
+          is trapped retrying.
+        */}
+        {signOutNotice && (
+          <motion.p
+            role="status"
+            data-signout-notice
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: duration.fast, ease: ease.outQuart }}
+            className="mt-4 flex items-start gap-2 rounded-control border border-edge-strong bg-surface-overlay px-3.5 py-3 text-[13px] font-semibold text-ink-dim"
+          >
+            <AlertCircle className="mt-px size-4 shrink-0" aria-hidden="true" />
+            {signOutNotice}
           </motion.p>
         )}
 

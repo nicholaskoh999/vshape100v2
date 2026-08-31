@@ -50,26 +50,55 @@ export interface PushStore {
   listAll(limit: number): Promise<PushSubscriptionRow[]>
 
   /**
-   * Claim one (subscription, trigger minute) pair.
+   * Claim one (subscription, trigger minute) pair, or RE-claim a retryable one.
    *
-   * Returns true only for the caller that created the claim. A concurrent or
-   * retried invocation loses and must not send. The claim is a conditional
-   * INSERT, not a read-then-write, so two overlapping cron events cannot both
-   * believe they were first.
+   * Returns true only for the caller that now holds the claim. A concurrent
+   * invocation, a re-run of an already-sent occurrence, or one whose previous
+   * attempt was terminal all get false and must not send.
+   *
+   * It is a single conditional write, not a read-then-write, so two
+   * overlapping cron events cannot both believe they were first.
    */
   claimDelivery(
     subscriptionId: string,
     googleSub: string,
     triggerMinute: number,
     now: number,
+    maxAttempts: number,
   ): Promise<boolean>
 
-  /** Record the outcome of a claim. Never gates correctness. */
-  markDelivery(subscriptionId: string, triggerMinute: number, status: 'sent' | 'failed'): Promise<void>
+  /**
+   * Record how a claim ended.
+   *
+   * `retryable` is the only outcome that leaves the occurrence reclaimable;
+   * everything else is terminal for that trigger minute.
+   */
+  markDelivery(
+    subscriptionId: string,
+    triggerMinute: number,
+    status: DeliveryStatus,
+  ): Promise<void>
 
   /** Drop claims older than a cutoff. Operational hygiene only. */
   pruneDeliveries(beforeMinute: number): Promise<void>
 }
+
+/**
+ * How a claim ended.
+ *
+ * Only `retryable` may be claimed again — it is the one outcome where the
+ * push service PROVED it had not accepted the message.
+ */
+export type DeliveryStatus = 'sent' | 'retryable' | 'rejected' | 'ambiguous'
+
+/**
+ * How many times one trigger minute may be attempted.
+ *
+ * Small on purpose: these are exact-time reminders with a short TTL, so a
+ * handful of attempts inside the same minute's window is the entire useful
+ * retry budget. Beyond that the moment has passed and a retry would be noise.
+ */
+export const MAX_DELIVERY_ATTEMPTS = 3
 
 /** Most subscriptions one scheduled sweep will consider. */
 export const MAX_SWEEP_SUBSCRIPTIONS = 500

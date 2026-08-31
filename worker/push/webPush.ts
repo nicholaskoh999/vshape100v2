@@ -277,16 +277,36 @@ export async function vapidAuthorization(
 export type PushTarget = { endpoint: string } & PushKeys
 
 /**
- * What happened, in terms the caller can act on.
+ * What happened, in terms precise enough to decide whether a retry is SAFE.
  *
- *   sent      delivered to the push service
- *   expired   the subscription is gone (404/410) — retire THIS one only
- *   failed    transient or unexpected; the subscription stays
+ *   sent       the push service accepted it. Never send again.
+ *   expired    the subscription is gone (404/410). Retire THIS one only.
+ *   retryable  the service explicitly refused it — 408/429/5xx. We can PROVE
+ *              it was not accepted, so the same trigger minute may be tried
+ *              again without any risk of a duplicate.
+ *   rejected   the service refused it permanently (a 4xx we caused). Not
+ *              accepted, but retrying the identical request cannot help.
+ *   ambiguous  the request never produced an answer — a network error, an
+ *              abort, a timeout. It may or may not have reached the service,
+ *              so it is NEVER retried: a second buzz for one moment is worse
+ *              than a missed one.
  */
 export type PushOutcome =
   | { status: 'sent' }
   | { status: 'expired'; httpStatus: number }
-  | { status: 'failed'; httpStatus: number | null }
+  | { status: 'retryable'; httpStatus: number }
+  | { status: 'rejected'; httpStatus: number }
+  | { status: 'ambiguous' }
+
+/**
+ * Statuses a push service uses to say "I did not take this, try later".
+ *
+ * Each one is a definite refusal, which is what makes a retry safe: the
+ * message did not enter the queue.
+ */
+export function isRetryableStatus(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500
+}
 
 /**
  * Time-to-live, in seconds.
@@ -310,8 +330,10 @@ export async function sendPush(
     body = await encryptPayload(payload, target)
     authorization = await vapidAuthorization(target.endpoint, config, now)
   } catch {
-    // Never surface the underlying error: it can carry key material.
-    return { status: 'failed', httpStatus: null }
+    // Never surface the underlying error: it can carry key material. Nothing
+    // was sent, so this is a definite non-delivery rather than an ambiguous
+    // one — but it is also not something a retry would fix.
+    return { status: 'rejected', httpStatus: 0 }
   }
 
   let response: Response
@@ -328,7 +350,9 @@ export async function sendPush(
       body: body as BodyInit,
     })
   } catch {
-    return { status: 'failed', httpStatus: null }
+    // The request threw. It may have reached the push service before failing,
+    // so we cannot prove it was not accepted and must never retry it.
+    return { status: 'ambiguous' }
   }
 
   if (response.ok) return { status: 'sent' }
@@ -336,5 +360,8 @@ export async function sendPush(
   if (response.status === 404 || response.status === 410) {
     return { status: 'expired', httpStatus: response.status }
   }
-  return { status: 'failed', httpStatus: response.status }
+  if (isRetryableStatus(response.status)) {
+    return { status: 'retryable', httpStatus: response.status }
+  }
+  return { status: 'rejected', httpStatus: response.status }
 }

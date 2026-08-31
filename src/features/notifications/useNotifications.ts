@@ -5,6 +5,7 @@ import {
   detectSupport,
   deviceTimeZone,
   disableOnThisDevice,
+  isFullyDisabled,
   existingSubscription,
   fetchConfig,
   registerServiceWorker,
@@ -107,12 +108,34 @@ export function useNotifications(): NotificationControls {
       if (!active) return
 
       if (permission === 'granted' && subscription) {
+        // A local PushSubscription is only half of "on". The other half is the
+        // server knowing about it: without a registered row and a usable
+        // timezone, nothing will ever be scheduled or delivered, so claiming
+        // "On this device" here would be a promise the app cannot keep.
         const timezone = deviceTimeZone()
-        setState({ status: 'on', timezone })
-        // Silent reconcile: travel changes the local clock the schedule is
-        // written in, and the server has no other way to learn about it. No
-        // prompt is involved, because permission is already granted.
-        if (timezone) void saveSubscription(subscription, timezone, controller.signal)
+        if (!timezone) {
+          setState({
+            status: 'error',
+            message: 'Could not read this device timezone, so reminders cannot be scheduled.',
+          })
+          return
+        }
+
+        // Reconcile and WAIT for it. This also carries a changed timezone
+        // after travel, and involves no permission prompt because permission
+        // is already granted.
+        const confirmed = await saveSubscription(subscription, timezone, controller.signal)
+          .catch(() => false)
+        if (!active) return
+
+        setState(
+          confirmed
+            ? { status: 'on', timezone }
+            : {
+                status: 'error',
+                message: 'Reminders are not registered on the server. Try enabling again.',
+              },
+        )
         return
       }
 
@@ -191,15 +214,17 @@ export function useNotifications(): NotificationControls {
     void (async () => {
       setState({ status: 'enabling' })
       try {
-        const done = await disableOnThisDevice()
+        const result = await disableOnThisDevice()
         setState(
-          done
+          isFullyDisabled(result)
             ? { status: 'off' }
             : {
                 status: 'error',
                 // Honest: half-done is not off, and claiming otherwise would
                 // leave someone expecting silence they will not get.
-                message: 'Could not fully turn reminders off. Try again.',
+                message: result.server
+                  ? 'The server stopped reminders, but this browser still holds a subscription. Try again.'
+                  : 'Could not fully turn reminders off. Try again.',
               },
         )
       } finally {

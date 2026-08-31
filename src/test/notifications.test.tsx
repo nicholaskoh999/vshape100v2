@@ -4,7 +4,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import manifestSource from '../../public/manifest.webmanifest?raw'
 import serviceWorkerSource from '../../public/sw.js?raw'
+import routingSource from '../../public/sw-routing.js?raw'
 import indexHtml from '../../index.html?raw'
+
+import {
+  AUTH_BYTES,
+  isAuthSecret,
+  isP256dhKey,
+  P256DH_BYTES,
+} from '@shared/notifications/subscription'
 
 import { authenticatedSession, mockAuthFetch, renderApp } from './authTestUtils'
 
@@ -20,6 +28,10 @@ import { authenticatedSession, mockAuthFetch, renderApp } from './authTestUtils'
  */
 
 const PUBLIC_KEY = 'B'.repeat(86)
+
+/** A subscription shape the server will accept: 65-byte point, 16-byte secret. */
+const P256DH = 'BPQJoE44Q1Cc9mVFRQJQLSlbylnndSF3THRGgH1buOLGH3Ur5ZFvqpI1DKkGKEDa8jKNBlNWttPDqAdAvSVhszU'
+const AUTH = 'qMTpNlhmid_ObCRqVDj04g'
 
 type PermissionState = 'default' | 'granted' | 'denied'
 
@@ -50,7 +62,7 @@ function stubBrowser(
     endpoint: 'https://push.example/send/this-device',
     toJSON: () => ({
       endpoint: 'https://push.example/send/this-device',
-      keys: { p256dh: 'BDeviceKey', auth: 'DeviceAuth' },
+      keys: { p256dh: P256DH, auth: AUTH },
     }),
     unsubscribe: unsubscribeSpy,
   }
@@ -269,8 +281,8 @@ describe('3. enabling on this device', () => {
     const saved = api.calls.find((call) => call.method === 'PUT')
     expect(saved?.body).toMatchObject({
       endpoint: 'https://push.example/send/this-device',
-      p256dh: 'BDeviceKey',
-      auth: 'DeviceAuth',
+      p256dh: P256DH,
+      auth: AUTH,
     })
     // The device reports its own zone; the server never guesses one.
     expect((saved?.body as { timezone: string }).timezone.length).toBeGreaterThan(0)
@@ -364,8 +376,10 @@ describe('4. an already-enabled device', () => {
 
     await user.click(screen.getByRole('button', { name: /Disable on this device/ }))
     await waitFor(() => expect(state()).toBe('error'))
-    // Claiming "off" here would promise a silence that will not arrive.
-    expect(card()?.textContent).toMatch(/Could not fully turn reminders off/)
+    // Claiming "off" here would promise a silence that will not arrive. The
+    // message names WHICH half is outstanding, because the remedy differs.
+    expect(card()?.textContent).toMatch(/this browser still holds a subscription/i)
+    expect(card()?.textContent).not.toMatch(/^Off$/m)
   })
 })
 
@@ -452,6 +466,26 @@ describe('6. no new destination', () => {
 /* 7. The service worker                                               */
 /* ------------------------------------------------------------------ */
 
+/**
+ * The routing rules are loaded from the file that actually ships and then
+ * CALLED, not matched with a regex. A fallback that only fires when something
+ * else has already gone wrong has to be executed to be believed.
+ */
+function loadRouting() {
+  const scope: Record<string, unknown> = {}
+  new Function('self', `${routingSource}; return self`)(scope)
+  return scope.vshapeSwRouting as {
+    FALLBACK_PATH: string
+    safePath: (value: unknown) => string
+    findAppClient: (clients: { url: string }[], origin: string) => unknown
+    openTarget: (
+      clientsApi: unknown,
+      origin: string,
+      href: string,
+    ) => Promise<'navigated' | 'opened'>
+  }
+}
+
 describe('7. the service worker', () => {
   it('handles push and notification clicks, and nothing else', () => {
     expect(serviceWorkerSource).toMatch(/addEventListener\('push'/)
@@ -461,47 +495,315 @@ describe('7. the service worker', () => {
   it('adds no fetch interception or cache', () => {
     // A caching service worker can serve a previous deployment after a new one
     // ships, and a stale app is worse than no offline mode.
-    expect(serviceWorkerSource).not.toMatch(/addEventListener\(\s*'fetch'/)
-    expect(serviceWorkerSource).not.toMatch(/caches\./)
-    expect(serviceWorkerSource).not.toMatch(/cache\.put/)
+    for (const source of [serviceWorkerSource, routingSource]) {
+      expect(source).not.toMatch(/addEventListener\(\s*'fetch'/)
+      expect(source).not.toMatch(/caches\./)
+      expect(source).not.toMatch(/cache\.put/)
+    }
   })
 
   it('shows exactly one visible notification per push', () => {
     expect(serviceWorkerSource).toMatch(/showNotification\(/)
-    // Deterministic tag: a re-delivery replaces rather than stacks.
     expect(serviceWorkerSource).toMatch(/tag/)
   })
 
-  it('refuses any destination that is not a path on this origin', () => {
-    // The safePath guard, exercised as the worker defines it.
-    const guard = /function safePath\(value\)\s*\{[\s\S]*?\n\}/.exec(serviceWorkerSource)
-    expect(guard).not.toBeNull()
+  it('loads its routing from the shipped file', () => {
+    expect(serviceWorkerSource).toMatch(/importScripts\('\/sw-routing\.js'\)/)
+  })
 
-    const fallback = /const FALLBACK_PATH = '([^']+)'/.exec(serviceWorkerSource)
-    expect(fallback).not.toBeNull()
-    const safePath = new Function(
-      `const FALLBACK_PATH = '${fallback![1]}'; ${guard![0]}; return safePath`,
-    )() as (value: unknown) => string
+  it('uses the app icons it already ships', () => {
+    expect(serviceWorkerSource).toMatch(/\/icon-192\.png/)
+  })
+})
 
+describe('8. notification click routing', () => {
+  const ORIGIN = 'https://vshapev2.nkmwei.de'
+
+  it('accepts a same-origin path', () => {
+    const { safePath } = loadRouting()
     expect(safePath('/training/monday')).toBe('/training/monday')
     expect(safePath('/today')).toBe('/today')
+  })
 
-    // Everything that could leave the origin falls back to Today.
+  it('refuses any destination that could leave this origin', () => {
+    const { safePath } = loadRouting()
     for (const hostile of [
       'https://evil.example/steal',
       '//evil.example',
       'javascript:alert(1)',
       'data:text/html,x',
       '/today?next=https://evil.example',
+      'training/monday',
       42,
       null,
       undefined,
+      {},
     ]) {
       expect(safePath(hostile), String(hostile)).toBe('/today')
     }
   })
 
-  it('uses the app icons it already ships', () => {
-    expect(serviceWorkerSource).toMatch(/\/icon-192\.png/)
+  it('focuses an existing window and navigates it', async () => {
+    const { openTarget } = loadRouting()
+    const focus = vi.fn(async () => {})
+    const navigate = vi.fn(async () => {})
+    const openWindow = vi.fn(async () => {})
+
+    const outcome = await openTarget(
+      {
+        matchAll: async () => [{ url: `${ORIGIN}/today`, focus, navigate }],
+        openWindow,
+      },
+      ORIGIN,
+      `${ORIGIN}/training/monday`,
+    )
+
+    expect(outcome).toBe('navigated')
+    expect(focus).toHaveBeenCalled()
+    expect(navigate).toHaveBeenCalledWith(`${ORIGIN}/training/monday`)
+    expect(openWindow).not.toHaveBeenCalled()
+  })
+
+  it('opens a window when the client cannot navigate', async () => {
+    const { openTarget } = loadRouting()
+    const openWindow = vi.fn(async () => {})
+
+    // Some browsers simply do not expose navigate() on a client.
+    const outcome = await openTarget(
+      {
+        matchAll: async () => [{ url: `${ORIGIN}/today`, focus: async () => {} }],
+        openWindow,
+      },
+      ORIGIN,
+      `${ORIGIN}/training/monday`,
+    )
+
+    // The bug this replaces: the click used to end here, doing nothing.
+    expect(outcome).toBe('opened')
+    expect(openWindow).toHaveBeenCalledWith(`${ORIGIN}/training/monday`)
+  })
+
+  it('opens a window when navigate is rejected', async () => {
+    const { openTarget } = loadRouting()
+    const openWindow = vi.fn(async () => {})
+
+    const outcome = await openTarget(
+      {
+        matchAll: async () => [
+          {
+            url: `${ORIGIN}/today`,
+            focus: async () => {},
+            navigate: async () => {
+              throw new Error('not allowed for an uncontrolled client')
+            },
+          },
+        ],
+        openWindow,
+      },
+      ORIGIN,
+      `${ORIGIN}/today`,
+    )
+
+    expect(outcome).toBe('opened')
+    expect(openWindow).toHaveBeenCalled()
+  })
+
+  it('opens a window when no VShape window is open', async () => {
+    const { openTarget } = loadRouting()
+    const openWindow = vi.fn(async () => {})
+
+    const outcome = await openTarget(
+      { matchAll: async () => [], openWindow },
+      ORIGIN,
+      `${ORIGIN}/today`,
+    )
+
+    expect(outcome).toBe('opened')
+    expect(openWindow).toHaveBeenCalledWith(`${ORIGIN}/today`)
+  })
+
+  it('never focuses a window belonging to another origin', async () => {
+    const { openTarget, findAppClient } = loadRouting()
+    const focus = vi.fn(async () => {})
+    const openWindow = vi.fn(async () => {})
+
+    expect(findAppClient([{ url: 'https://evil.example/x' }], ORIGIN)).toBeNull()
+
+    const outcome = await openTarget(
+      {
+        matchAll: async () => [{ url: 'https://evil.example/x', focus, navigate: async () => {} }],
+        openWindow,
+      },
+      ORIGIN,
+      `${ORIGIN}/today`,
+    )
+
+    // A window that is not ours is not ours to move.
+    expect(focus).not.toHaveBeenCalled()
+    expect(outcome).toBe('opened')
+  })
+
+  it('still opens a window when the client list cannot be read', async () => {
+    const { openTarget } = loadRouting()
+    const openWindow = vi.fn(async () => {})
+
+    const outcome = await openTarget(
+      {
+        matchAll: async () => {
+          throw new Error('clients unavailable')
+        },
+        openWindow,
+      },
+      ORIGIN,
+      `${ORIGIN}/today`,
+    )
+
+    expect(outcome).toBe('opened')
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* 9. "On" is server-confirmed                                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A local PushSubscription is only half of "on".
+ *
+ * Without a registered row and a usable timezone the server can never schedule
+ * or deliver anything, so showing "On this device" on the strength of the
+ * browser alone promises something the app cannot do.
+ */
+describe('9. confirmed before claimed', () => {
+  /** A notification API whose reconcile fails. */
+  function failingReconcile(status = 500) {
+    const calls: { method: string }[] = []
+    const handler = async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET'
+      if (url.startsWith('/api/notifications/config')) {
+        return new Response(JSON.stringify({ available: true, publicKey: PUBLIC_KEY }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      calls.push({ method })
+      return new Response(JSON.stringify({ error: 'server_error' }), { status })
+    }
+    return { calls, handler }
+  }
+
+  it('shows On only after the server confirms the subscription', async () => {
+    stubBrowser({ permission: 'granted', existing: true })
+    const api = notificationApi()
+    await renderSettings(api.handler)
+    await settled()
+
+    expect(state()).toBe('on')
+    // The confirmation is the reconcile itself, and it was awaited.
+    expect(api.calls.some((call) => call.method === 'PUT')).toBe(true)
+  })
+
+  it('does NOT show On when the server rejects the reconcile', async () => {
+    stubBrowser({ permission: 'granted', existing: true })
+    await renderSettings(failingReconcile().handler)
+    await settled()
+
+    // The browser has a subscription, but nothing will ever be delivered to it.
+    expect(state()).not.toBe('on')
+    expect(state()).toBe('error')
+    expect(card()?.textContent).not.toMatch(/On this device/)
+    expect(card()?.textContent).toMatch(/not registered on the server/i)
+  })
+
+  it('offers a way to try again after a failed reconcile', async () => {
+    stubBrowser({ permission: 'granted', existing: true })
+    await renderSettings(failingReconcile().handler)
+    await settled()
+
+    expect(screen.getByRole('button', { name: /Enable on this device/ })).toBeInTheDocument()
+  })
+
+  it('does NOT show On without a usable device timezone', async () => {
+    stubBrowser({ permission: 'granted', existing: true })
+    // A browser that cannot report its zone cannot be scheduled for.
+    vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(
+      () => ({ resolvedOptions: () => ({ timeZone: '' }) }) as never,
+    )
+
+    await renderSettings(notificationApi().handler)
+    await settled()
+
+    expect(state()).toBe('error')
+    expect(card()?.textContent).toMatch(/timezone/i)
+  })
+
+  it('never requests permission while reconciling', async () => {
+    stubBrowser({ permission: 'granted', existing: true })
+    await renderSettings(notificationApi().handler)
+    await settled()
+
+    expect(requestPermission).not.toHaveBeenCalled()
+  })
+
+  it('confirms a changed timezone before claiming On', async () => {
+    stubBrowser({ permission: 'granted', existing: true })
+    const api = notificationApi()
+    await renderSettings(api.handler)
+    await settled()
+
+    // Travel changes the clock the schedule is written in; the reconcile is
+    // what carries it, and On is only claimed once it succeeded.
+    const saved = api.calls.find((call) => call.method === 'PUT')
+    expect(saved).toBeDefined()
+    expect((saved?.body as { timezone: string }).timezone.length).toBeGreaterThan(0)
+    expect(state()).toBe('on')
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* 10. Key material must be the right shape                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Key material that cannot be encrypted to is worse than absent: it would sit
+ * in D1 looking enabled and failing silently once a minute. So the shape is
+ * checked at the door, not discovered at send time.
+ */
+describe('10. push key shape', () => {
+  it('accepts a real uncompressed P-256 point', () => {
+    expect(isP256dhKey(P256DH)).toBe(true)
+    expect(P256DH_BYTES).toBe(65)
+  })
+
+  it('accepts a real 16-byte auth secret', () => {
+    expect(isAuthSecret(AUTH)).toBe(true)
+    expect(AUTH_BYTES).toBe(16)
+  })
+
+  it('refuses a point of the wrong length', () => {
+    // 64 bytes and 66 bytes are both not a P-256 point.
+    expect(isP256dhKey(P256DH.slice(0, 86))).toBe(false)
+    expect(isP256dhKey(P256DH + 'AA')).toBe(false)
+  })
+
+  it('refuses a point that is not marked uncompressed', () => {
+    // 0x04 is the marker; without it this is not what Web Push uses.
+    expect(isP256dhKey('A' + P256DH.slice(1))).toBe(false)
+  })
+
+  it('refuses an auth secret of the wrong length', () => {
+    expect(isAuthSecret(AUTH.slice(0, 20))).toBe(false)
+    expect(isAuthSecret(AUTH + AUTH)).toBe(false)
+  })
+
+  it('refuses anything that is not base64url at all', () => {
+    for (const bad of ['', 'has spaces', 'plus+slash/', 'padded==', null, 42, {}, undefined]) {
+      expect(isP256dhKey(bad), String(bad)).toBe(false)
+      expect(isAuthSecret(bad), String(bad)).toBe(false)
+    }
+  })
+
+  it('refuses key material longer than the accepted bound', () => {
+    expect(isP256dhKey('A'.repeat(500))).toBe(false)
+    expect(isAuthSecret('A'.repeat(500))).toBe(false)
   })
 })

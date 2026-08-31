@@ -189,23 +189,42 @@ export async function subscribe(
 }
 
 /**
+ * What happened when this device was retired.
+ *
+ * The halves are reported separately because they fail differently and matter
+ * differently. A server retirement that did not happen means the account can
+ * still push here; a local unsubscribe that did not happen means the browser
+ * still holds a subscription that a future sign-in would re-register.
+ */
+export type DisableResult = {
+  /** There was something to disable at all. */
+  had: boolean
+  /** The server confirmed it will no longer push to this device. */
+  server: boolean
+  /** The browser confirmed it dropped the subscription. */
+  local: boolean
+}
+
+/** Nothing left to disable is a complete success, not a partial one. */
+export function isFullyDisabled(result: DisableResult): boolean {
+  return !result.had || (result.server && result.local)
+}
+
+/**
  * Retire this device everywhere: server first, then the browser.
  *
  * Server first on purpose. If the local unsubscribe succeeded but the server
  * call failed, the server would keep pushing to an endpoint the browser has
- * abandoned; the other way round, a failure leaves a subscription that still
- * works and can be retried.
- *
- * Returns whether BOTH halves are confirmed, so a caller can be honest instead
- * of claiming reminders are off when only half of it happened.
+ * abandoned and nothing could be retried; the other way round, a failure
+ * leaves a subscription that still works and can be tried again.
  */
-export async function disableOnThisDevice(): Promise<boolean> {
+export async function disableOnThisDevice(): Promise<DisableResult> {
   const subscription = await existingSubscription()
-  if (!subscription) return true
+  if (!subscription) return { had: false, server: true, local: true }
 
   // Each half reports its own success; a thrown call counts as a failure.
-  const retired = await forgetSubscription(subscription.endpoint).catch(() => false)
-  const unsubscribed = await subscription.unsubscribe().catch(() => false)
+  const server = await forgetSubscription(subscription.endpoint).catch(() => false)
+  const local = await subscription.unsubscribe().catch(() => false)
 
-  return retired && unsubscribed
+  return { had: true, server, local }
 }

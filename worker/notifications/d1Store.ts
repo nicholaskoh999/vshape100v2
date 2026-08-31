@@ -111,24 +111,40 @@ export function createD1PushStore(db: D1Database): PushStore {
       return (result.results ?? []).map(toRow)
     },
 
-    async claimDelivery(subscriptionId, googleSub, triggerMinute, now) {
-      // The claim is the primary key, so this INSERT is the whole mutual
-      // exclusion: SQLite evaluates it atomically and D1 has a single writer,
-      // so a concurrent or retried invocation writes zero rows and knows it
-      // lost. No read-then-write, and no process-memory set.
+    async claimDelivery(subscriptionId, googleSub, triggerMinute, now, maxAttempts) {
+      // One atomic statement is the whole mutual exclusion, and also the
+      // whole retry policy.
+      //
+      // A fresh occurrence INSERTs. A conflicting one takes the DO UPDATE
+      // path, which only succeeds while the existing row is `retryable` and
+      // still under the attempt bound. Every other state -- claimed, sent,
+      // rejected, ambiguous -- fails the WHERE, the statement changes zero
+      // rows, and the caller knows it must not send.
+      //
+      // SQLite evaluates this atomically and D1 has a single writer, so two
+      // concurrent sweeps cannot both come away holding the claim. No
+      // read-then-write, and nothing in process memory.
       const result = await db
         .prepare(
-          `INSERT OR IGNORE INTO notification_deliveries
-             (subscription_id, google_sub, trigger_minute, claimed_at, status)
-           VALUES (?, ?, ?, ?, 'claimed')`,
+          `INSERT INTO notification_deliveries
+             (subscription_id, google_sub, trigger_minute, claimed_at, attempts, status)
+           VALUES (?, ?, ?, ?, 1, 'claimed')
+           ON CONFLICT (subscription_id, trigger_minute)
+           DO UPDATE SET status = 'claimed',
+                         claimed_at = excluded.claimed_at,
+                         attempts = notification_deliveries.attempts + 1
+                   WHERE notification_deliveries.status = 'retryable'
+                     AND notification_deliveries.attempts < ?`,
         )
-        .bind(subscriptionId, googleSub, triggerMinute, now)
+        .bind(subscriptionId, googleSub, triggerMinute, now, maxAttempts)
         .run()
 
       return (result.meta?.changes ?? 0) > 0
     },
 
     async markDelivery(subscriptionId, triggerMinute, status) {
+      // Only the holder of the claim writes the outcome, so no guard is
+      // needed here; the guard that matters is on the claim itself.
       await db
         .prepare(
           `UPDATE notification_deliveries SET status = ?

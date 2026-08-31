@@ -73,6 +73,7 @@ type DeliveryRowShape = {
   google_sub: string
   trigger_minute: number
   claimed_at: number
+  attempts: number
   status: string
 }
 
@@ -187,19 +188,33 @@ export function createFakeD1() {
 
   function execute(sql: string, args: unknown[]) {
     if (sql.includes('notification_deliveries')) {
-      if (sql.includes('INSERT OR IGNORE INTO notification_deliveries')) {
-        const [subscription_id, google_sub, trigger_minute, claimed_at] = args as [
-          string, string, number, number,
-        ]
-        const key = `${subscription_id}\u0000${trigger_minute}`
-        // The primary key IS the claim: a second insert changes zero rows, so
-        // a retried or concurrent sweep knows it lost.
-        if (notificationDeliveries.has(key)) return 0
+      if (sql.includes('INSERT INTO notification_deliveries')) {
+        const [subscription_id, google_sub, trigger_minute, claimed_at, maxAttempts] =
+          args as [string, string, number, number, number]
+        const key = subscription_id + ' ' + trigger_minute
+        const existing = notificationDeliveries.get(key)
+
+        if (!existing) {
+          notificationDeliveries.set(key, {
+            subscription_id,
+            google_sub,
+            trigger_minute,
+            claimed_at,
+            attempts: 1,
+            status: 'claimed',
+          })
+          return 1
+        }
+
+        // ON CONFLICT ... DO UPDATE ... WHERE status = 'retryable' AND
+        // attempts < ?. Any other state fails the WHERE, so the statement
+        // changes zero rows and the caller knows it must not send.
+        if (existing.status !== 'retryable' || existing.attempts >= maxAttempts) return 0
+
         notificationDeliveries.set(key, {
-          subscription_id,
-          google_sub,
-          trigger_minute,
+          ...existing,
           claimed_at,
+          attempts: existing.attempts + 1,
           status: 'claimed',
         })
         return 1
@@ -207,7 +222,7 @@ export function createFakeD1() {
 
       if (sql.includes('UPDATE notification_deliveries')) {
         const [status, subscription_id, trigger_minute] = args as [string, string, number]
-        const key = `${subscription_id}\u0000${trigger_minute}`
+        const key = subscription_id + ' ' + trigger_minute
         const row = notificationDeliveries.get(key)
         if (!row) return 0
         notificationDeliveries.set(key, { ...row, status })

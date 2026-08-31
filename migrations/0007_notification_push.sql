@@ -60,10 +60,26 @@ CREATE TABLE IF NOT EXISTS notification_deliveries (
   trigger_minute INTEGER NOT NULL,
 
   claimed_at INTEGER NOT NULL,
-  -- 'sent' once the push service accepted it. A claim that never reaches
-  -- 'sent' still blocks a duplicate within the same scheduled minute, which
-  -- is the behaviour we want: at most one buzz per device per minute.
-  status TEXT NOT NULL DEFAULT 'claimed' CHECK (status IN ('claimed', 'sent', 'failed')),
+
+  -- How many times this occurrence has been claimed. Bounds retrying so a
+  -- push service having a bad hour cannot be retried forever.
+  attempts INTEGER NOT NULL DEFAULT 1,
+
+  -- The claim is a small state machine, because "did it fail?" is not
+  -- precise enough to decide whether retrying is SAFE:
+  --
+  --   claimed    in flight. Blocks everything, including a crashed sweep --
+  --              conservative on purpose, since an interrupted send may
+  --              already have reached the push service.
+  --   sent       accepted. Terminal. Never sent again.
+  --   retryable  the service explicitly refused it (408/429/5xx), so we can
+  --              PROVE it was not accepted. Only this state may be reclaimed.
+  --   rejected   permanently refused. Terminal; retrying cannot help.
+  --   ambiguous  no answer at all. Terminal, deliberately: it may already
+  --              have been delivered, and a duplicate buzz for one moment is
+  --              worse than a missed one.
+  status TEXT NOT NULL DEFAULT 'claimed'
+    CHECK (status IN ('claimed', 'sent', 'retryable', 'rejected', 'ambiguous')),
 
   -- The claim IS the primary key. An INSERT that conflicts is a lost race,
   -- which is exactly how a concurrent or retried cron invocation is stopped

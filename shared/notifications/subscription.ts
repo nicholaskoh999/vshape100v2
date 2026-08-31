@@ -53,6 +53,52 @@ function isBase64Url(value: unknown, maxLength: number): value is string {
   )
 }
 
+/** Decoded byte length, or null when the value is not decodable base64url. */
+function decodedLength(value: string): number | null {
+  try {
+    const padded = value.replace(/-/g, '+').replace(/_/g, '/')
+    return atob(padded + '='.repeat((4 - (padded.length % 4)) % 4)).length
+  } catch {
+    return null
+  }
+}
+
+/** The first decoded byte, or null. */
+function firstByte(value: string): number | null {
+  try {
+    const padded = value.replace(/-/g, '+').replace(/_/g, '/')
+    const decoded = atob(padded + '='.repeat((4 - (padded.length % 4)) % 4))
+    return decoded.length > 0 ? decoded.charCodeAt(0) : null
+  } catch {
+    return null
+  }
+}
+
+/** An uncompressed P-256 point: 65 bytes beginning with 0x04. */
+export const P256DH_BYTES = 65
+/** The Web Push auth secret is exactly 16 bytes. */
+export const AUTH_BYTES = 16
+
+/**
+ * Is this a real subscription public key?
+ *
+ * Shape is checked, not merely non-emptiness. Key material that cannot be a
+ * P-256 point will fail at encryption time anyway, so refusing it at the door
+ * keeps unusable rows out of D1 and out of every future scheduled sweep.
+ */
+export function isP256dhKey(value: unknown, maxLength = MAX_KEY_LENGTH): value is string {
+  if (!isBase64Url(value, maxLength)) return false
+  if (decodedLength(value) !== P256DH_BYTES) return false
+  // 0x04 marks an uncompressed point; anything else is not what Web Push uses.
+  return firstByte(value) === 0x04
+}
+
+/** Is this a real 16-byte auth secret? */
+export function isAuthSecret(value: unknown, maxLength = MAX_KEY_LENGTH): value is string {
+  if (!isBase64Url(value, maxLength)) return false
+  return decodedLength(value) === AUTH_BYTES
+}
+
 /**
  * Is this a real IANA timezone?
  *
@@ -97,8 +143,10 @@ export function parseSubscriptionInput(body: unknown): ParsedSubscription {
   const raw = body as Record<string, unknown>
 
   if (!isPushEndpoint(raw.endpoint)) return { ok: false, field: 'endpoint' }
-  if (!isBase64Url(raw.p256dh, MAX_KEY_LENGTH)) return { ok: false, field: 'p256dh' }
-  if (!isBase64Url(raw.auth, MAX_KEY_LENGTH)) return { ok: false, field: 'auth' }
+  // Shape-checked, not just present: unusable key material can never be
+  // encrypted to, so it must not reach storage.
+  if (!isP256dhKey(raw.p256dh)) return { ok: false, field: 'p256dh' }
+  if (!isAuthSecret(raw.auth)) return { ok: false, field: 'auth' }
   if (!isIanaTimeZone(raw.timezone)) return { ok: false, field: 'timezone' }
 
   return {

@@ -17,28 +17,17 @@
  *
  * A push payload is data, not instructions. The only field that can move the
  * user is `to`, and it is treated as a PATH on this origin — never as a URL.
- * Anything that tries to be absolute, protocol-relative or cross-origin is
- * discarded and the notification opens Today instead.
+ * The routing rules live in sw-routing.js so they can be executed by a test
+ * rather than only matched by a regex.
  */
+
+importScripts('/sw-routing.js')
+
+const { safePath, openTarget } = self.vshapeSwRouting
 
 const APP_NAME = 'VShape100'
-const FALLBACK_PATH = '/today'
 const ICON = '/icon-192.png'
 const BADGE = '/icon-192.png'
-
-/**
- * A safe same-origin path from untrusted push data.
- *
- * Accepts only a single leading slash followed by ordinary path characters.
- * That rejects `https://evil.example`, `//evil.example` (protocol-relative,
- * which resolves off-origin) and anything with a scheme.
- */
-function safePath(value) {
-  if (typeof value !== 'string') return FALLBACK_PATH
-  if (!/^\/[A-Za-z0-9\-._~/]*$/.test(value)) return FALLBACK_PATH
-  if (value.startsWith('//')) return FALLBACK_PATH
-  return value
-}
 
 function readPayload(event) {
   if (!event.data) return null
@@ -91,30 +80,7 @@ self.addEventListener('notificationclick', (event) => {
   const path = safePath(event.notification.data && event.notification.data.path)
   const target = new URL(path, self.location.origin)
 
-  event.waitUntil(
-    (async () => {
-      const windows = await self.clients.matchAll({
-        type: 'window',
-        includeUncontrolled: true,
-      })
-
-      // Prefer a window that is already open: focus it and move it, rather
-      // than leaving the person with two copies of the app.
-      for (const client of windows) {
-        if (new URL(client.url).origin !== self.location.origin) continue
-        await client.focus()
-        if ('navigate' in client) {
-          try {
-            await client.navigate(target.href)
-          } catch {
-            // Some browsers refuse navigate() on a focused client; the window
-            // is at least in front, which is the important half.
-          }
-        }
-        return
-      }
-
-      await self.clients.openWindow(target.href)
-    })(),
-  )
+  // Focus and navigate an existing window when that works, and open a new one
+  // whenever it does not — a click must always land somewhere.
+  event.waitUntil(openTarget(self.clients, self.location.origin, target.href))
 })

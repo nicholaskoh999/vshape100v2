@@ -5,6 +5,11 @@
  *   PUT    /api/notifications/subscription
  *   DELETE /api/notifications/subscription
  *
+ * There is deliberately no GET on the subscription. A device confirms its own
+ * state by reconciling (the PUT), so a read would have been redundant truth —
+ * and it would have meant putting a push endpoint into a query string, where
+ * proxies and access logs routinely record it.
+ *
  * Every route requires the existing app-owned session. The account is always
  * the `google_sub` on that session — the client never supplies an identity,
  * and one is never read from a body, query string, path or header.
@@ -27,7 +32,6 @@ import {
 import { readVapidConfig } from './config'
 import { createD1PushStore } from './d1Store'
 import {
-  hashEndpoint,
   isPushEndpoint,
   parseSubscriptionInput,
   removeSubscription,
@@ -112,23 +116,6 @@ async function handleDelete(
   return json({ removed, subscription: toStatus(null) })
 }
 
-/** Whether this browser's endpoint is currently registered to this account. */
-async function handleStatus(
-  request: Request,
-  store: PushStore,
-  googleSub: string,
-): Promise<Response> {
-  const endpoint = new URL(request.url).searchParams.get('endpoint')
-  if (!isPushEndpoint(endpoint)) {
-    return json({ error: 'invalid_subscription', field: 'endpoint' }, { status: 400 })
-  }
-
-  const row = await store.findByEndpointHash(await hashEndpoint(endpoint))
-  // A row belonging to someone else is reported as "not enabled here", never
-  // as "enabled" and never as an error that would confirm its existence.
-  return json({ subscription: toStatus(row && row.googleSub === googleSub ? row : null) })
-}
-
 /**
  * Route notification requests. Returns null when the request is not ours, so
  * the Worker can fall through to static assets.
@@ -151,12 +138,10 @@ export async function handleNotificationRequest(
     if (resource === 'config' && method !== 'GET') {
       return json({ error: 'method_not_allowed' }, { status: 405 })
     }
-    if (
-      resource === 'subscription' &&
-      method !== 'GET' &&
-      method !== 'PUT' &&
-      method !== 'DELETE'
-    ) {
+    // No GET on the subscription: a device learns its own state by
+    // reconciling, and asking would have meant putting a push endpoint into a
+    // query string where proxies and access logs record it.
+    if (resource === 'subscription' && method !== 'PUT' && method !== 'DELETE') {
       return json({ error: 'method_not_allowed' }, { status: 405 })
     }
 
@@ -176,12 +161,6 @@ export async function handleNotificationRequest(
 
     const store = createD1PushStore(env.DB)
 
-    if (method === 'GET') {
-      return withSessionHeaders(
-        await handleStatus(request, store, account.googleSub),
-        sessionHeaders,
-      )
-    }
     if (method === 'PUT') {
       return withSessionHeaders(
         await handleSave(request, store, account.googleSub),

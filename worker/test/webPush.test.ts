@@ -317,21 +317,40 @@ describe('3. sendPush', () => {
     }
   })
 
-  it('reports a transient failure without discarding the subscription', async () => {
+  it('reports a service refusal as retryable, because it proves non-delivery', async () => {
     const vapid = await fakeVapid()
-    const fetcher = vi.fn(async () => new Response(null, { status: 500 }))
-    const outcome = await sendPush(await target(), '{}', vapid, 1_800_000_000_000, fetcher)
-    expect(outcome).toEqual({ status: 'failed', httpStatus: 500 })
+    // Each of these is a definite "I did not take this", which is exactly what
+    // makes trying the same trigger minute again safe.
+    for (const status of [408, 429, 500, 502, 503, 504]) {
+      const fetcher = vi.fn(async () => new Response(null, { status }))
+      const outcome = await sendPush(await target(), '{}', vapid, 1_800_000_000_000, fetcher)
+      expect(outcome, String(status)).toEqual({ status: 'retryable', httpStatus: status })
+    }
   })
 
-  it('survives a network error without leaking anything', async () => {
+  it('reports a permanent refusal as rejected, not retryable', async () => {
+    const vapid = await fakeVapid()
+    // A malformed request will be just as malformed next time.
+    for (const status of [400, 401, 403, 413]) {
+      const fetcher = vi.fn(async () => new Response(null, { status }))
+      const outcome = await sendPush(await target(), '{}', vapid, 1_800_000_000_000, fetcher)
+      expect(outcome, String(status)).toEqual({ status: 'rejected', httpStatus: status })
+    }
+  })
+
+  it('reports a network error as ambiguous, never as retryable', async () => {
     const vapid = await fakeVapid()
     const fetcher = vi.fn(async () => {
       throw new Error('connection reset by peer at endpoint https://push.example/send/abc')
     })
     const outcome = await sendPush(await target(), '{}', vapid, 1_800_000_000_000, fetcher)
+
+    // The request may have reached the push service before the connection
+    // died, so we cannot prove it was not accepted. Retrying could double-buzz
+    // someone for a single moment, which is worse than missing it.
+    expect(outcome).toEqual({ status: 'ambiguous' })
     // The thrown message is swallowed: it can carry endpoints or key material.
-    expect(outcome).toEqual({ status: 'failed', httpStatus: null })
+    expect(JSON.stringify(outcome)).not.toContain('push.example')
   })
 
   it('fails closed on an unusable subscription rather than throwing', async () => {
@@ -345,7 +364,9 @@ describe('3. sendPush', () => {
       fetcher,
     )
 
-    expect(outcome).toEqual({ status: 'failed', httpStatus: null })
+    // Nothing was sent at all, so this is a definite non-delivery — but one
+    // no retry could fix, since the key material itself is unusable.
+    expect(outcome).toEqual({ status: 'rejected', httpStatus: 0 })
     expect(fetcher).not.toHaveBeenCalled()
   })
 })

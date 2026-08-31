@@ -105,6 +105,8 @@ function truthOf(
 /** An in-memory store that records what the sweep did. */
 function storeOf(rows: PushSubscriptionRow[]) {
   const claims = new Set<string>()
+  /** The claim rows, as the delivery table would hold them. */
+  const records = new Map<string, { attempts: number; status: string }>()
   const marks: { id: string; minute: number; status: string }[] = []
   const removed: string[] = []
   const pruned: number[] = []
@@ -126,23 +128,35 @@ function storeOf(rows: PushSubscriptionRow[]) {
     async listAll() {
       return subscriptions
     },
-    async claimDelivery(subscriptionId, _googleSub, triggerMinute) {
+    async claimDelivery(subscriptionId, _googleSub, triggerMinute, _now, maxAttempts) {
       const key = `${subscriptionId}|${triggerMinute}`
-      // The real store's primary key does this atomically; here the Set is the
-      // same rule, so a second claim for one minute loses.
-      if (claims.has(key)) return false
-      claims.add(key)
+      const existing = records.get(key)
+
+      if (!existing) {
+        claims.add(key)
+        records.set(key, { attempts: 1, status: 'claimed' })
+        return true
+      }
+
+      // The same rule the SQL enforces: only an occurrence the push service
+      // explicitly refused may be claimed again, and only within the bound.
+      if (existing.status !== 'retryable' || existing.attempts >= maxAttempts) return false
+
+      records.set(key, { attempts: existing.attempts + 1, status: 'claimed' })
       return true
     },
     async markDelivery(subscriptionId, triggerMinute, status) {
       marks.push({ id: subscriptionId, minute: triggerMinute, status })
+      const key = `${subscriptionId}|${triggerMinute}`
+      const existing = records.get(key)
+      if (existing) records.set(key, { ...existing, status })
     },
     async pruneDeliveries(beforeMinute) {
       pruned.push(beforeMinute)
     },
   }
 
-  return { store, claims, marks, removed, pruned }
+  return { store, claims, records, marks, removed, pruned }
 }
 
 type SentPush = { endpoint: string; payload: Record<string, unknown> }
@@ -643,9 +657,9 @@ describe('8. what happens after sending', () => {
     expect(result.sent).toBe(1)
   })
 
-  it('keeps a subscription after a transient failure', async () => {
+  it('keeps a subscription after a refusal the service can retry', async () => {
     const { removed, result } = await sweep(at(2026, 9, 14, 20, 30), {
-      outcome: { status: 'failed', httpStatus: 503 },
+      outcome: { status: 'retryable', httpStatus: 503 },
     })
     expect(removed).toEqual([])
     expect(result.sent).toBe(0)

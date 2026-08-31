@@ -36,6 +36,7 @@ import {
 import { completionDayRange, dayKey, type HolidayDays } from '../../shared/today/engine'
 import {
   DELIVERY_RETENTION_MINUTES,
+  MAX_DELIVERY_ATTEMPTS,
   MAX_SWEEP_SUBSCRIPTIONS,
   type PushStore,
   type PushSubscriptionRow,
@@ -79,6 +80,8 @@ export type SweepResult = {
   withheld: number
   /** Subscriptions retired because the push service said they were gone. */
   retired: number
+  /** Occurrences a push service refused, which may be attempted again. */
+  retryable: number
   /** Present only when nothing could be sent at all. */
   reason?: 'not_configured'
 }
@@ -160,7 +163,7 @@ export async function runScheduledSweep(input: {
   const now = input.now ?? scheduledTime
   const send = input.send ?? sendPush
 
-  const result: SweepResult = { examined: 0, sent: 0, withheld: 0, retired: 0 }
+  const result: SweepResult = { examined: 0, sent: 0, withheld: 0, retired: 0, retryable: 0 }
 
   // No VAPID configuration means no way to authenticate a push. That is a
   // deployment state, not an error: the rest of the app keeps working and the
@@ -190,13 +193,16 @@ export async function runScheduledSweep(input: {
     const notification = notificationFor(due)
     if (!notification) continue
 
-    // Claim BEFORE sending. A retried or overlapping invocation loses the
-    // claim and stops here, so one device gets at most one buzz per minute.
+    // Claim BEFORE sending. An overlapping invocation, an already-sent
+    // occurrence and a terminally-failed one all lose here, so one device
+    // gets at most one buzz per minute. Only an occurrence the push service
+    // explicitly refused can be claimed again.
     const claimed = await store.claimDelivery(
       subscription.id,
       subscription.googleSub,
       triggerMinute,
       now,
+      MAX_DELIVERY_ATTEMPTS,
     )
     if (!claimed) continue
 
@@ -222,7 +228,9 @@ export async function runScheduledSweep(input: {
         now,
       )
     } catch {
-      outcome = { status: 'failed', httpStatus: null }
+      // A thrown send never produced an answer, so we cannot prove the push
+      // service did not take it. Ambiguous, and therefore never retried.
+      outcome = { status: 'ambiguous' }
     }
 
     if (outcome.status === 'sent') {
@@ -231,13 +239,30 @@ export async function runScheduledSweep(input: {
       continue
     }
 
-    await store.markDelivery(subscription.id, triggerMinute, 'failed')
-
     if (outcome.status === 'expired') {
-      // Gone means gone: retire THIS device and nothing else.
+      // Gone means gone: retire THIS device and nothing else. The claim is
+      // marked terminal, though the subscription it belonged to is leaving.
+      await store.markDelivery(subscription.id, triggerMinute, 'rejected')
       result.retired += 1
       await store.removeById(subscription.id)
+      continue
     }
+
+    if (outcome.status === 'retryable') {
+      // The service refused it outright, so nothing was delivered and the
+      // same trigger minute may be attempted again by a later invocation.
+      result.retryable += 1
+      await store.markDelivery(subscription.id, triggerMinute, 'retryable')
+      continue
+    }
+
+    // rejected or ambiguous: terminal for this occurrence. The subscription
+    // itself stays — one bad minute is not evidence the device is gone.
+    await store.markDelivery(
+      subscription.id,
+      triggerMinute,
+      outcome.status === 'rejected' ? 'rejected' : 'ambiguous',
+    )
   }
 
   // Bounded hygiene. Claims are infrastructure, never history.

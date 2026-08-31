@@ -25,10 +25,19 @@ const BASE = `${ORIGIN}/api/notifications`
 const ENDPOINT_A = 'https://fcm.googleapis.com/fcm/send/device-a'
 const ENDPOINT_B = 'https://updates.push.services.mozilla.com/wpush/v2/device-b'
 
+/**
+ * A real subscription SHAPE: an uncompressed P-256 point (65 bytes, leading
+ * 0x04) and a 16-byte auth secret. The server now checks the shape, because
+ * key material that cannot be encrypted to would sit in D1 failing silently
+ * once a minute.
+ */
+const P256DH = 'BPQJoE44Q1Cc9mVFRQJQLSlbylnndSF3THRGgH1buOLGH3Ur5ZFvqpI1DKkGKEDa8jKNBlNWttPDqAdAvSVhszU'
+const AUTH = 'qMTpNlhmid_ObCRqVDj04g'
+
 const VALID = {
   endpoint: ENDPOINT_A,
-  p256dh: 'BKxQpJH8gm-vN2mZ0aQ3Hs7lJ1YtG6cW2rB4nT8yP0dE',
-  auth: 'k9Lm2QpX7vT4nB8sR1cW3g',
+  p256dh: P256DH,
+  auth: AUTH,
   timezone: 'Asia/Kuala_Lumpur',
 }
 
@@ -266,7 +275,14 @@ describe('3. registering', () => {
       ['endpoint', { ...VALID, endpoint: `https://push.example/${'x'.repeat(2000)}` }],
       ['p256dh', { ...VALID, p256dh: 'has spaces' }],
       ['p256dh', { ...VALID, p256dh: '' }],
+      // Right alphabet, wrong length: 64 bytes is not a P-256 point.
+      ['p256dh', { ...VALID, p256dh: P256DH.slice(0, 86) }],
+      // Right length, wrong leading byte: 0x04 marks an uncompressed point.
+      ['p256dh', { ...VALID, p256dh: 'A' + P256DH.slice(1) }],
       ['auth', { ...VALID, auth: 'has+plus/slash' }],
+      // A 15-byte and a 32-byte secret are both the wrong size.
+      ['auth', { ...VALID, auth: AUTH.slice(0, 20) }],
+      ['auth', { ...VALID, auth: AUTH + AUTH }],
       ['timezone', { ...VALID, timezone: 'Mars/Olympus' }],
       ['timezone', { ...VALID, timezone: '+08:00' }],
       ['timezone', { ...VALID, timezone: '' }],
@@ -370,52 +386,52 @@ describe('4. disabling', () => {
 })
 
 /* ------------------------------------------------------------------ */
-/* 5. Status                                                           */
+/* 5. No redundant read surface                                        */
 /* ------------------------------------------------------------------ */
 
-describe('5. status', () => {
-  it('reports this device as enabled for its own account', async () => {
+describe('5. confirmation comes from reconciling', () => {
+  it('offers no GET on the subscription at all', async () => {
     const { db } = createFakeD1()
     const token = await seedToken(db, 'sub-a', 'a@example.com')
     await enable(db, token)
 
-    const { body } = await call(db, {
-      token,
-      path: `/subscription?endpoint=${encodeURIComponent(ENDPOINT_A)}`,
-    })
+    const { response } = await call(db, { token, path: '/subscription' })
+    // A read would have been redundant truth, and would have put a push
+    // endpoint into a query string where proxies and logs record it.
+    expect(response.status).toBe(405)
+  })
+
+  it('confirms the device through the reconcile itself', async () => {
+    const { db } = createFakeD1()
+    const token = await seedToken(db, 'sub-a', 'a@example.com')
+
+    // The PUT is what the browser waits on before it may claim to be on.
+    const { response, body } = await enable(db, token)
+    expect(response.status).toBe(200)
     expect(body.subscription).toEqual({ enabled: true, timezone: 'Asia/Kuala_Lumpur' })
   })
 
-  it('reports another account"s device as not enabled here', async () => {
-    const { db } = createFakeD1()
-    const a = await seedToken(db, 'sub-a', 'a@example.com')
-    const b = await seedToken(db, 'sub-b', 'b@example.com')
-    await enable(db, a)
+  it('refuses to confirm anything when the payload is rejected', async () => {
+    const { db, pushSubscriptions } = createFakeD1()
+    const token = await seedToken(db, 'sub-a', 'a@example.com')
 
-    const { body } = await call(db, {
-      token: b,
-      path: `/subscription?endpoint=${encodeURIComponent(ENDPOINT_A)}`,
-    })
-    // Never "enabled", and never an error that would confirm it exists.
-    expect(body.subscription).toEqual({ enabled: false, timezone: null })
+    const { response, body } = await enable(db, token, { ...VALID, timezone: 'Mars/Olympus' })
+    expect(response.status).toBe(400)
+    // No "enabled: true" anywhere, so the browser cannot read success into it.
+    expect(JSON.stringify(body)).not.toContain('"enabled":true')
+    expect(pushSubscriptions.size).toBe(0)
   })
 
-  it('returns no list of anybody"s subscriptions', async () => {
+  it('never returns a list or another device"s details', async () => {
     const { db } = createFakeD1()
     const token = await seedToken(db, 'sub-a', 'a@example.com')
     await enable(db, token)
-    await enable(db, token, { ...VALID, endpoint: ENDPOINT_B })
-
-    const { body } = await call(db, {
-      token,
-      path: `/subscription?endpoint=${encodeURIComponent(ENDPOINT_A)}`,
-    })
+    const { body } = await enable(db, token, { ...VALID, endpoint: ENDPOINT_B })
 
     const serialised = JSON.stringify(body)
     expect(serialised).not.toContain(ENDPOINT_A)
     expect(serialised).not.toContain(ENDPOINT_B)
-    expect(Array.isArray((body as unknown as { subscriptions?: unknown }).subscriptions)).toBe(
-      false,
-    )
+    expect(serialised).not.toContain(VALID.p256dh)
+    expect(serialised).not.toContain('sub-a')
   })
 })

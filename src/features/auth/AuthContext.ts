@@ -9,6 +9,14 @@ export type AuthValue = {
   user: PublicUser | null
   /** Set when a previously valid session ended, so login can explain it. */
   endReason: SessionEndReason
+  /**
+   * Set when signing out could NOT confirm that this device's reminders were
+   * retired.
+   *
+   * Surfaced rather than swallowed: the signed-out account may still be able
+   * to push this browser, and only the person can finish undoing that.
+   */
+  signOutNotice: string | null
   /** Re-read the authoritative session from the server. */
   refresh: () => Promise<void>
   /** Revoke this device's session and drop local auth state. */

@@ -7,7 +7,10 @@ import {
   type SessionEndReason,
   type SessionState,
 } from './api'
-import { disableOnThisDevice } from '@/features/notifications/pushClient'
+import {
+  disableOnThisDevice,
+  isFullyDisabled,
+} from '@/features/notifications/pushClient'
 import { AuthContext, type AuthStatus, type AuthValue } from './AuthContext'
 
 /**
@@ -20,6 +23,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('bootstrapping')
   const [user, setUser] = useState<PublicUser | null>(null)
   const [endReason, setEndReason] = useState<SessionEndReason>(null)
+  const [signOutNotice, setSignOutNotice] = useState<string | null>(null)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
 
   // Guards against a stale response overwriting newer state — StrictMode's
@@ -64,9 +68,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // session to undo — afterwards the DELETE would be unauthenticated. Only
       // this device is affected; other devices keep their own reminders.
       //
-      // A failure here must not trap someone in a session they asked to leave,
-      // so sign-out proceeds either way.
-      await disableOnThisDevice().catch(() => false)
+      // A failure must not trap someone in a session they asked to leave, so
+      // sign-out always proceeds — but it is NOT swallowed either. What could
+      // not be confirmed is carried to the login screen, because the person is
+      // the only one who can finish undoing it.
+      const cleanup = await disableOnThisDevice().catch(() => ({
+        had: true,
+        server: false,
+        local: false,
+      }))
+      setSignOutNotice(
+        isFullyDisabled(cleanup)
+          ? null
+          : cleanup.server
+            ? 'Signed out. This browser may still hold a reminder subscription — turn notifications off for this site in your browser settings.'
+            : 'Signed out, but we could not confirm reminders were turned off on this device. Sign in and disable them in Settings, or block notifications for this site.',
+      )
       await postLogout()
     } finally {
       // Invalidate any in-flight refresh so it cannot resurrect the session.
@@ -97,8 +114,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [applySession, applyLockedOut])
 
   const value = useMemo<AuthValue>(
-    () => ({ status, user, endReason, refresh, logout, isLoggingOut }),
-    [status, user, endReason, refresh, logout, isLoggingOut],
+    () => ({ status, user, endReason, signOutNotice, refresh, logout, isLoggingOut }),
+    [status, user, endReason, signOutNotice, refresh, logout, isLoggingOut],
   )
 
   return <AuthContext value={value}>{children}</AuthContext>
