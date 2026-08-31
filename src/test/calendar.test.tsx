@@ -474,3 +474,172 @@ describe('7. structure', () => {
     }
   })
 })
+
+/* ------------------------------------------------------------------ */
+/* 8. Interaction state after a mutation                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Round 11.1 — the anchor must not outlive the write that consumed it.
+ *
+ * A range is drawn with two clicks, but a single day is drawn with ONE, so
+ * `anchor` is still set when Save succeeds. Left behind it poisons the next
+ * click: the branch that opens a saved Holiday for editing is gated on
+ * `anchor === null`, so the click is read as the second click of a range
+ * instead, and the record the user meant to edit is never opened.
+ *
+ * Found on production, not here — every earlier test seeds its Holiday before
+ * rendering, so none of them ever created one and then clicked again.
+ */
+
+/** Days currently drawn as part of the selection. */
+function selectedDates(): string[] {
+  return [...document.querySelectorAll('[data-day][aria-selected="true"]')].map(
+    (el) => el.getAttribute('data-day') ?? '',
+  )
+}
+
+/** No anchor, no selection, no open record — the neutral state. */
+function expectNeutralSelection() {
+  expect(selectedDates()).toEqual([])
+  expect(editor().textContent).toMatch(/Pick a day to mark it Holiday/)
+  expect(screen.queryByRole('button', { name: /Save Holiday|Update Holiday/ })).toBeNull()
+  expect(screen.queryByRole('button', { name: /^Delete$/ })).toBeNull()
+  // The tell-tale of a surviving anchor.
+  expect(editor().textContent).not.toMatch(/pick a second day/i)
+}
+
+describe('8. interaction state after a mutation', () => {
+  it('opens the just-saved single day for editing on the next click', async () => {
+    const u = await renderCalendar()
+    await u.click(cell('2026-09-09'))
+    await u.click(screen.getByRole('button', { name: /Save Holiday/ }))
+    await screen.findByText('Saved')
+    await waitFor(() => expect(typeOf('2026-09-09')).toBe('holiday'))
+
+    // The exact production failure: this click opened nothing.
+    await u.click(cell('2026-09-09'))
+
+    expect(screen.getByRole('button', { name: /Update Holiday/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Delete$/ })).toBeInTheDocument()
+    expect(editor().textContent).toMatch(/editing a saved Holiday/)
+  })
+
+  it('extends a just-saved single day instead of creating a second Holiday', async () => {
+    const u = await renderCalendar()
+    await u.click(cell('2026-09-10'))
+    await u.click(screen.getByRole('button', { name: /Save Holiday/ }))
+    await screen.findByText('Saved')
+    await waitFor(() => expect(typeOf('2026-09-10')).toBe('holiday'))
+
+    // Open it, re-anchor inside it, then close the range wider — the sequence
+    // that produced a stray second record on production.
+    await u.click(cell('2026-09-10'))
+    await u.click(cell('2026-09-10'))
+    await u.click(cell('2026-09-14'))
+    await u.click(screen.getByRole('button', { name: /Update Holiday/ }))
+    await screen.findByText('Saved')
+
+    expect(server.rows.size).toBe(1)
+    expect([...server.rows.values()][0]).toMatchObject({
+      startDate: '2026-09-10',
+      endDate: '2026-09-14',
+    })
+  })
+
+  it('leaves no anchor behind after saving a single day', async () => {
+    const u = await renderCalendar()
+    await u.click(cell('2026-09-09'))
+    await u.click(screen.getByRole('button', { name: /Save Holiday/ }))
+    await screen.findByText('Saved')
+
+    expectNeutralSelection()
+  })
+
+  it('leaves no selection behind after saving a range', async () => {
+    const u = await renderCalendar()
+    await u.click(cell('2026-09-09'))
+    await u.click(cell('2026-09-11'))
+    await u.click(screen.getByRole('button', { name: /Save Holiday/ }))
+    await screen.findByText('Saved')
+
+    expectNeutralSelection()
+  })
+
+  it('leaves no selection behind after updating a range', async () => {
+    server.seed(holiday('h1', '2026-09-10', '2026-09-14'))
+    const u = await renderCalendar()
+    await waitFor(() => expect(typeOf('2026-09-10')).toBe('holiday'))
+
+    await u.click(cell('2026-09-10'))
+    await u.click(cell('2026-09-10'))
+    await u.click(cell('2026-09-12'))
+    await u.click(screen.getByRole('button', { name: /Update Holiday/ }))
+    await screen.findByText('Saved')
+
+    expectNeutralSelection()
+  })
+
+  it('leaves no selection behind after deleting', async () => {
+    server.seed(holiday('h1', '2026-09-10', '2026-09-14'))
+    const u = await renderCalendar()
+    await waitFor(() => expect(typeOf('2026-09-10')).toBe('holiday'))
+
+    await u.click(cell('2026-09-10'))
+    await u.click(screen.getByRole('button', { name: /^Delete$/ }))
+    await screen.findByText('Removed')
+
+    expectNeutralSelection()
+  })
+
+  it('can save a second, adjacent Holiday straight after the first', async () => {
+    const u = await renderCalendar()
+    await u.click(cell('2026-09-09'))
+    await u.click(cell('2026-09-10'))
+    await u.click(screen.getByRole('button', { name: /Save Holiday/ }))
+    await screen.findByText('Saved')
+    await waitFor(() => expect(typeOf('2026-09-10')).toBe('holiday'))
+
+    // 11th begins the day after the 10th ends: adjacent, not overlapping.
+    await u.click(cell('2026-09-11'))
+    await u.click(cell('2026-09-12'))
+    await u.click(screen.getByRole('button', { name: /Save Holiday/ }))
+    await screen.findByText('Saved')
+
+    expect(server.rows.size).toBe(2)
+    await waitFor(() => expect(typeOf('2026-09-11')).toBe('holiday'))
+    expect(typeOf('2026-09-13')).toBe('sunday')
+  })
+
+  it('keeps the drawing intact when the save is refused as an overlap', async () => {
+    server.seed(holiday('h1', '2026-09-10', '2026-09-14'))
+    const u = await renderCalendar()
+    await waitFor(() => expect(typeOf('2026-09-10')).toBe('holiday'))
+
+    await u.click(cell('2026-09-08'))
+    await u.click(cell('2026-09-11'))
+    await u.click(screen.getByRole('button', { name: /Save Holiday/ }))
+    await screen.findByText(/overlaps an existing Holiday/)
+
+    // A refusal must not throw the user's work away — it is still adjustable.
+    expect(selectedDates()).toContain('2026-09-08')
+    expect(editor().textContent).toMatch(/8 Sep 2026 – 11 Sep 2026/)
+    expect(screen.getByRole('button', { name: /Save Holiday/ })).toBeInTheDocument()
+    expect(server.rows.size).toBe(1)
+  })
+
+  it('keeps the drawing intact when the save fails outright', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const u = await renderCalendar()
+    server.failMutations()
+
+    await u.click(cell('2026-09-09'))
+    await u.click(cell('2026-09-11'))
+    await u.click(screen.getByRole('button', { name: /Save Holiday/ }))
+    await screen.findByText(/Could not save that change/)
+
+    expect(selectedDates()).toEqual(['2026-09-09', '2026-09-10', '2026-09-11'])
+    expect(screen.getByRole('button', { name: /Save Holiday/ })).toBeInTheDocument()
+    errors.mockRestore()
+  })
+})

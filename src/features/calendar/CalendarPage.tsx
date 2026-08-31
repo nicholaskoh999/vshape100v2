@@ -86,6 +86,26 @@ export function CalendarPage() {
     setFeedback({ state: 'idle' })
   }
 
+  /**
+   * Interaction state once a mutation has landed.
+   *
+   * A range is drawn with two clicks, but a single day is drawn with ONE, so
+   * `anchor` is still set when the save succeeds. Left behind, it makes the
+   * NEXT click read as the second click of a range: the branch that opens a
+   * saved Holiday for editing is gated on `anchor === null`, so that click
+   * silently redraws a stale selection instead of opening the record, and
+   * saving from there writes a second Holiday or collides with the first.
+   *
+   * Clearing all three is what "the action is finished" means here. Only the
+   * success path resets — a refused or failed write leaves the drawing alone
+   * so the user can adjust it and try again.
+   */
+  function resetInteraction() {
+    setAnchor(null)
+    setSelection(null)
+    setEditing(null)
+  }
+
   function handleDayClick(day: CalendarDay) {
     setFeedback({ state: 'idle' })
 
@@ -126,6 +146,7 @@ export function CalendarPage() {
     setFeedback(working)
     try {
       await action()
+      resetInteraction()
       setFeedback(done)
       reload()
     } catch (error: unknown) {
@@ -169,8 +190,6 @@ export function CalendarPage() {
     void runMutation(
       async () => {
         await deleteHoliday(target.id)
-        setEditing(null)
-        setSelection(null)
       },
       { state: 'deleting' },
       { state: 'deleted' },
