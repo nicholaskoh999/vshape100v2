@@ -2,7 +2,6 @@ import { Loader2, RefreshCw, Scale, Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import { Card } from "@/components/ui/Card";
-import { localWorkoutDate } from "@/features/training/workoutPlan";
 import { cn } from "@/lib/utils";
 import {
   BODY_WEIGHT_RANGES,
@@ -16,6 +15,7 @@ import { formatLocalDate } from "./formatDate";
 import { TrendChart, type TrendPoint } from "./TrendChart";
 import type { WeightHistory, WeightPoint } from "./progressApi";
 import { useBodyWeight } from "./useBodyWeight";
+import { useLocalToday } from "./useLocalToday";
 
 /**
  * Body weight — the measurements themselves, and only what follows from them.
@@ -289,25 +289,39 @@ function MeasurementForm({
   onDelete: (date: string) => void;
   points: readonly WeightPoint[];
 }) {
-  const [today] = useState(() => localWorkoutDate());
-  const [date, setDate] = useState(today);
+  // Live, not captured at mount. A tab left open across midnight kept
+  // offering yesterday until it was reloaded, which quietly broke the one
+  // thing this field promises: that it defaults to Today.
+  const today = useLocalToday();
+
+  /*
+    Null means "follow Today". A string is a date the person deliberately
+    picked, and midnight must not take that away from them — someone
+    backfilling last Tuesday at 23:59 should still be on last Tuesday at
+    00:01.
+  */
+  const [picked, setPicked] = useState<string | null>(null);
+  const date = picked ?? today;
+
   const [problem, setProblem] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  // What has been typed, and for which date. Held together so the field can be
-  // DERIVED rather than synchronised by an effect: changing the date makes the
-  // draft stop matching, and the stored value shows through on the same render
-  // instead of one frame later.
-  const [draft, setDraft] = useState<{ date: string; value: string } | null>(null);
+
+  /*
+    What has been typed, if anything. Deliberately NOT keyed by date: the date
+    can change underneath it at midnight, and a half-entered measurement should
+    survive that. Changing the date by hand is a different matter and clears it
+    explicitly below.
+  */
+  const [draft, setDraft] = useState<string | null>(null);
 
   // Editing an existing date means correcting it, so the field shows what is
   // stored until something is typed over it.
   const existing = points.find((point) => point.date === date) ?? null;
-  const weight =
-    draft?.date === date ? draft.value : existing ? formatWeight(existing.tenths) : "";
+  const weight = draft ?? (existing ? formatWeight(existing.tenths) : "");
 
-  /** Changing the date is a different measurement, so its state resets. */
+  /** Changing the date by hand is a different measurement, so its state resets. */
   function chooseDate(next: string) {
-    setDate(next);
+    setPicked(next);
     setDraft(null);
     setProblem(null);
     setConfirmingDelete(false);
@@ -326,6 +340,9 @@ function MeasurementForm({
       );
       return;
     }
+    // Checked against the CURRENT local Today, not the one this page was
+    // opened on. A stale mount value would call a perfectly valid new-day
+    // measurement a future one.
     if (date > today) {
       setProblem("That date is in the future.");
       return;
@@ -386,7 +403,7 @@ function MeasurementForm({
             max="1000"
             value={weight}
             placeholder={latest ? formatWeight(latest.tenths) : "78.4"}
-            onChange={(event) => setDraft({ date, value: event.target.value })}
+            onChange={(event) => setDraft(event.target.value)}
             aria-describedby={problem ? "weight-problem" : undefined}
             aria-invalid={problem !== null}
             className="mt-1 w-full rounded-control border border-edge-strong bg-surface-overlay px-3 py-2 text-[14px] font-semibold tabular-nums text-offwhite focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue"
