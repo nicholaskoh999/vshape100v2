@@ -146,10 +146,15 @@ export function parseTrainingFlexUpdate(body: unknown): ParsedTrainingFlexUpdate
  */
 export function isPlausibleToday(date: string, nowUtcMs: number): boolean {
   if (!isLocalDate(date)) return false
-  const utcToday = new Date(nowUtcMs).toISOString().slice(0, 10)
+
   const day = 86_400_000
-  for (let offset = -TRAINING_FLEX_DATE_SLACK_DAYS; offset <= TRAINING_FLEX_DATE_SLACK_DAYS; offset += 1) {
+  for (
+    let offset = -TRAINING_FLEX_DATE_SLACK_DAYS;
+    offset <= TRAINING_FLEX_DATE_SLACK_DAYS;
+    offset += 1
+  ) {
+    // Offset 0 is the server's own UTC date, so the loop already covers it.
     if (new Date(nowUtcMs + offset * day).toISOString().slice(0, 10) === date) return true
   }
-  return utcToday === date
+  return false
 }
