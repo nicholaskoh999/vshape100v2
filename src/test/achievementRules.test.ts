@@ -481,18 +481,18 @@ describe('6. incomplete truth', () => {
 
 describe('7. evaluation window', () => {
   it('starts at Foundation Day 1', () => {
-    expect(evaluationWindow('2026-09-11', DEFAULT_FOUNDATION_START)).toEqual({ from: '2026-08-31', to: '2026-09-11' })
+    expect(evaluationWindow('2026-09-11')).toEqual({ from: '2026-08-31', to: '2026-09-11' })
   })
 
   it('collapses to today before Foundation begins, rather than running backwards', () => {
-    expect(evaluationWindow('2026-08-01', DEFAULT_FOUNDATION_START)).toEqual({ from: '2026-08-01', to: '2026-08-01' })
+    expect(evaluationWindow('2026-08-01')).toEqual({ from: '2026-08-01', to: '2026-08-01' })
   })
 
   it('still reaches back to Day 1 years later, never a rolling year', () => {
     // The correction. A rolling window would quietly rewrite history: a run
     // reached in 2026 would stop counting once it aged out, and an
     // achievement already earned would lock itself again.
-    const result = evaluationWindow('2030-01-01', DEFAULT_FOUNDATION_START)
+    const result = evaluationWindow('2030-01-01')
     expect(result).toEqual({ from: '2026-08-31', to: '2030-01-01' })
   })
 })
@@ -509,7 +509,7 @@ describe('7b. evaluation chunks', () => {
   })
 
   it('keeps every chunk inside the per-request bound', () => {
-    const chunks = evaluationChunks(evaluationWindow('2030-01-01', DEFAULT_FOUNDATION_START))
+    const chunks = evaluationChunks(evaluationWindow('2030-01-01'))
     expect(chunks.length).toBeGreaterThan(1)
     for (const chunk of chunks) {
       expect(rangeLength(chunk), `${chunk.from}..${chunk.to}`).toBeLessThanOrEqual(
@@ -519,7 +519,7 @@ describe('7b. evaluation chunks', () => {
   })
 
   it('tiles the whole period exactly — no gap and no overlap', () => {
-    const window = evaluationWindow('2030-01-01', DEFAULT_FOUNDATION_START)
+    const window = evaluationWindow('2030-01-01')
     const chunks = evaluationChunks(window)
 
     expect(chunks[0].from).toBe(window.from)
@@ -533,7 +533,7 @@ describe('7b. evaluation chunks', () => {
   })
 
   it('covers every date in the period', () => {
-    const window = evaluationWindow('2028-03-17', DEFAULT_FOUNDATION_START)
+    const window = evaluationWindow('2028-03-17')
     const chunks = evaluationChunks(window)
     const covered = chunks.reduce((sum, chunk) => sum + rangeLength(chunk), 0)
     expect(covered).toBe(rangeLength(window))
@@ -727,7 +727,7 @@ describe('9. an old run still counts, years later', () => {
 
   it('keeps a ten-day run as the best streak and leaves Consistency unlocked', () => {
     const streak = evaluateStreaks(
-      sources({ entries: oldRunEntries(), today: MUCH_LATER, from: evaluationWindow(MUCH_LATER, DEFAULT_FOUNDATION_START).from }),
+      sources({ entries: oldRunEntries(), today: MUCH_LATER, from: evaluationWindow(MUCH_LATER).from }),
     )
     expect(streak.status).toBe('ready')
     if (streak.status !== 'ready') return
@@ -746,7 +746,7 @@ describe('9. an old run still counts, years later', () => {
       finished('2028-03-16', 'thursday'),
       finished('2028-03-17', 'friday'),
     ]
-    const streak = evaluateStreaks(sources({ entries, today: MUCH_LATER, from: evaluationWindow(MUCH_LATER, DEFAULT_FOUNDATION_START).from }))
+    const streak = evaluateStreaks(sources({ entries, today: MUCH_LATER, from: evaluationWindow(MUCH_LATER).from }))
     if (streak.status !== 'ready') throw new Error('expected ready')
 
     expect(streak.facts.best).toBe(10)
@@ -756,7 +756,7 @@ describe('9. an old run still counts, years later', () => {
 
   it('still represents an old first session', () => {
     const streak = evaluateStreaks(
-      sources({ entries: oldRunEntries(), today: MUCH_LATER, from: evaluationWindow(MUCH_LATER, DEFAULT_FOUNDATION_START).from }),
+      sources({ entries: oldRunEntries(), today: MUCH_LATER, from: evaluationWindow(MUCH_LATER).from }),
     )
     if (streak.status !== 'ready') throw new Error('expected ready')
 
@@ -769,7 +769,7 @@ describe('9. an old run still counts, years later', () => {
   it('does not relock Full week or Consistency as the history ages', () => {
     const entries = oldRunEntries()
     const unlockedAt = (today: string) => {
-      const streak = evaluateStreaks(sources({ entries, today, from: evaluationWindow(today, DEFAULT_FOUNDATION_START).from }))
+      const streak = evaluateStreaks(sources({ entries, today, from: evaluationWindow(today).from }))
       const list = buildMilestones({ streak, foundation: foundationStatus(today, DEFAULT_FOUNDATION_START) })
       return {
         week: milestone(list, 'full-week').state.status,
@@ -790,7 +790,7 @@ describe('9. an old run still counts, years later', () => {
   it('reports the current streak from the current end, not from the old run', () => {
     // The old run is long over and nothing recent was trained.
     const streak = evaluateStreaks(
-      sources({ entries: oldRunEntries(), today: MUCH_LATER, from: evaluationWindow(MUCH_LATER, DEFAULT_FOUNDATION_START).from }),
+      sources({ entries: oldRunEntries(), today: MUCH_LATER, from: evaluationWindow(MUCH_LATER).from }),
     )
     if (streak.status !== 'ready') throw new Error('expected ready')
 
@@ -814,7 +814,7 @@ describe('9. an old run still counts, years later', () => {
     ]
     const holidays = [holiday('h1', '2026-09-14')]
     const streak = evaluateStreaks(
-      sources({ entries, holidays, today: MUCH_LATER, from: evaluationWindow(MUCH_LATER, DEFAULT_FOUNDATION_START).from }),
+      sources({ entries, holidays, today: MUCH_LATER, from: evaluationWindow(MUCH_LATER).from }),
     )
     if (streak.status !== 'ready') throw new Error('expected ready')
 
@@ -824,7 +824,7 @@ describe('9. an old run still counts, years later', () => {
 
   it('still breaks an old run on a real failure inside it', () => {
     const entries = oldRunEntries().filter((row) => row.date !== '2026-09-09')
-    const streak = evaluateStreaks(sources({ entries, today: MUCH_LATER, from: evaluationWindow(MUCH_LATER, DEFAULT_FOUNDATION_START).from }))
+    const streak = evaluateStreaks(sources({ entries, today: MUCH_LATER, from: evaluationWindow(MUCH_LATER).from }))
     if (streak.status !== 'ready') throw new Error('expected ready')
 
     // Two before the missed Wednesday, seven after it.

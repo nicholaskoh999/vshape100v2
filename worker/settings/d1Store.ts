@@ -7,8 +7,7 @@
  * reach its own row.
  */
 
-import { parseFoundationStartDate } from '../../shared/settings'
-import type { AccountSettings, SettingsStore } from './settings'
+import type { SettingsStore } from './settings'
 
 type SettingsRow = {
   google_sub: string
@@ -31,13 +30,11 @@ export function createD1SettingsStore(db: D1Database): SettingsStore {
 
       if (!row) return null
 
-      // Re-validated on the way out, never cast. The column's GLOB proves only
-      // the shape, so an impossible stored date reads as "no preference" — the
-      // account falls back to the legacy default rather than being counted from
-      // a date that does not exist.
-      return {
-        foundationStartDate: parseFoundationStartDate(row.foundation_start_date),
-      } satisfies AccountSettings
+      // Returned RAW, never cast and never quietly repaired here. The column's
+      // GLOB proves only the shape, so classifying the value is `readSettings`'
+      // job — one place decides what an impossible stored date means, and it
+      // refuses rather than falling back to the legacy default.
+      return { foundationStartDate: row.foundation_start_date }
     },
 
     async save(googleSub, settings, now) {

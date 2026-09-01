@@ -11,10 +11,12 @@ import {
 import { evaluateStreaks, type StreakSources } from '@/features/achievements/model/streak'
 import { sessionIdForWeekday } from '@/features/today/model/routines'
 import { addLocalDays, weekdayOf } from '@shared/localDate'
+import { TRAINING_HISTORY_EPOCH } from '@shared/trainingHistory'
 import {
-  effectiveFoundationStart,
   parseFoundationStartDate,
   parseSettingsUpdate,
+  readFoundationStart,
+  resolveFoundationStart,
 } from '@shared/settings'
 
 /**
@@ -36,23 +38,55 @@ const CUTOVER = '2026-09-01'
 /* ------------------------------------------------------------------ */
 
 describe('1. an account that has never chosen keeps the legacy start', () => {
-  it('resolves null settings to the legacy date', () => {
-    expect(effectiveFoundationStart(null)).toBe(LEGACY)
-    expect(effectiveFoundationStart({ foundationStartDate: null })).toBe(LEGACY)
+  it('resolves a stored NULL to the legacy date', () => {
+    expect(resolveFoundationStart(null)).toEqual({
+      status: 'ready',
+      startDate: LEGACY,
+      persisted: null,
+    })
+    // An absent field is the same real answer as an explicit null.
+    expect(resolveFoundationStart(undefined)).toEqual({
+      status: 'ready',
+      startDate: LEGACY,
+      persisted: null,
+    })
     expect(LEGACY).toBe('2026-08-31')
   })
 
   it('numbers days exactly as it always has', () => {
-    const start = effectiveFoundationStart(null)
-    expect(foundationStatus('2026-08-31', start)!.day).toBe(1)
-    expect(foundationStatus('2026-09-01', start)!.day).toBe(2)
-    expect(foundationStatus('2026-12-08', start)!.day).toBe(100)
+    const resolved = resolveFoundationStart(null)
+    if (resolved.status !== 'ready') throw new Error('expected ready')
+    expect(foundationStatus('2026-08-31', resolved.startDate)!.day).toBe(1)
+    expect(foundationStatus('2026-09-01', resolved.startDate)!.day).toBe(2)
+    expect(foundationStatus('2026-12-08', resolved.startDate)!.day).toBe(100)
   })
 
-  it('falls back rather than trusting an unreadable stored value', () => {
-    // A shape-valid but impossible stored date must not renumber anything.
-    expect(effectiveFoundationStart({ foundationStartDate: '2026-02-30' })).toBe(LEGACY)
-    expect(effectiveFoundationStart({ foundationStartDate: 'nonsense' })).toBe(LEGACY)
+  it('REFUSES rather than falling back on an unreadable stored value', () => {
+    // Round 18 Correction 1. This assertion used to say the opposite — that a
+    // corrupt value resolved to the legacy date — and that was the bug: the one
+    // case where the data is least trustworthy produced the most confident
+    // answer, presented as an authoritative Day number.
+    for (const corrupt of [
+      '2026-02-30', // shape-valid, impossible day
+      '2026-13-01',
+      'nonsense',
+      '',
+      42,
+      {},
+      [],
+      true,
+      { foundationStartDate: '2026-09-01' }, // a future-schema shape
+    ]) {
+      expect(resolveFoundationStart(corrupt), String(corrupt)).toEqual({
+        status: 'unreadable',
+      })
+    }
+  })
+
+  it('classifies the three cases distinctly', () => {
+    expect(readFoundationStart(null)).toEqual({ kind: 'unset' })
+    expect(readFoundationStart('2026-09-01')).toEqual({ kind: 'date', date: '2026-09-01' })
+    expect(readFoundationStart('2026-02-30')).toEqual({ kind: 'unreadable' })
   })
 })
 
@@ -62,22 +96,26 @@ describe('1. an account that has never chosen keeps the legacy start', () => {
 
 describe('2. saving 2026-09-01 makes it Day 1', () => {
   it('is Day 1 on the chosen date, and the day before is upcoming', () => {
-    const start = effectiveFoundationStart({ foundationStartDate: CUTOVER })
+    const resolved = resolveFoundationStart(CUTOVER)
+    if (resolved.status !== 'ready') throw new Error('expected ready')
+    const start = resolved.startDate
     expect(start).toBe(CUTOVER)
+    expect(resolved.persisted).toBe(CUTOVER)
     expect(foundationStatus(CUTOVER, start)!.day).toBe(1)
     expect(foundationStatus('2026-08-31', start)!.phase).toBe('upcoming')
   })
 
-  it('moves the evaluation window with it, so Achievements agrees', () => {
-    // The window is the whole of Foundation. One start date, one window.
-    expect(evaluationWindow('2026-09-11', CUTOVER)).toEqual({
-      from: CUTOVER,
+  it('does NOT move the training evaluation window', () => {
+    // Round 18 Correction 1. This assertion used to say the opposite, and that
+    // was the bug: the window decided which workouts Achievements could see, so
+    // anchoring it to an editable preference let a settings change rewrite
+    // training history. The window is anchored to the fixed history epoch and
+    // does not take a start date at all.
+    expect(evaluationWindow('2026-09-11')).toEqual({
+      from: TRAINING_HISTORY_EPOCH,
       to: '2026-09-11',
     })
-    expect(evaluationWindow('2026-09-11', LEGACY)).toEqual({
-      from: LEGACY,
-      to: '2026-09-11',
-    })
+    expect(TRAINING_HISTORY_EPOCH).toBe('2026-08-31')
   })
 
   it('echoes the start it was derived from, so no consumer re-guesses it', () => {

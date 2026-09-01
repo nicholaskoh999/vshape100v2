@@ -78,8 +78,17 @@ export async function handleSettingsRequest(
     const store = createD1SettingsStore(env.DB)
 
     if (method === 'GET') {
-      const settings = await readSettings(store, account.googleSub)
-      return withSessionHeaders(json(toPublic(settings)), sessionHeaders)
+      const read = await readSettings(store, account.googleSub)
+      // Fail closed. A stored value we cannot trust is reported as an error, so
+      // the client shows its error state; answering `null` here would have been
+      // read as "no preference" and silently become the legacy default.
+      if (read.status === 'unreadable') {
+        return withSessionHeaders(
+          json({ error: 'settings_unreadable' }, { status: 500 }),
+          sessionHeaders,
+        )
+      }
+      return withSessionHeaders(json(toPublic(read.settings)), sessionHeaders)
     }
 
     let body: unknown
@@ -100,7 +109,16 @@ export async function handleSettingsRequest(
     }
 
     const stored = await writeSettings(store, account.googleSub, parsed.value)
-    return withSessionHeaders(json(toPublic(stored)), sessionHeaders)
+    // The same refusal on the write path. Only a validated value is ever sent
+    // to the store, so this should be unreachable — but "should be" is not a
+    // reason to hand back a default if the row reads back as something else.
+    if (stored.status === 'unreadable') {
+      return withSessionHeaders(
+        json({ error: 'settings_unreadable' }, { status: 500 }),
+        sessionHeaders,
+      )
+    }
+    return withSessionHeaders(json(toPublic(stored.settings)), sessionHeaders)
   } catch (error) {
     // A storage failure is reported as a controlled error. Nothing internal,
     // and no identity, ever reaches the browser.

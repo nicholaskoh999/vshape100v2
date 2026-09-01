@@ -15,6 +15,7 @@
 
 import { MAX_HOLIDAY_RANGE_DAYS } from '@shared/holiday'
 import { addLocalDays, daysBetween, isLocalDate } from '@shared/localDate'
+import { TRAINING_HISTORY_EPOCH } from '@shared/trainingHistory'
 import { MAX_HISTORY_RANGE_DAYS } from '@shared/workoutLog'
 
 export type DateRange = { from: string; to: string }
@@ -38,21 +39,28 @@ export const MAX_CHUNK_DAYS = Math.min(MAX_HISTORY_RANGE_DAYS, MAX_HOLIDAY_RANGE
 export const MAX_EVALUATION_CHUNKS = 512
 
 /**
- * The period to evaluate: Foundation Day 1 through today.
+ * The period to evaluate: the whole of recorded training history, through today.
  *
- * Deliberately NOT clipped to a recent span. Before Foundation begins there is
- * nothing behind today to evaluate, so the period collapses to today alone
- * rather than running backwards.
+ * Deliberately NOT clipped to a recent span, and deliberately NOT anchored to
+ * the account's Foundation start date.
  *
- * Round 18: the start is the ACCOUNT's, passed in rather than imported. This
- * module used to reach for the source constant itself, which made it a second
- * authority on when Foundation began; now it has none of its own.
+ * Round 18 Correction 1: this used to begin at the account's chosen Foundation
+ * Day 1, which quietly made an EDITABLE PREFERENCE the authority over which
+ * workouts counted as evidence. Moving Day 1 forward excluded real, completed
+ * scheduled sessions from the window, so `Sessions finished`, `First Session`,
+ * `Full Week`, `Consistency` and both streaks silently changed — training facts
+ * rewritten by a display setting.
+ *
+ * The window now starts at the fixed history epoch, which nothing in the app can
+ * edit. The start date keeps exactly one job: numbering Foundation days. It takes
+ * no argument at all, so it cannot be handed a preference again by accident.
  */
-export function evaluationWindow(today: string, startDate: string): DateRange {
+export function evaluationWindow(today: string): DateRange {
   if (!isLocalDate(today)) return { from: today, to: today }
-  if (!isLocalDate(startDate)) return { from: today, to: today }
-  if (startDate > today) return { from: today, to: today }
-  return { from: startDate, to: today }
+  // Before the epoch there is nothing behind today to evaluate, so the period
+  // collapses to today alone rather than running backwards.
+  if (TRAINING_HISTORY_EPOCH > today) return { from: today, to: today }
+  return { from: TRAINING_HISTORY_EPOCH, to: today }
 }
 
 /**

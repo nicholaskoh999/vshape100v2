@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { effectiveFoundationStart, type AccountSettings } from '@shared/settings'
+import {
+  DEFAULT_FOUNDATION_START,
+  resolveFoundationStart,
+  type AccountSettings,
+} from '@shared/settings'
 
 import {
   FoundationStartContext,
@@ -30,7 +34,15 @@ export function FoundationStartProvider({ children }: { children: React.ReactNod
   // inside the handler, the same rule Today's toggle and the media editor use.
   const inFlight = useRef(false)
 
-  const status: FoundationStartStatus = settings !== null ? 'ready' : failed ? 'error' : 'loading'
+  // Resolved once, here, so `startDate` and `persisted` can never disagree
+  // about the same settings object.
+  const resolution = settings === null ? null : resolveFoundationStart(settings.foundationStartDate)
+
+  // A settings object that resolves to `unreadable` is an ERROR, not a ready
+  // state with a default in it. The client already refuses such a response, so
+  // this is the second of two independent gates rather than the only one.
+  const status: FoundationStartStatus =
+    resolution?.status === 'ready' ? 'ready' : failed || resolution !== null ? 'error' : 'loading'
 
   useEffect(() => {
     const controller = new AbortController()
@@ -89,15 +101,16 @@ export function FoundationStartProvider({ children }: { children: React.ReactNod
   const value = useMemo<FoundationStartState>(
     () => ({
       status,
-      startDate: effectiveFoundationStart(settings),
-      persisted: settings?.foundationStartDate ?? null,
+      // Only meaningful while `status` is 'ready'; never a guess otherwise.
+      startDate: resolution?.status === 'ready' ? resolution.startDate : DEFAULT_FOUNDATION_START,
+      persisted: resolution?.status === 'ready' ? resolution.persisted : null,
       saving,
       saveError,
       saved,
       reload,
       save,
     }),
-    [status, settings, saving, saveError, saved, reload, save],
+    [status, resolution, saving, saveError, saved, reload, save],
   )
 
   return (

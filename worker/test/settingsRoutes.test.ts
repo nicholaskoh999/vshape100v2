@@ -325,3 +325,132 @@ describe('6. saving a start date changes no history', () => {
     expect(body.sets).toHaveLength(2)
   })
 })
+
+/* ------------------------------------------------------------------ */
+/* Round 18 Correction 1 — unreadable stored settings fail CLOSED      */
+/* ------------------------------------------------------------------ */
+
+describe('Correction 1 — a stored value we cannot trust is never a default', () => {
+  /** Write a row exactly as a corrupt database would hold it. */
+  function seedRow(
+    fake: ReturnType<typeof createFakeD1>,
+    googleSub: string,
+    stored: unknown,
+  ) {
+    fake.accountSettings.set(googleSub, {
+      google_sub: googleSub,
+      foundation_start_date: stored as string | null,
+      created_at: 1,
+      updated_at: 1,
+    })
+  }
+
+  it('A. no row at all reads as no preference', async () => {
+    const fake = createFakeD1()
+    const token = await seedToken(fake.db, 'sub-1', 'a@example.com')
+
+    expect(fake.accountSettings.size).toBe(0)
+    const { response, body } = await settings(fake.db, { token })
+    expect(response.status).toBe(200)
+    expect(body.foundationStartDate).toBeNull()
+  })
+
+  it('A. a stored NULL reads as no preference', async () => {
+    const fake = createFakeD1()
+    const token = await seedToken(fake.db, 'sub-1', 'a@example.com')
+    seedRow(fake, 'sub-1', null)
+
+    const { response, body } = await settings(fake.db, { token })
+    expect(response.status).toBe(200)
+    expect(body.foundationStartDate).toBeNull()
+  })
+
+  it('B. a valid stored date is used', async () => {
+    const fake = createFakeD1()
+    const token = await seedToken(fake.db, 'sub-1', 'a@example.com')
+    seedRow(fake, 'sub-1', CUTOVER)
+
+    const { response, body } = await settings(fake.db, { token })
+    expect(response.status).toBe(200)
+    expect(body.foundationStartDate).toBe(CUTOVER)
+  })
+
+  it.each([
+    { why: 'shape-valid but impossible — passes the column GLOB', stored: '2026-02-30' as unknown },
+    { why: 'impossible month', stored: '2026-13-01' },
+    { why: 'not a leap year', stored: '2025-02-29' },
+    { why: 'empty string', stored: '' },
+    { why: 'not a date at all', stored: 'tomorrow' },
+    { why: 'wrong type', stored: 42 },
+    { why: 'a shape a future schema might introduce', stored: { date: '2026-09-01' } },
+  ])('C. $why is a controlled error, never the legacy default', async ({ stored }) => {
+    const fake = createFakeD1()
+    const token = await seedToken(fake.db, 'sub-1', 'a@example.com')
+    seedRow(fake, 'sub-1', stored)
+
+    const { response, body } = await settings(fake.db, { token })
+
+    // The whole point of the correction: refuse.
+    expect(response.status).toBe(500)
+    expect(body.error).toBe('settings_unreadable')
+    // And above all, never manufacture the legacy date from corruption.
+    expect(JSON.stringify(body)).not.toContain('2026-08-31')
+    expect(body.foundationStartDate).toBeUndefined()
+  })
+
+  it('leaves Training and workout history fully usable when settings are corrupt', async () => {
+    // The refusal must be contained. A Foundation day number is withheld; the
+    // schedule, the session and its recorded sets are not settings-derived and
+    // must keep working exactly as before.
+    const fake = createFakeD1()
+    const token = await seedToken(fake.db, 'sub-1', 'a@example.com')
+    seedRow(fake, 'sub-1', '2026-02-30')
+
+    const start = await handleWorkoutRequest(
+      new Request(`${ORIGIN}/api/workouts/2026-09-07/monday/start`, {
+        method: 'POST',
+        headers: {
+          Cookie: `vshape_session=${token}`,
+          Origin: ORIGIN,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(MONDAY_BODY),
+      }),
+      makeEnv(fake.db),
+    )
+    expect(start?.status).toBe(201)
+
+    const read = await handleWorkoutRequest(
+      new Request(`${ORIGIN}/api/workouts/2026-09-07/monday`, {
+        headers: { Cookie: `vshape_session=${token}` },
+      }),
+      makeEnv(fake.db),
+    )
+    expect(read?.status).toBe(200)
+    const workout = (await read!.json()) as { sets: unknown[]; occurrence: unknown }
+    expect(workout.occurrence).not.toBeNull()
+    expect(workout.sets).toHaveLength(2)
+
+    // Settings itself still refuses, so this is not passing because the row got
+    // repaired somewhere along the way.
+    expect((await settings(fake.db, { token })).response.status).toBe(500)
+  })
+
+  it('recovers the moment a valid date is saved over the corrupt one', async () => {
+    const fake = createFakeD1()
+    const token = await seedToken(fake.db, 'sub-1', 'a@example.com')
+    seedRow(fake, 'sub-1', '2026-02-30')
+
+    expect((await settings(fake.db, { token })).response.status).toBe(500)
+
+    const saved = await settings(fake.db, {
+      token,
+      method: 'PUT',
+      origin: ORIGIN,
+      body: { foundationStartDate: CUTOVER },
+    })
+    expect(saved.response.status).toBe(200)
+    expect(saved.body.foundationStartDate).toBe(CUTOVER)
+    expect((await settings(fake.db, { token })).body.foundationStartDate).toBe(CUTOVER)
+  })
+})

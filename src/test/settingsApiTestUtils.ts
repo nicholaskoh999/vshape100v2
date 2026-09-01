@@ -26,6 +26,15 @@ export type SettingsServer = {
   seed: (foundationStartDate: string | null) => void
   /** Fail the next `count` reads. */
   failReads: (count?: number) => void
+  /**
+   * Answer the next `count` reads with a 200 carrying this raw value verbatim.
+   *
+   * Bypasses the harness's own validation on purpose: it reproduces a server
+   * that is healthy but returning something this client cannot read — a corrupt
+   * column, or a field shape from a newer schema. The client must refuse it
+   * rather than coerce it into "no preference".
+   */
+  corruptRead: (value: unknown, count?: number) => void
   /** Fail the next `count` writes. */
   failWrites: (count?: number) => void
   /** Hold every write until the returned function is called. */
@@ -46,6 +55,8 @@ export function createSettingsServer(): SettingsServer {
 
   let readFailures = 0
   let writeFailures = 0
+  let corruptReads = 0
+  let corruptValue: unknown = undefined
   let gate: Promise<void> | null = null
 
   async function handle(url: string, init?: RequestInit): Promise<Response> {
@@ -56,6 +67,10 @@ export function createSettingsServer(): SettingsServer {
       if (readFailures > 0) {
         readFailures -= 1
         return jsonResponse({ error: 'server_error' }, 500)
+      }
+      if (corruptReads > 0) {
+        corruptReads -= 1
+        return jsonResponse({ foundationStartDate: corruptValue })
       }
       return jsonResponse({ foundationStartDate: stored.foundationStartDate })
     }
@@ -104,6 +119,10 @@ export function createSettingsServer(): SettingsServer {
     },
     failReads: (count = 1) => {
       readFailures = count
+    },
+    corruptRead: (value, count = 1) => {
+      corruptValue = value
+      corruptReads = count
     },
     failWrites: (count = 1) => {
       writeFailures = count

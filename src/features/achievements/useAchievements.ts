@@ -13,12 +13,23 @@ import { useHolidayChunks, useWorkoutChunks } from './useEvaluationSources'
  * Everything the Achievements page needs, derived from existing facts.
  *
  * Nothing is persisted and nothing is written. Two sources are read across the
- * WHOLE Foundation period — recorded workouts, and Holiday records over the
- * same days — because a streak needs both to tell a rest day from a missed
- * one, and because an achievement already earned must not expire.
+ * WHOLE of recorded training history — recorded workouts, and Holiday records
+ * over the same days — because a streak needs both to tell a rest day from a
+ * missed one, and because an achievement already earned must not expire.
  *
  * The period is read in adjacent bounded chunks. Every chunk must succeed and
  * report itself complete before any number is stated.
+ *
+ * TWO INDEPENDENT AUTHORITIES, deliberately kept apart (Round 18 Correction 1):
+ *
+ *   training evidence → the fixed history epoch. Not editable by anyone, so
+ *                       streaks and training milestones cannot be moved by a
+ *                       settings change.
+ *   Foundation days   → the account's chosen start date. It numbers days and
+ *                       the Day 10/50/100 milestones, and nothing else.
+ *
+ * Because they are separate, an unreadable start date leaves the training
+ * milestones fully answerable — only the Foundation ones withhold.
  */
 
 export type AchievementsView = {
@@ -43,14 +54,15 @@ export function useAchievements(): AchievementsView {
   // day rather than silently stopping at yesterday.
   const today = useLocalToday()
 
-  // The one shared start date. Achievements no longer decides for itself when
-  // Foundation began.
+  // The one shared start date. Used ONLY for Foundation day numbering below;
+  // never for the evaluation window.
   const foundationStart = useFoundationStart()
 
-  const window = useMemo(
-    () => evaluationWindow(today, foundationStart.startDate),
-    [today, foundationStart.startDate],
-  )
+  // Round 18 Correction 1: the evaluation window is derived from TODAY and the
+  // fixed history epoch alone. `foundationStart` is deliberately NOT an input —
+  // it numbers Foundation days below, and it decides nothing about which
+  // workouts count as evidence.
+  const window = useMemo(() => evaluationWindow(today), [today])
   const chunks = useMemo(() => evaluationChunks(window), [window])
 
   const workouts = useWorkoutChunks(chunks)

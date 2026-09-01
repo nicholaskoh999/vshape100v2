@@ -41,15 +41,66 @@ export const EMPTY_ACCOUNT_SETTINGS: AccountSettings = {
   foundationStartDate: null,
 }
 
+/* ------------------------------------------------------------------ */
+/* Reading a stored or transported value — fail closed                 */
+/* ------------------------------------------------------------------ */
+
 /**
- * The start date actually in force.
+ * What a stored or transported `foundationStartDate` turned out to be.
+ *
+ * Round 18 Correction 1 exists because these three were previously TWO: an
+ * unreadable value was funnelled through `null` and became indistinguishable
+ * from "no preference", so a corrupt row silently resolved to the legacy
+ * 2026-08-31 and was then presented as an authoritative Day number. That is
+ * fail-OPEN: the one case where we know least produced the most confident
+ * answer, and it could be wrong by weeks with nothing on screen to suggest it.
+ *
+ *   unset      — no row, or a stored NULL. A real answer: the account has
+ *                expressed no preference and keeps the legacy numbering.
+ *   date       — a real Gregorian date. Use it.
+ *   unreadable — present, but not something we can trust: an impossible date
+ *                like 2026-02-30, a wrong type, or a shape a future schema
+ *                might introduce. Refuse; never substitute a default.
+ */
+export type FoundationStartValue =
+  | { kind: 'unset' }
+  | { kind: 'date'; date: string }
+  | { kind: 'unreadable' }
+
+/**
+ * Classify a raw value from D1 or from an API response.
+ *
+ * `undefined` counts as unset so that a body which simply omits the field reads
+ * as "no preference" rather than as corruption; an explicitly present value that
+ * is not a usable date is always unreadable, including the empty string.
+ */
+export function readFoundationStart(raw: unknown): FoundationStartValue {
+  if (raw === null || raw === undefined) return { kind: 'unset' }
+  if (typeof raw === 'string' && isLocalDate(raw)) return { kind: 'date', date: raw }
+  return { kind: 'unreadable' }
+}
+
+/**
+ * The start date actually in force, or an honest refusal.
  *
  * The single place the fallback is applied, so no consumer can invent its own
- * default and drift from the others.
+ * default and drift from the others — and the single place that can refuse, so
+ * no consumer can turn corruption into a day number.
+ *
+ * This replaced `effectiveFoundationStart`, which returned a bare string and
+ * therefore had no way to say "I do not know".
  */
-export function effectiveFoundationStart(settings: AccountSettings | null): string {
-  const chosen = settings?.foundationStartDate
-  return chosen && isLocalDate(chosen) ? chosen : DEFAULT_FOUNDATION_START
+export type FoundationStartResolution =
+  | { status: 'ready'; startDate: string; persisted: string | null }
+  | { status: 'unreadable' }
+
+export function resolveFoundationStart(raw: unknown): FoundationStartResolution {
+  const value = readFoundationStart(raw)
+  if (value.kind === 'unreadable') return { status: 'unreadable' }
+  if (value.kind === 'unset') {
+    return { status: 'ready', startDate: DEFAULT_FOUNDATION_START, persisted: null }
+  }
+  return { status: 'ready', startDate: value.date, persisted: value.date }
 }
 
 /* ------------------------------------------------------------------ */

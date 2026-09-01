@@ -7,7 +7,7 @@
  * can never see. A refresh re-reads; it never replays a cache.
  */
 
-import { parseFoundationStartDate, type AccountSettings } from '@shared/settings'
+import { readFoundationStart, type AccountSettings } from '@shared/settings'
 
 export type { AccountSettings }
 
@@ -31,12 +31,23 @@ const REQUEST_INIT: RequestInit = {
 /**
  * Read the response, refusing rather than guessing.
  *
- * An unreadable stored date reads as "no preference", which resolves to the
- * legacy default — the same fail-closed direction the server takes.
+ * Round 18 Correction 1: this used to coerce anything unrecognised to `null`,
+ * which the rest of the app reads as "no preference" and resolves to the legacy
+ * 2026-08-31. A corrupt column, a wrong type, or a value from a schema newer
+ * than this client therefore became an authoritative-looking Day number.
+ *
+ * The client re-classifies independently of the server rather than trusting the
+ * envelope: the two boundaries fail closed separately, so neither relies on the
+ * other having done it. An unreadable value is an error, and the provider shows
+ * its error state instead of a day count.
  */
-function toSettings(body: unknown): AccountSettings {
+function toSettings(body: unknown, status: number): AccountSettings {
   const raw = (body ?? {}) as Record<string, unknown>
-  return { foundationStartDate: parseFoundationStartDate(raw.foundationStartDate) }
+  const value = readFoundationStart(raw.foundationStartDate)
+  if (value.kind === 'unreadable') {
+    throw new SettingsApiError('Settings response could not be read', status)
+  }
+  return { foundationStartDate: value.kind === 'date' ? value.date : null }
 }
 
 async function ensureOk(response: Response): Promise<void> {
@@ -47,7 +58,7 @@ async function ensureOk(response: Response): Promise<void> {
 export async function fetchSettings(signal?: AbortSignal): Promise<AccountSettings> {
   const response = await fetch(URL_PATH, { ...REQUEST_INIT, signal })
   await ensureOk(response)
-  return toSettings(await response.json())
+  return toSettings(await response.json(), response.status)
 }
 
 /**
@@ -68,5 +79,5 @@ export async function saveFoundationStartDate(
     signal,
   })
   await ensureOk(response)
-  return toSettings(await response.json())
+  return toSettings(await response.json(), response.status)
 }
