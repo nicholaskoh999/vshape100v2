@@ -1,16 +1,15 @@
 import { ChevronRight, Moon, Plus } from 'lucide-react'
 import { motion } from 'motion/react'
-import { useState } from 'react'
 import { Link } from 'react-router'
 
 import { Card } from '@/components/ui/Card'
 import { IntensityBadge } from '@/components/ui/IntensityBadge'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { listItemVariants, listVariants, press } from '@/design/motion'
-import { EXTRA_SESSION_ID, extraSourceLabel } from './extra'
+import { useLocalToday } from '@/features/progress/useLocalToday'
+import { EXTRA_SESSION_ID, extraSnapshotLabel } from './extra'
 import { trainingSessions } from './sessions'
 import { useWorkoutLog } from './useWorkoutLog'
-import { localWorkoutDate } from './workoutPlan'
 
 const restDays = [
   { day: 'Saturday', label: 'Chill · no gym' },
@@ -88,13 +87,16 @@ export function TrainingPage() {
  * second one. Reading is all it does: no occurrence is created by looking.
  */
 function ExtraWorkoutEntry() {
-  // Fixed for this mount, exactly as the workout pages do it, so the entry
-  // cannot change identity underneath the user at midnight.
-  const [date] = useState(() => localWorkoutDate())
+  // The CURRENT local date, resynced at the next local midnight and whenever
+  // the tab wakes. This entry only ever reads, so there is nothing to pin: once
+  // the day turns, today has no Extra yet and the card correctly goes back to
+  // offering one instead of claiming yesterday's is in progress.
+  const date = useLocalToday()
   const workout = useWorkoutLog(date, EXTRA_SESSION_ID)
 
   const started = workout.status === 'ready' && workout.started
-  const sourceLabel = extraSourceLabel(workout.occurrence?.sourceSessionId ?? null)
+  // Frozen snapshot identity, not a lookup against today's template.
+  const sourceLabel = extraSnapshotLabel(workout.occurrence)
 
   return (
     <div className="mt-6">

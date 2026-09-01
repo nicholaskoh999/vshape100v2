@@ -27,7 +27,7 @@ import {
 } from '@shared/workoutLog'
 
 import type { AccordionSession } from './ExerciseAccordion'
-import { getSession, trainingSessions, type SessionExercise, type TrainingSession } from './sessions'
+import { trainingSessions, type SessionExercise, type TrainingSession } from './sessions'
 import type { WorkoutOccurrence, WorkoutSet, WorkoutStartPayload } from './workoutApi'
 import { buildWorkoutPlan, toStartPayload, type PlannedExercise } from './workoutPlan'
 
@@ -42,24 +42,36 @@ export { EXTRA_SESSION_ID }
  */
 export const extraTemplates: readonly TrainingSession[] = trainingSessions
 
-/** Is this a session an Extra may be based on? */
-export function isExtraTemplate(sessionId: string | null | undefined): boolean {
-  if (typeof sessionId !== 'string') return false
-  return extraTemplates.some((session) => session.id === sessionId)
-}
-
 /**
- * How an Extra's source is named to the user, e.g. `Monday · Back Width +
- * Biceps`.
+ * How a STARTED Extra's source is named to the user, e.g. `Monday · Back Width
+ * + Biceps`.
  *
- * Resolved from the accepted session data when the slug is still one we know,
- * and otherwise reported as the raw slug rather than guessed at. A source
- * session that has since been renamed must not silently acquire a new label.
+ * Built ONLY from what was persisted at Start — the frozen `day` and `focus`
+ * snapshot columns, with the stored source slug as the last resort. It
+ * deliberately does not look the slug up in `trainingSessions`.
+ *
+ * That lookup is exactly the bug this replaces. An Extra started from
+ * "Monday · Back Width + Biceps" would have re-rendered as
+ * "Monday · Pull Strength" the moment the Foundation template was renamed,
+ * quietly rewriting the identity of a workout that had already happened. The
+ * snapshot is history; the template is today's plan; a historical row must be
+ * described by the first.
  */
-export function extraSourceLabel(sourceSessionId: string | null): string | null {
-  if (!sourceSessionId) return null
-  const session = getSession(sourceSessionId)
-  return session ? `${session.day} · ${session.focus}` : sourceSessionId
+export function extraSnapshotLabel(
+  occurrence: {
+    day: string
+    focus: string
+    sourceSessionId: string | null
+  } | null,
+): string | null {
+  if (!occurrence) return null
+
+  const day = occurrence.day.trim()
+  const focus = occurrence.focus.trim()
+  if (day && focus) return `${day} · ${focus}`
+  // A snapshot missing one half is still described by the half it has, and
+  // failing that by the slug it recorded. Nothing is filled in from elsewhere.
+  return day || focus || occurrence.sourceSessionId
 }
 
 /**

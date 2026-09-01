@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/Card'
 import { IntensityBadge } from '@/components/ui/IntensityBadge'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { press } from '@/design/motion'
+import { useLocalToday } from '@/features/progress/useLocalToday'
 import { cn } from '@/lib/utils'
 import { motion } from 'motion/react'
 
@@ -14,14 +15,13 @@ import {
   EXTRA_SESSION_ID,
   buildExtraPlan,
   extraSessionFromSnapshot,
-  extraSourceLabel,
+  extraSnapshotLabel,
   extraTemplates,
   isExtraOccurrence,
   toExtraStartPayload,
 } from './extra'
 import type { TrainingSession } from './sessions'
 import { useWorkoutLog } from './useWorkoutLog'
-import { localWorkoutDate } from './workoutPlan'
 
 /**
  * Extra Workout — /training/extra
@@ -37,9 +37,24 @@ import { localWorkoutDate } from './workoutPlan'
  * prop, so there is no state in which those controls could render.
  */
 export function ExtraWorkoutPage() {
-  // The user's own calendar date, fixed for this mount so the workout cannot
-  // change identity mid-session. No timezone is hardcoded.
-  const [date] = useState(() => localWorkoutDate())
+  // The user's own calendar date, kept CURRENT while the page stays mounted —
+  // one armed timeout for the next local midnight, plus a resync when the tab
+  // becomes visible or regains focus, so a slept-through timer is harmless.
+  // The same accepted helper Progress uses; no polling, no hardcoded zone.
+  const liveToday = useLocalToday()
+
+  // …but a workout that has already been STARTED stays bound to the date it
+  // was started under. Once an occurrence exists, `pinnedDate` holds it there:
+  // an Extra begun at 23:58 must not migrate to tomorrow at midnight, because
+  // the sets already logged happened yesterday and history is not moved.
+  //
+  // Before Start there is nothing to pin, so the identity follows the clock.
+  // That is what closes the rollover hole: open the chooser at 23:58, cross
+  // midnight, press Start at 00:05, and the workout is created under the NEW
+  // date — the day it was actually performed.
+  const [pinnedDate, setPinnedDate] = useState<string | null>(null)
+  const date = pinnedDate ?? liveToday
+
   const workout = useWorkoutLog(date, EXTRA_SESSION_ID)
 
   // Which template the picker is offering. Only ever used BEFORE Start — once
@@ -57,10 +72,22 @@ export function ExtraWorkoutPage() {
   // declines to wrap its own framing around it rather than mislabelling it.
   const started = workout.started && isExtraOccurrence(occurrence)
 
+  // Pin as soon as the server confirms an Extra exists under the date we are
+  // reading. Pinning on the CONFIRMED read rather than on the Start call means
+  // a resumed workout is held too, not just one begun in this mount.
+  //
+  // Adjusted DURING render rather than in an effect. React supports exactly
+  // this for "derive state from what we just learned" — it re-runs this
+  // component immediately, before anything is committed to the DOM, so there
+  // is no flash of the wrong date and no cascading-render effect.
+  if (started && pinnedDate === null) setPinnedDate(date)
+
   // Read back from the snapshot, never rebuilt from today's template, so a
   // later change to the Foundation session cannot rewrite what was performed.
   const performed = useMemo(() => extraSessionFromSnapshot(sets), [sets])
-  const sourceLabel = extraSourceLabel(occurrence?.sourceSessionId ?? null)
+  // Built from the frozen snapshot, never from today's Foundation template, so
+  // a later rename cannot rewrite what this workout says it was.
+  const sourceLabel = extraSnapshotLabel(occurrence)
 
   return (
     <>

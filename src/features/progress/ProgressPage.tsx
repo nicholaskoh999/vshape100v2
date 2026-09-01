@@ -6,7 +6,6 @@ import { Card } from "@/components/ui/Card";
 import { IntensityBadge } from "@/components/ui/IntensityBadge";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { listItemVariants, listVariants } from "@/design/motion";
-import { extraSourceLabel } from "@/features/training/extra";
 import type { SessionIntensity } from "@/features/training/sessions";
 import { localWorkoutDate } from "@/features/training/workoutPlan";
 import { cn } from "@/lib/utils";
@@ -339,12 +338,24 @@ function RecentWorkouts({
                         Extra
                       </span>
                     )}
+                    {/*
+                      Provenance that could not be read is said so, never
+                      quietly shown as an ordinary scheduled workout. The sets
+                      are real, so the row stays; the claim about WHAT it was
+                      is the part we withhold.
+                    */}
+                    {workout.kind === null && (
+                      <span className="rounded-full bg-surface-overlay px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-faint">
+                        Unverified
+                      </span>
+                    )}
                     <span>
-                      {workout.kind === "extra"
-                        ? extraSourceLabel(workout.sourceSessionId)?.split(" · ")[0] ||
-                          workout.day ||
-                          "Extra workout"
-                        : workout.day || workout.sessionId}
+                      {/*
+                        The frozen `day` snapshot, never a lookup against
+                        today's Foundation template: a renamed session must not
+                        rewrite what an already-recorded workout says it was.
+                      */}
+                      {workout.day || workout.sessionId}
                     </span>
                     <span className="text-[13px] font-semibold text-ink-faint">
                       {formatWorkoutDate(workout.date)}
@@ -354,7 +365,9 @@ function RecentWorkouts({
                     <p className="mt-0.5 text-[13px] text-ink-faint">
                       {workout.kind === "extra"
                         ? `${workout.focus} · extra, not the scheduled session`
-                        : workout.focus}
+                        : workout.kind === null
+                          ? `${workout.focus} · recorded, but its provenance could not be read`
+                          : workout.focus}
                     </p>
                   )}
                 </div>
