@@ -6,7 +6,7 @@
  * logged and cannot change it.
  */
 
-import { isWorkoutKind } from '@shared/workoutLog'
+import { readProvenance } from '@shared/workoutLog'
 import type {
   WorkoutHistoryEntry,
   WorkoutHistoryTotals,
@@ -84,16 +84,16 @@ function toEntry(raw: unknown): WorkoutHistoryEntry | null {
   const progress = toProgress(row.progress)
   if (!progress) return null
 
+  // Unreadable provenance is carried as `null`, never coerced to 'scheduled'.
+  // History is a report of what was recorded, so the row survives; every
+  // schedule-sensitive consumer refuses a null rather than counting it.
+  const provenance = readProvenance(row.kind, row.sourceSessionId)
+
   return {
     date: row.date,
     sessionId: row.sessionId,
-    // Anything unrecognised reads as scheduled — the truth every workout
-    // recorded before Round 17 has always carried.
-    kind: isWorkoutKind(row.kind) ? row.kind : 'scheduled',
-    sourceSessionId:
-      typeof row.sourceSessionId === 'string' && row.sourceSessionId !== ''
-        ? row.sourceSessionId
-        : null,
+    kind: provenance ? provenance.kind : null,
+    sourceSessionId: provenance ? provenance.sourceSessionId : null,
     day: typeof row.day === 'string' ? row.day : '',
     focus: typeof row.focus === 'string' ? row.focus : '',
     intensity: typeof row.intensity === 'string' ? row.intensity : '',

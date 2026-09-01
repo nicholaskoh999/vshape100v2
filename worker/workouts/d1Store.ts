@@ -35,7 +35,7 @@ import {
   isLoadUnit,
   isResultKind,
   isSetStatus,
-  isWorkoutKind,
+  readProvenance,
   type WorkoutHistoryEntry,
   type WorkoutHistoryTotals,
   type WorkoutOccurrenceRecord,
@@ -78,18 +78,37 @@ type SetRow = {
   updated_at: number
 }
 
+/**
+ * A stored occurrence whose provenance cannot be read.
+ *
+ * Thrown rather than returned, so it can never be mistaken for "this account
+ * has not started that workout" — which is what a null return means here, and
+ * which would let a Start proceed against a row we cannot understand. The
+ * route turns it into a controlled 500; every schedule-sensitive caller
+ * therefore gets a refusal instead of a manufactured answer.
+ */
+export class UnreadableProvenanceError extends Error {
+  constructor() {
+    super('workout occurrence provenance could not be read')
+    this.name = 'UnreadableProvenanceError'
+  }
+}
+
 function toOccurrence(row: OccurrenceRow): WorkoutOccurrenceRecord {
+  // Re-checked, never cast, and never defaulted. 0010's DEFAULT already gave
+  // every pre-Round-17 row 'scheduled', so an unreadable value here is a
+  // corrupt row rather than an old one — and promoting it to scheduled would
+  // hand the most privileged status in the app to data we cannot read.
+  const provenance = readProvenance(row.kind, row.source_session_id)
+  if (!provenance) throw new UnreadableProvenanceError()
+
   return {
     googleSub: row.google_sub,
     workoutDate: row.workout_date,
     sessionId: row.session_id,
     snapshotId: row.snapshot_id,
-    // Re-checked, never cast. ALTER TABLE cannot carry a CHECK constraint, so
-    // the vocabulary is enforced on the way out: anything unrecognised — and
-    // anything written before 0010 existed — reads as the scheduled truth it
-    // has always been, rather than becoming an unknown third kind.
-    kind: isWorkoutKind(row.kind) ? row.kind : 'scheduled',
-    sourceSessionId: row.source_session_id,
+    kind: provenance.kind,
+    sourceSessionId: provenance.sourceSessionId,
     day: row.session_day_snapshot,
     focus: row.session_focus_snapshot,
     intensity: row.session_intensity_snapshot,
@@ -196,12 +215,17 @@ type TotalsRow = {
 function toHistoryEntry(row: HistoryRow): WorkoutHistoryEntry {
   const completed = row.completed_sets ?? 0
   const skipped = row.skipped_sets ?? 0
+  // History reports what was recorded, so an unreadable row is MARKED rather
+  // than thrown on: one corrupt occurrence must not hide an account's whole
+  // training history. `null` travels outward and every schedule-sensitive
+  // consumer refuses it; nothing substitutes a value for it.
+  const provenance = readProvenance(row.kind, row.source_session_id)
+
   return {
     date: row.workout_date,
     sessionId: row.session_id,
-    // Same fall-back as the occurrence read: pre-0010 rows are scheduled.
-    kind: isWorkoutKind(row.kind) ? row.kind : 'scheduled',
-    sourceSessionId: row.source_session_id,
+    kind: provenance ? provenance.kind : null,
+    sourceSessionId: provenance ? provenance.sourceSessionId : null,
     day: row.session_day_snapshot,
     focus: row.session_focus_snapshot,
     intensity: row.session_intensity_snapshot,

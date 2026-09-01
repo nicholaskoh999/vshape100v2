@@ -74,6 +74,73 @@ export function kindForSessionId(sessionId: string): WorkoutKind {
   return isExtraSessionId(sessionId) ? 'extra' : 'scheduled'
 }
 
+/* ------------------------------------------------------------------ */
+/* Reading stored provenance                                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Provenance as it may legitimately have been stored.
+ *
+ * The two shapes are the whole vocabulary, and each carries its own rule about
+ * the source column — which is why they are one union rather than two loose
+ * fields that could disagree with each other.
+ */
+export type WorkoutProvenance =
+  | { kind: 'scheduled'; sourceSessionId: null }
+  | { kind: 'extra'; sourceSessionId: string }
+
+/**
+ * Read stored provenance, or refuse.
+ *
+ * WHY THIS FAILS CLOSED RATHER THAN DEFAULTING TO `scheduled`.
+ *
+ * 0010 cannot attach a CHECK constraint to `kind` — SQLite's ADD COLUMN has no
+ * way to, and recreating `workout_occurrences` to get one would mean copying
+ * every user's workout history. So the vocabulary is enforced on read. The
+ * tempting shape for that is "anything I do not recognise is scheduled", and
+ * it is wrong.
+ *
+ * Legacy compatibility does not need the guess. When 0010 runs, every existing
+ * valid row is given `kind = 'scheduled'` by the column DEFAULT, as part of the
+ * migration itself. A row that still reads as unknown afterwards is therefore
+ * not an old row — it is a corrupt or unexpected one. Turning it into
+ * "scheduled" would take data we cannot read and promote it into the single
+ * most privileged status in the app: something that can satisfy a training
+ * day, extend a streak, unlock an achievement and suppress a reminder.
+ *
+ * The two internal contradictions are refused for the same reason. A scheduled
+ * workout carrying a source, or an extra carrying none, is a row whose two
+ * halves disagree; there is no way to tell which half is the mistake, and
+ * picking one would be inventing the answer.
+ *
+ * Returns null for "cannot be read". Every caller must decide what to do with
+ * that — refuse, withhold, or mark — but none of them may substitute a value.
+ */
+export function readProvenance(
+  kind: unknown,
+  sourceSessionId: unknown,
+): WorkoutProvenance | null {
+  if (!isWorkoutKind(kind)) return null
+
+  // Absent and empty both mean "no source". Anything else must be a real slug.
+  const rawSource =
+    sourceSessionId === null || sourceSessionId === undefined || sourceSessionId === ''
+      ? null
+      : sourceSessionId
+
+  if (kind === 'scheduled') {
+    // A scheduled workout IS its session, so a source is a second and
+    // contradictory answer to the same question.
+    return rawSource === null ? { kind, sourceSessionId: null } : null
+  }
+
+  // An Extra must say what it was copied from, and cannot be copied from the
+  // reserved Extra slug — that would make provenance point at itself.
+  const source = parseSessionId(rawSource)
+  if (!source || isExtraSessionId(source)) return null
+  return { kind, sourceSessionId: source }
+}
+
 /** A set is pending until it is resolved either way. */
 export type WorkoutSetStatus = 'pending' | 'completed' | 'skipped'
 
@@ -586,8 +653,14 @@ export type WorkoutHistoryEntry = {
    * Persisted provenance. History is where the difference is most visible to
    * the user, so it travels with every row rather than being re-derived from
    * the session id by each consumer.
+   *
+   * `null` means the stored provenance could not be read — an unknown value,
+   * or two halves that contradict each other. It is deliberately NOT collapsed
+   * into 'scheduled': see `readProvenance`. A row like this is still real
+   * recorded training, so it is reported rather than dropped, but nothing may
+   * treat it as a scheduled obligation.
    */
-  kind: WorkoutKind
+  kind: WorkoutKind | null
   /** Which Foundation session an Extra was copied from. Null when scheduled. */
   sourceSessionId: string | null
   day: string

@@ -70,6 +70,8 @@ const UNAVAILABLE_COPY: Record<StreakUnavailableReason, string> = {
   workouts: 'Recorded workouts could not be loaded.',
   coverage: 'The workout history returned did not cover the whole period.',
   range: 'The period to measure could not be worked out.',
+  provenance:
+    'A recorded workout could not be read as scheduled or extra, so this period cannot be judged.',
 }
 
 function StreakSummary({

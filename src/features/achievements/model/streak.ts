@@ -211,8 +211,20 @@ export type StreakFacts = {
  *   coverage — the log read did not prove the whole window, so an absent
  *              workout might simply be outside what was returned
  *   range    — the window itself is not a usable pair of local dates
+ *   provenance — a workout in the window carries provenance that cannot be
+ *              read, so we cannot say whether that day's planned session was
+ *              performed. Refusing is not merely tidy: the alternative is a
+ *              streak stated from a row we could not understand, and it would
+ *              be wrong in BOTH directions — an unreadable scheduled workout
+ *              read as absent invents a broken streak, while treating it as
+ *              present would invent an unearned one.
  */
-export type StreakUnavailableReason = 'holidays' | 'workouts' | 'coverage' | 'range'
+export type StreakUnavailableReason =
+  | 'holidays'
+  | 'workouts'
+  | 'coverage'
+  | 'range'
+  | 'provenance'
 
 export type StreakEvaluation =
   | { status: 'ready'; facts: StreakFacts }
@@ -264,6 +276,18 @@ export function evaluateStreaks(sources: StreakSources): StreakEvaluation {
   // missed day, so no streak may be stated from it.
   if (sources.coverage !== 'complete') {
     return { status: 'unavailable', reason: 'coverage' }
+  }
+  // The same rule, for a row that arrived but cannot be understood. Only rows
+  // that could actually bear on the window are considered, so one corrupt
+  // occurrence from months ago does not silence a streak it could not have
+  // affected.
+  if (
+    sources.entries.some(
+      (entry) =>
+        entry.kind === null && entry.date >= sources.from && entry.date <= sources.today,
+    )
+  ) {
+    return { status: 'unavailable', reason: 'provenance' }
   }
 
   const qualifying = buildQualifyingIndex(sources.entries)

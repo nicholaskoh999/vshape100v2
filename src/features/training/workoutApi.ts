@@ -7,7 +7,7 @@
  * which React can never see. A refresh re-reads; it never replays a cache.
  */
 
-import { isWorkoutKind, type WorkoutKind } from '@shared/workoutLog'
+import { readProvenance, type WorkoutKind } from '@shared/workoutLog'
 import type {
   WorkoutLoadMode,
   WorkoutLoadUnit,
@@ -145,16 +145,17 @@ function toOccurrence(raw: unknown): WorkoutOccurrence | null {
   if (typeof raw !== 'object' || raw === null) return null
   const row = raw as Record<string, unknown>
   if (typeof row.date !== 'string' || typeof row.sessionId !== 'string') return null
+  // Checked, never coerced. An unreadable kind does NOT become 'scheduled':
+  // returning null here makes `toLog` refuse the whole response rather than
+  // hand the page a workout it would render as a scheduled obligation.
+  const provenance = readProvenance(row.kind, row.sourceSessionId)
+  if (!provenance) return null
+
   return {
     date: row.date,
     sessionId: row.sessionId,
-    // Checked, never cast. An unreadable or absent kind reads as the scheduled
-    // truth every pre-Round-17 workout has always been.
-    kind: isWorkoutKind(row.kind) ? row.kind : 'scheduled',
-    sourceSessionId:
-      typeof row.sourceSessionId === 'string' && row.sourceSessionId !== ''
-        ? row.sourceSessionId
-        : null,
+    kind: provenance.kind,
+    sourceSessionId: provenance.sourceSessionId,
     day: typeof row.day === 'string' ? row.day : '',
     focus: typeof row.focus === 'string' ? row.focus : '',
     intensity: typeof row.intensity === 'string' ? row.intensity : '',
@@ -166,6 +167,13 @@ function toOccurrence(raw: unknown): WorkoutOccurrence | null {
 function toLog(body: unknown): WorkoutLog {
   const raw = (body ?? {}) as Record<string, unknown>
   const occurrence = toOccurrence(raw.occurrence)
+  // A body that HAS an occurrence whose provenance cannot be read is a failed
+  // read, not an unstarted workout. Reporting it as `occurrence: null` would
+  // offer to Start a workout that already exists; throwing puts the page into
+  // its honest error state instead.
+  if (raw.occurrence !== null && raw.occurrence !== undefined && occurrence === null) {
+    throw new WorkoutApiError('Workout provenance could not be read', 500)
+  }
   const sets = Array.isArray(raw.sets)
     ? raw.sets.map(toSet).filter((row): row is WorkoutSet => row !== null)
     : []

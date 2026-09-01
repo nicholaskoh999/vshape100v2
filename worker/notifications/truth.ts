@@ -17,7 +17,7 @@ import { createD1HolidayStore } from '../holiday/d1Store'
 import { listHolidays } from '../holiday/holiday'
 import { createD1CompletionStore } from '../today/d1Store'
 import { listCompletions } from '../today/completions'
-import { createD1WorkoutStore } from '../workouts/d1Store'
+import { createD1WorkoutStore, UnreadableProvenanceError } from '../workouts/d1Store'
 import { readWorkout } from '../workouts/workouts'
 import { isFullyResolved, summariseSets } from '../../shared/workoutLog'
 import { holidayDaysOf } from '../../shared/today/holidayDays'
@@ -50,8 +50,21 @@ export function createD1ScheduleTruth(db: D1Database): ScheduleTruth {
     },
 
     async workoutFinished(googleSub, date, sessionId) {
+      let log
       try {
-        const log = await readWorkout(createD1WorkoutStore(db), googleSub, date, sessionId)
+        log = await readWorkout(createD1WorkoutStore(db), googleSub, date, sessionId)
+      } catch (error) {
+        // A workout whose provenance cannot be read has NOT been shown to be
+        // finished, so it answers "not finished" and the reminder still goes
+        // out. Deliberately not the `null` a storage failure returns: null
+        // withholds the whole notification, and withholding is the one outcome
+        // that costs the user the training day this reminder exists to
+        // protect. A storage failure still returns null, below.
+        if (error instanceof UnreadableProvenanceError) return false
+        return null
+      }
+
+      try {
         // Never started is a real answer: not finished.
         if (!log) return false
 
