@@ -1,4 +1,4 @@
-import { ArrowLeft, Check, Loader2, Play, Plus, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Check, Loader2, Play, RefreshCw } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router'
 
@@ -16,6 +16,7 @@ import {
   extraSessionFromSnapshot,
   extraSourceLabel,
   extraTemplates,
+  isExtraOccurrence,
   toExtraStartPayload,
 } from './extra'
 import type { TrainingSession } from './sessions'
@@ -49,7 +50,12 @@ export function ExtraWorkoutPage() {
     [selectedId],
   )
 
-  const { status, started, occurrence, sets } = workout
+  const { status, occurrence, sets } = workout
+
+  // Read from PERSISTED provenance, not from the route that got us here. If a
+  // workout is somehow filed under this slug without being an Extra, this page
+  // declines to wrap its own framing around it rather than mislabelling it.
+  const started = workout.started && isExtraOccurrence(occurrence)
 
   // Read back from the snapshot, never rebuilt from today's template, so a
   // later change to the Foundation session cannot rewrite what was performed.
@@ -371,6 +377,3 @@ function BackToTraining() {
     </Link>
   )
 }
-
-/** The icon the Training entry uses, exported so the card and page agree. */
-export const ExtraWorkoutIcon = Plus
