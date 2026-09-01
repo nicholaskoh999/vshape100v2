@@ -87,6 +87,9 @@ function SessionView({ session }: { session: TrainingSession }) {
           workout.started && guidance.status === 'ready'
             ? {
                 laneFor: guidance.laneFor,
+                // Displayed guidance is not the same as guidance that still
+                // describes this workout. Only the latter may be acted on.
+                confirmed: guidance.confirmed,
                 busyLane: guidance.busyLane,
                 error: guidance.mutationError,
                 onFeedback: guidance.saveFeedback,

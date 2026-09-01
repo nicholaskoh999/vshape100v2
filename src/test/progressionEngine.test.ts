@@ -7,7 +7,7 @@ import {
   type ProgressionSetRow,
   type StoredCalibration,
 } from '@shared/progression/engine'
-import { laneFingerprint } from '@shared/progression/lane'
+import { chosenLoadFor, laneFingerprint, parseCalibrationInput } from '@shared/progression/lane'
 import { hardwareStep, resolveStep } from '@shared/progression/hardware'
 import { parsePrescriptionTarget } from '@shared/progression/prescription'
 
@@ -277,6 +277,43 @@ describe('starting-load calibration', () => {
     expect(lane.reasonCode).toBe('calibrated_too_heavy')
     expect(lane.loadDirection).toBe('reduce')
     expect(lane.suggestedLoad).toBeNull()
+  })
+
+  it('4b. Good can never recommend a load other than the one actually lifted', () => {
+    // A row that somehow carries a chosen load under "good" — written around
+    // the API, or before the rule existed. The engine still answers with the
+    // load the first completed working set recorded.
+    const lane = only({
+      current: firstSet,
+      calibration: [stored({ feedback: 'good', chosenLoad: { value: 25, unit: 'kg' } })],
+    })
+    expect(lane.reasonCode).toBe('calibrated_good')
+    expect(lane.suggestedLoad).toEqual({ value: 20, unit: 'kg' })
+    expect(lane.loadDirection).toBeNull()
+    // And the foreign number is not reported back as if the person chose it.
+    expect(lane.calibration?.chosenLoad).toBeNull()
+    expect(lane.reason).toContain('20kg')
+    expect(lane.reason).not.toContain('25')
+  })
+
+  it('4c. the Good rule is one definition, applied wherever a load is accepted', () => {
+    expect(chosenLoadFor('good', { value: 25, unit: 'kg' })).toBeNull()
+    expect(chosenLoadFor('too_light', { value: 25, unit: 'kg' })).toEqual({
+      value: 25,
+      unit: 'kg',
+    })
+    expect(chosenLoadFor('too_heavy', { value: 15, unit: 'kg' })).toEqual({
+      value: 15,
+      unit: 'kg',
+    })
+
+    // The validation boundary applies it too, and does not refuse the payload:
+    // saying a set felt right is well formed, the number just means nothing.
+    const parsed = parseCalibrationInput({
+      feedback: 'good',
+      chosenLoad: { value: 25, unit: 'kg' },
+    })
+    expect(parsed).toEqual({ ok: true, value: { feedback: 'good', chosenLoad: null } })
   })
 
   it('never rewrites the completed set the judgement was about', () => {
@@ -834,14 +871,34 @@ describe('LIGHT, PUMP and work with no load', () => {
     expect(lane.state).toBe('calibrate')
   })
 
-  it('an unrecognised intensity never gets the HARD gates', () => {
-    const lane = only({
-      intensity: 'hard',
-      current: fresh(4),
-      history: clean('2026-08-31', 20, [15, 15, 15, 15]),
-    })
-    expect(lane.state).toBe('quality')
-    neverMoves(lane)
+  it('3. an unrecognised intensity fails closed — it does not become QUALITY', () => {
+    // Lower case is not the stored vocabulary. Reading it as quality would
+    // answer confidently about a session whose character is unknown, and would
+    // silently stop a HARD session progressing.
+    for (const intensity of ['hard', 'Hard', 'HEAVY', 'DELOAD', '', ' HARD ']) {
+      const lane = only({
+        intensity,
+        current: fresh(4),
+        history: clean('2026-08-31', 20, [15, 15, 15, 15]),
+      })
+      expect(lane.state, intensity).toBe('unavailable')
+      expect(lane.reasonCode, intensity).toBe('unreadable_intensity')
+      expect(lane.suggestedLoad, intensity).toBeNull()
+      neverMoves(lane)
+    }
+  })
+
+  it('3b. an unrecognised intensity offers no calibration either', () => {
+    const session = derive({ intensity: 'DELOAD', current: fresh(4) })
+    expect(session.ruleset).toBeNull()
+    expect(session.lanes[0].state).toBe('unavailable')
+    expect(session.lanes[0].calibration).toBeNull()
+  })
+
+  it('3c. every accepted intensity still selects its own ruleset', () => {
+    expect(derive({ intensity: 'HARD', current: fresh(4) }).ruleset).toBe('hard')
+    expect(derive({ intensity: 'LIGHT', current: fresh(4) }).ruleset).toBe('quality')
+    expect(derive({ intensity: 'PUMP', current: fresh(4) }).ruleset).toBe('quality')
   })
 
   it('24. bodyweight work never grows a load', () => {

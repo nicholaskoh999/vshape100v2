@@ -67,6 +67,15 @@ function calibrationKey(lane: LaneRecommendation): string {
 
 export type ExerciseGuidanceProps = {
   lane: LaneRecommendation
+  /**
+   * False while a re-read triggered by a change to the workout is in flight.
+   *
+   * The panel keeps its place and stays readable, but everything it OFFERS is
+   * withheld: what is on screen was derived from a workout that has already
+   * moved, and a judgement or a suggestion taken from it would be about a set
+   * the person may have just taken back.
+   */
+  confirmed: boolean
   busy: boolean
   error: string | null
   onFeedback: (
@@ -76,11 +85,21 @@ export type ExerciseGuidanceProps = {
   ) => void
 }
 
-export function ExerciseGuidance({ lane, busy, error, onFeedback }: ExerciseGuidanceProps) {
+export function ExerciseGuidance({
+  lane,
+  confirmed,
+  busy,
+  error,
+  onFeedback,
+}: ExerciseGuidanceProps) {
   return (
     <section
       aria-label={`Guidance for ${lane.exerciseName}`}
-      className="mt-3.5 rounded-control border border-edge bg-surface-overlay/40 p-3"
+      aria-busy={!confirmed || undefined}
+      className={cn(
+        'mt-3.5 rounded-control border border-edge bg-surface-overlay/40 p-3',
+        !confirmed && 'opacity-70',
+      )}
     >
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
         <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-ink-faint">
@@ -95,12 +114,22 @@ export function ExerciseGuidance({ lane, busy, error, onFeedback }: ExerciseGuid
         >
           {STATE_LABEL[lane.state]}
         </span>
-        {busy && (
+        {(busy || !confirmed) && (
           <Loader2 className="size-3.5 animate-spin text-ink-faint" aria-hidden="true" />
         )}
       </div>
 
       <p className="mt-2 text-[13px] leading-snug text-ink-dim">{lane.reason}</p>
+
+      {!confirmed && (
+        <p
+          role="status"
+          data-testid={`guidance-refreshing-${lane.exerciseOrder}`}
+          className="mt-2 text-[12px] font-semibold text-ink-faint"
+        >
+          Rechecking against your logged sets…
+        </p>
+      )}
 
       <LastResult lane={lane} />
 
@@ -111,7 +140,9 @@ export function ExerciseGuidance({ lane, busy, error, onFeedback }: ExerciseGuid
           // interrupted — the key only moves when the stored answer does.
           key={calibrationKey(lane)}
           lane={lane}
-          busy={busy}
+          // Locked while busy AND while unconfirmed: a judgement is about the
+          // first completed set, and that set may be exactly what changed.
+          locked={busy || !confirmed}
           onFeedback={onFeedback}
         />
       )}
@@ -158,11 +189,11 @@ function LastResult({ lane }: { lane: LaneRecommendation }) {
  */
 function Calibration({
   lane,
-  busy,
+  locked,
   onFeedback,
 }: {
   lane: LaneRecommendation
-  busy: boolean
+  locked: boolean
   onFeedback: ExerciseGuidanceProps['onFeedback']
 }) {
   const fieldId = useId()
@@ -181,7 +212,7 @@ function Calibration({
   const loadValid = trimmed === '' || isSetLoad(parsed)
 
   function submit(feedback: CalibrationFeedback) {
-    if (busy || !loadValid || !unit) return
+    if (locked || !loadValid || !unit) return
     // "Good" means the load that was actually lifted was right, so it never
     // carries a different number — the baseline is the completed set itself.
     const chosenLoad =
@@ -206,7 +237,7 @@ function Calibration({
               key={feedback}
               type="button"
               aria-pressed={active}
-              disabled={busy}
+              disabled={locked}
               onClick={() => submit(feedback)}
               className={cn(
                 'inline-flex items-center gap-1.5 rounded-control border px-3 py-1.5 text-[12px] font-bold transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40',
@@ -248,7 +279,7 @@ function Calibration({
           </div>
           <button
             type="button"
-            disabled={busy || !loadValid || calibration.feedback === null}
+            disabled={locked || !loadValid || calibration.feedback === null}
             onClick={() => calibration.feedback && submit(calibration.feedback)}
             className="rounded-control border border-edge-strong px-3 py-2 text-[12px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite disabled:cursor-not-allowed disabled:opacity-40"
           >

@@ -204,6 +204,16 @@ async function record(
   }
 }
 
+/** The stored sets of one workout, as the workout API returns them. */
+async function workoutRead(db: D1Database, token: string, date: string, session: string) {
+  const { body } = await workout(db, { token, path: `${date}/${session}` })
+  return body.sets as unknown as {
+    status: string
+    result: number | null
+    load: { value: number; unit: string } | null
+  }[]
+}
+
 type Lane = {
   exerciseOrder: number
   exerciseId: string
@@ -628,6 +638,75 @@ describe('6, 7. calibration persists across reload and resume', () => {
     expect(reloaded[0].loadDirection).toBe('increase')
   })
 
+  it('4b. Good + a foreign chosen load cannot change the recommendation', async () => {
+    const { db, token, calibrations } = await calibrating()
+
+    // A direct API call — no browser involved — asserting a different load
+    // under "good". The number is dropped, not honoured.
+    const { response, body } = await call(db, {
+      token,
+      method: 'PUT',
+      origin: ORIGIN,
+      path: '2026-08-31/monday/calibration/0',
+      body: { feedback: 'good', chosenLoad: { value: 25, unit: 'kg' } },
+    })
+    expect(response.status).toBe(200)
+
+    const lane = lanes(body)[0]
+    expect(lane.calibration).toMatchObject({ feedback: 'good', chosenLoad: null })
+    // The load actually lifted, and nothing else.
+    expect(lane.suggestedLoad).toEqual({ value: 20, unit: 'kg' })
+    expect(lane.loadDirection).toBeNull()
+
+    // Nothing foreign reached storage either — the stored row itself.
+    expect([...calibrations.values()][0]).toMatchObject({
+      feedback: 'good',
+      chosen_load_value: null,
+      chosen_load_unit: null,
+      observed_load_value: 20,
+      observed_load_unit: 'kg',
+    })
+
+    // A fresh read says the same thing.
+    const reloaded = lanes((await call(db, { token, path: '2026-08-31/monday' })).body)[0]
+    expect(reloaded.suggestedLoad).toEqual({ value: 20, unit: 'kg' })
+    expect(reloaded.calibration?.chosenLoad).toBeNull()
+
+    // And the completed working set is exactly as it was performed.
+    const workout = await workoutRead(db, token, '2026-08-31', 'monday')
+    expect(workout[0]).toMatchObject({
+      status: 'completed',
+      result: 12,
+      load: { value: 20, unit: 'kg' },
+    })
+  })
+
+  it('4c. a foreign chosen load does not survive switching to Good', async () => {
+    const { db, token } = await calibrating()
+
+    await call(db, {
+      token,
+      method: 'PUT',
+      origin: ORIGIN,
+      path: '2026-08-31/monday/calibration/0',
+      body: { feedback: 'too_light', chosenLoad: { value: 25, unit: 'kg' } },
+    })
+    const light = lanes((await call(db, { token, path: '2026-08-31/monday' })).body)[0]
+    expect(light.suggestedLoad).toEqual({ value: 25, unit: 'kg' })
+
+    await call(db, {
+      token,
+      method: 'PUT',
+      origin: ORIGIN,
+      path: '2026-08-31/monday/calibration/0',
+      body: { feedback: 'good' },
+    })
+    const good = lanes((await call(db, { token, path: '2026-08-31/monday' })).body)[0]
+    // Back to the load that was actually lifted; the earlier 25 is gone.
+    expect(good.suggestedLoad).toEqual({ value: 20, unit: 'kg' })
+    expect(good.calibration?.chosenLoad).toBeNull()
+  })
+
   it('never rewrites the completed set the judgement was about', async () => {
     const { db, token } = await calibrating()
 
@@ -814,6 +893,52 @@ describe('20, 23. refusing to guess, and never chasing load', () => {
     expect(lane.state).toBe('unavailable')
     expect(lane.reasonCode).toBe('ambiguous_history')
     expect(lane.suggestedLoad).toBeNull()
+  })
+
+  it('3. a stored intensity with no ruleset fails closed, end to end', async () => {
+    const { db } = createFakeD1()
+    const token = await seedToken(db, 'sub-1', 'a@example.com')
+
+    // A clean, unambiguous history, so the refusal is about the intensity and
+    // nothing else.
+    await record(db, token, '2026-08-24', 20, [15, 15, 15, 15])
+    // The Start payload accepts any bounded intensity string and stores it as
+    // the snapshot. This one names no ruleset.
+    await start(db, token, '2026-08-31', 'monday', { ...MONDAY_BODY, intensity: 'DELOAD' })
+
+    const { body } = await call(db, { token, path: '2026-08-31/monday' })
+    expect(body.intensity).toBe('DELOAD')
+    // Not quietly absorbed into the gentler ruleset.
+    expect(body.ruleset).toBeNull()
+
+    const lane = lanes(body)[0]
+    expect(lane.state).toBe('unavailable')
+    expect(lane.reasonCode).toBe('unreadable_intensity')
+    expect(lane.suggestedLoad).toBeNull()
+    expect(lane.loadDirection).toBeNull()
+    expect(lane.calibration).toBeNull()
+  })
+
+  it('3b. no calibration can be recorded against a session with no ruleset', async () => {
+    const { db, calibrations } = createFakeD1()
+    const token = await seedToken(db, 'sub-1', 'a@example.com')
+
+    await start(db, token, '2026-08-31', 'monday', { ...MONDAY_BODY, intensity: 'DELOAD' })
+    await complete(db, token, '2026-08-31', 'monday', 0, {
+      result: 12,
+      load: { value: 20, unit: 'kg' },
+    })
+
+    const { response, body } = await call(db, {
+      token,
+      method: 'PUT',
+      origin: ORIGIN,
+      path: '2026-08-31/monday/calibration/0',
+      body: { feedback: 'good' },
+    })
+    expect(response.status).toBe(409)
+    expect(body.error).toBe('not_calibrating')
+    expect(calibrations.size).toBe(0)
   })
 
   it('23. a PUMP session never increases, however perfect the last one was', async () => {

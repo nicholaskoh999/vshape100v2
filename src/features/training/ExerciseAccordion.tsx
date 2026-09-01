@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { ExerciseGuidance } from './ExerciseGuidance'
 import { exercisePath } from './navigation'
 import type { LaneRecommendation, ProgressionLoad } from './progressionApi'
+import type { LaneError } from './useProgression'
 import type { SessionExercise, TrainingSession } from './sessions'
 import type { WorkoutSet } from './workoutApi'
 import { WorkoutSetList, type WorkoutSetListProps } from './WorkoutSetList'
@@ -34,11 +35,17 @@ export type AccordionLogging = Pick<
  *
  * Absent until the server has answered. Guidance is subordinate to logging: an
  * exercise with none simply shows none.
+ *
+ * `confirmed` is false while a re-read triggered by a change to the workout is
+ * still in flight. The panel stays put — nothing jumps mid-workout — but every
+ * action it offers is withheld until the answer describes the workout as it
+ * now stands.
  */
 export type AccordionGuidance = {
   laneFor: (exerciseOrder: number) => LaneRecommendation | null
+  confirmed: boolean
   busyLane: number | null
-  error: string | null
+  error: LaneError | null
   onFeedback: (
     exerciseOrder: number,
     feedback: CalibrationFeedback,
@@ -208,8 +215,16 @@ function ExerciseRow({
                 {logging && lane && guidance && (
                   <ExerciseGuidance
                     lane={lane}
+                    confirmed={guidance.confirmed}
                     busy={guidance.busyLane === index}
-                    error={guidance.busyLane === index ? guidance.error : null}
+                    // Bound to the lane it happened on, so it survives the
+                    // request that caused it rather than vanishing with the
+                    // spinner.
+                    error={
+                      guidance.error?.exerciseOrder === index
+                        ? guidance.error.message
+                        : null
+                    }
                     onFeedback={guidance.onFeedback}
                   />
                 )}
@@ -220,6 +235,9 @@ function ExerciseRow({
                     busySet={logging.busySet}
                     // Offered to the draft field only; nothing is pre-filled.
                     suggestedLoad={lane?.suggestedLoad ?? null}
+                    // Unconfirmed guidance may be READ but not acted on: the
+                    // set it was derived from may already have changed.
+                    suggestionLocked={guidance ? !guidance.confirmed : false}
                     onComplete={logging.onComplete}
                     onSkip={logging.onSkip}
                     onUndo={logging.onUndo}

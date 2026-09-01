@@ -503,7 +503,7 @@ describe('5. guidance is subordinate to logging', () => {
     await panel.findByText(/Completed · 12 reps/)
   })
 
-  it('stays on screen while it re-reads, so the flow does not jump', async () => {
+  it('stays on screen while it re-reads, but stops being actionable', async () => {
     seedWorkout('monday', LAST_WEEK, { 0: atLoad(20, [12, 12, 11, 10]) })
     seedWorkout('monday', DATE)
     const progression = createProgressionServer(server)
@@ -513,6 +513,7 @@ describe('5. guidance is subordinate to logging', () => {
     await screen.findByText('Resume workout')
     const panel = await openExercise(u, 'Lat Pulldown')
     expect(await guidanceState(0)).toBe('Build reps')
+    expect(panel.getAllByRole('button', { name: 'Use 20kg' })[0]).toBeEnabled()
 
     // Hold the re-read that completing a set triggers.
     const release = progression.holdReads()
@@ -520,13 +521,136 @@ describe('5. guidance is subordinate to logging', () => {
     await u.click(panel.getAllByRole('button', { name: /^Complete$/ })[0])
     await panel.findByText(/Completed · 15 reps/)
 
-    // The previous answer is still up: guidance never blanks mid-workout.
+    // The previous answer is still readable — guidance never blanks
+    // mid-workout — and it says so.
     expect(screen.getByTestId('guidance-state-0')).toBeInTheDocument()
+    expect(await screen.findByTestId('guidance-refreshing-0')).toBeInTheDocument()
+
+    // But it was derived from a workout that has already changed, so it is not
+    // one tap from a logging field.
+    const stale = panel.getAllByRole('button', { name: 'Use 20kg' })
+    for (const button of stale) expect(button).toBeDisabled()
+    await u.click(stale[1])
+    expect((panel.getAllByLabelText('Load (kg)')[0] as HTMLInputElement).value).toBe('')
 
     release()
+
+    // Actionable again only once the new derivation has answered.
     await waitFor(() => {
-      expect(progression.calls.filter((call) => call.method === 'GET').length).toBeGreaterThan(1)
+      expect(screen.queryByTestId('guidance-refreshing-0')).toBeNull()
     })
+    expect(panel.getAllByRole('button', { name: 'Use 20kg' })[0]).toBeEnabled()
+  })
+
+  it('withholds the calibration choices while an Undo is being recomputed', async () => {
+    seedWorkout('monday', DATE, { 0: [{ result: 12, load: 20 }, null, null, null] })
+    const progression = createProgressionServer(server)
+    mockAuthFetch({ session: authenticatedSession, workouts: server, progression })
+
+    const u = await openSession('monday')
+    await screen.findByText('Resume workout')
+    const panel = await openExercise(u, 'Lat Pulldown')
+    expect(await panel.findByRole('button', { name: 'Good' })).toBeEnabled()
+
+    // Undo the very set those choices are a judgement about.
+    const release = progression.holdReads()
+    await u.click(panel.getByRole('button', { name: 'Undo Set 1' }))
+    await panel.findByText(/^Set 1$/)
+
+    // The panel still shows the old answer, and refuses to act on it.
+    expect(await screen.findByTestId('guidance-refreshing-0')).toBeInTheDocument()
+    for (const label of ['Too light', 'Good', 'Too heavy']) {
+      expect(panel.getByRole('button', { name: label }), label).toBeDisabled()
+    }
+    await u.click(panel.getByRole('button', { name: 'Good' }))
+    expect(progression.calibrations.size).toBe(0)
+
+    release()
+
+    // The recomputed answer is the truthful one: there is no first set to judge.
+    await waitFor(() => {
+      expect(panel.queryByRole('button', { name: 'Good' })).toBeNull()
+    })
+    expect(await guidanceState(0)).toBe('Find your load')
+    expect(progression.calibrations.size).toBe(0)
+  })
+
+  it('leaves nothing actionable when the recompute fails', async () => {
+    seedWorkout('monday', LAST_WEEK, { 0: atLoad(20, [12, 12, 11, 10]) })
+    seedWorkout('monday', DATE)
+    const progression = createProgressionServer(server)
+    mockAuthFetch({ session: authenticatedSession, workouts: server, progression })
+
+    const u = await openSession('monday')
+    await screen.findByText('Resume workout')
+    const panel = await openExercise(u, 'Lat Pulldown')
+    expect(panel.getAllByRole('button', { name: 'Use 20kg' })[0]).toBeEnabled()
+
+    progression.failReads(50)
+    await u.type(panel.getAllByLabelText('Reps')[0], '15')
+    await u.click(panel.getAllByRole('button', { name: /^Complete$/ })[0])
+    await panel.findByText(/Completed · 15 reps/)
+
+    // No stale suggestion survives a failed recompute — the panel goes.
+    await waitFor(() => {
+      expect(panel.queryByText('Guidance')).toBeNull()
+    })
+    expect(panel.queryByRole('button', { name: /^Use / })).toBeNull()
+    // And logging is unaffected.
+    await u.type(panel.getAllByLabelText('Reps')[0], '14')
+    await u.click(panel.getAllByRole('button', { name: /^Complete$/ })[0])
+    await panel.findByText(/Completed · 14 reps/)
+  })
+
+  it('keeps a failed calibration save visible on its own exercise', async () => {
+    seedWorkout('monday', DATE, { 0: [{ result: 12, load: 20 }, null, null, null] })
+    const progression = createProgressionServer(server)
+    mockAuthFetch({ session: authenticatedSession, workouts: server, progression })
+
+    const u = await openSession('monday')
+    await screen.findByText('Resume workout')
+    const panel = await openExercise(u, 'Lat Pulldown')
+
+    progression.failMutations(1)
+    await u.click(await panel.findByRole('button', { name: 'Good' }))
+
+    // The request has finished failing: the spinner is gone and the message
+    // must not have gone with it.
+    const alert = await panel.findByRole('alert')
+    expect(alert).toHaveTextContent(/Could not save that/)
+    expect(alert).toHaveTextContent(/logged sets are unaffected/)
+    expect(progression.calibrations.size).toBe(0)
+
+    // Nothing was recorded, and the choices are usable again.
+    expect(panel.getByRole('button', { name: 'Good' })).toBeEnabled()
+    expect(await guidanceState(0)).toBe('Find your load')
+
+    // A successful retry clears it.
+    await u.click(panel.getByRole('button', { name: 'Good' }))
+    await panel.findByText(/20kg felt right/)
+    expect(panel.queryByRole('alert')).toBeNull()
+  })
+
+  it('shows a calibration failure only on the exercise it happened on', async () => {
+    seedWorkout('monday', DATE, {
+      0: [{ result: 12, load: 20 }, null, null, null],
+      1: [{ result: 10, load: 12.5 }, null, null],
+    })
+    const progression = createProgressionServer(server)
+    mockAuthFetch({ session: authenticatedSession, workouts: server, progression })
+
+    const u = await openSession('monday')
+    await screen.findByText('Resume workout')
+
+    const first = await openExercise(u, 'Lat Pulldown')
+    progression.failMutations(1)
+    await u.click(await first.findByRole('button', { name: 'Good' }))
+    await first.findByRole('alert')
+
+    // A different exercise shows nothing of it.
+    const second = await openExercise(u, 'One-Arm DB Row')
+    expect(await second.findByRole('button', { name: 'Good' })).toBeInTheDocument()
+    expect(second.queryByRole('alert')).toBeNull()
   })
 
   it('never asks for guidance before a workout exists', async () => {

@@ -59,6 +59,7 @@ import type {
 import { isLoadMode, isLoadUnit, isResultKind, isSetStatus } from '../workoutLog'
 import { parsePrescriptionTarget } from './prescription'
 import {
+  chosenLoadFor,
   isLoadedLane,
   isLoadedRepsLane,
   laneFingerprint,
@@ -137,43 +138,78 @@ export type ProgressionInput = {
 /* Output                                                              */
 /* ------------------------------------------------------------------ */
 
-export type ProgressionState =
-  | 'calibrate'
-  | 'build_reps'
-  | 'increase_load'
-  | 'hold'
-  | 'reduce_load'
-  | 'quality'
-  | 'unavailable'
+/**
+ * The three vocabularies below are declared as LISTS, with their types derived
+ * from them, exactly as the set statuses and load units are in workoutLog.ts.
+ *
+ * That is what lets a reader validate against them at runtime. The browser
+ * receives these over the wire and must be able to refuse a value that is not
+ * one of them rather than casting an arbitrary string into a union — and it
+ * must be checking the same list the engine can actually produce, not a second
+ * copy of it that can drift.
+ */
+export const PROGRESSION_STATES = [
+  'calibrate',
+  'build_reps',
+  'increase_load',
+  'hold',
+  'reduce_load',
+  'quality',
+  'unavailable',
+] as const
 
-export type ProgressionReasonCode =
-  | 'no_comparable_history'
-  | 'awaiting_first_set'
-  | 'awaiting_feedback'
-  | 'calibrated_good'
-  | 'calibrated_too_light'
-  | 'calibrated_too_heavy'
-  | 'below_upper_bound'
-  | 'all_sets_at_upper_bound'
-  | 'single_weak_session'
-  | 'two_weak_sessions'
-  | 'evidence_incomplete'
-  | 'quality_focus'
-  | 'no_load_target'
-  | 'ambiguous_slot'
-  | 'ambiguous_history'
-  | 'unreadable_history'
-  | 'unreadable_prescription'
-  | 'structure_mismatch'
-  | 'history_truncated'
+export type ProgressionState = (typeof PROGRESSION_STATES)[number]
+
+export const PROGRESSION_REASON_CODES = [
+  'no_comparable_history',
+  'awaiting_first_set',
+  'awaiting_feedback',
+  'calibrated_good',
+  'calibrated_too_light',
+  'calibrated_too_heavy',
+  'below_upper_bound',
+  'all_sets_at_upper_bound',
+  'single_weak_session',
+  'two_weak_sessions',
+  'evidence_incomplete',
+  'quality_focus',
+  'no_load_target',
+  'ambiguous_slot',
+  'ambiguous_history',
+  'unreadable_history',
+  'unreadable_intensity',
+  'unreadable_prescription',
+  'structure_mismatch',
+  'history_truncated',
+] as const
+
+export type ProgressionReasonCode = (typeof PROGRESSION_REASON_CODES)[number]
 
 /** Why an occurrence could not serve as automatic-progression evidence. */
-export type EvidenceGap =
-  | 'pending_set'
-  | 'skipped_set'
-  | 'missing_load'
-  | 'mixed_load'
-  | 'structure_mismatch'
+export const EVIDENCE_GAPS = [
+  'pending_set',
+  'skipped_set',
+  'missing_load',
+  'mixed_load',
+  'structure_mismatch',
+] as const
+
+export type EvidenceGap = (typeof EVIDENCE_GAPS)[number]
+
+export function isProgressionState(value: unknown): value is ProgressionState {
+  return typeof value === 'string' && (PROGRESSION_STATES as readonly string[]).includes(value)
+}
+
+export function isProgressionReasonCode(value: unknown): value is ProgressionReasonCode {
+  return (
+    typeof value === 'string' &&
+    (PROGRESSION_REASON_CODES as readonly string[]).includes(value)
+  )
+}
+
+export function isEvidenceGap(value: unknown): value is EvidenceGap {
+  return typeof value === 'string' && (EVIDENCE_GAPS as readonly string[]).includes(value)
+}
 
 /** The authored target a lane is climbing, as written and as numbers. */
 export type LaneTarget = {
@@ -242,7 +278,8 @@ export type ProgressionRuleset = 'hard' | 'quality'
 
 export type SessionProgression = {
   intensity: string
-  ruleset: ProgressionRuleset
+  /** Null when the stored intensity is not one this engine has rules for. */
+  ruleset: ProgressionRuleset | null
   lanes: LaneRecommendation[]
 }
 
@@ -617,6 +654,11 @@ function firstCompletedLoad(slot: SlotFacts): { value: number; unit: WorkoutLoad
  *
  * Undoing or correcting that set therefore returns the lane to awaiting a
  * fresh judgement, because the old one is no longer about anything.
+ *
+ * A stored "good" row's chosen load is dropped on the way in, whatever the
+ * database happens to hold. Good means the load that was actually lifted, and
+ * this read is the last place a row written before that rule — or around the
+ * write path — could still make it mean something else.
  */
 function readCalibration(
   stored: StoredCalibration | undefined,
@@ -628,16 +670,27 @@ function readCalibration(
   if (!observed) return null
   if (stored.observedLoad.value !== observed.value) return null
   if (stored.observedLoad.unit !== observed.unit) return null
-  return stored
+  return { ...stored, chosenLoad: chosenLoadFor(stored.feedback, stored.chosenLoad) }
 }
 
 /* ------------------------------------------------------------------ */
 /* Derivation                                                          */
 /* ------------------------------------------------------------------ */
 
-/** A stored intensity read strictly. Anything else never gets the HARD gates. */
-function readRuleset(intensity: string): ProgressionRuleset {
-  return intensity === 'HARD' ? 'hard' : 'quality'
+/**
+ * Which ruleset a stored session intensity selects, or null.
+ *
+ * THREE intensities exist in the accepted training week, and each one names
+ * the rules that apply to it. Anything else is a value this engine has no
+ * rules for, and it must not be quietly absorbed into the gentler one: reading
+ * an unknown intensity as QUALITY would answer with confidence about a session
+ * whose character is unknown, and a HARD session mis-stored would silently
+ * stop progressing. Null is the honest answer, and it produces no guidance.
+ */
+function readRuleset(intensity: string): ProgressionRuleset | null {
+  if (intensity === 'HARD') return 'hard'
+  if (intensity === 'LIGHT' || intensity === 'PUMP') return 'quality'
+  return null
 }
 
 function unavailable(
@@ -727,15 +780,23 @@ export function deriveSessionProgression(input: ProgressionInput): SessionProgre
   for (const row of input.calibration) calibrationByOrder.set(row.exerciseOrder, row)
 
   const lanes = currentRead.slots.map((slot) =>
-    deriveLane({
-      slot,
-      ruleset,
-      past,
-      historyReadable,
-      historyComplete: input.historyComplete,
-      duplicate: slot.fingerprint ? (laneCount.get(slot.fingerprint) ?? 0) > 1 : false,
-      calibration: calibrationByOrder.get(slot.exerciseOrder),
-    }),
+    // An intensity with no ruleset stops before any lane is judged. It is a
+    // property of the whole session, so no exercise in it can be guided.
+    ruleset === null
+      ? unavailable(
+          slot,
+          'unreadable_intensity',
+          'This session’s intensity is not one this engine has rules for, so no guidance is derived.',
+        )
+      : deriveLane({
+          slot,
+          ruleset,
+          past,
+          historyReadable,
+          historyComplete: input.historyComplete,
+          duplicate: slot.fingerprint ? (laneCount.get(slot.fingerprint) ?? 0) > 1 : false,
+          calibration: calibrationByOrder.get(slot.exerciseOrder),
+        }),
   )
 
   return { intensity: input.intensity, ruleset, lanes }
@@ -1040,8 +1101,10 @@ function calibrateLane(
       reasonCode: 'calibrated_good',
       gap: null,
       reason: `${formatLoad(observed)} felt right. Keep it for the remaining sets and aim for ${base.target.text}.`,
-      // The load the person actually moved — a fact from this workout.
-      suggestedLoad: calibration.chosenLoad ?? observed,
+      // ALWAYS the load the first completed working set actually recorded — a
+      // fact from this workout. Good cannot suggest anything else, so this is
+      // not a fallback and there is no other branch it can take.
+      suggestedLoad: observed,
       loadDirection: null,
       calibration: view,
     }

@@ -43,6 +43,15 @@ export type WorkoutSetListProps = {
    * Offered, never applied: it reaches an input only through an explicit tap.
    */
   suggestedLoad?: WorkoutLoad | null
+  /**
+   * True while the guidance behind that suggestion has not been confirmed
+   * against the workout as it now stands.
+   *
+   * The button stays on screen — removing it would move the controls under the
+   * user's finger — but it cannot be used, because the history it was derived
+   * from has changed and the answer is being recomputed.
+   */
+  suggestionLocked?: boolean
   onComplete: (
     exerciseOrder: number,
     setIndex: number,
@@ -56,6 +65,7 @@ export function WorkoutSetList({
   sets,
   busySet,
   suggestedLoad = null,
+  suggestionLocked = false,
   onComplete,
   onSkip,
   onUndo,
@@ -73,6 +83,7 @@ export function WorkoutSetList({
           // start while one is in flight.
           locked={busySet !== null}
           suggestedLoad={suggestedLoad}
+          suggestionLocked={suggestionLocked}
           onComplete={onComplete}
           onSkip={onSkip}
           onUndo={onUndo}
@@ -87,6 +98,7 @@ function WorkoutSetRow({
   busy,
   locked,
   suggestedLoad,
+  suggestionLocked,
   onComplete,
   onSkip,
   onUndo,
@@ -95,6 +107,7 @@ function WorkoutSetRow({
   busy: boolean
   locked: boolean
   suggestedLoad: WorkoutLoad | null
+  suggestionLocked: boolean
 } & Pick<WorkoutSetListProps, 'onComplete' | 'onSkip' | 'onUndo'>) {
   const fieldId = useId()
   // Never prefilled: a default number would be a value the user did not do.
@@ -164,7 +177,7 @@ function WorkoutSetRow({
               <button
                 type="button"
                 onClick={() => setLoadInput(String(offered.value))}
-                disabled={locked}
+                disabled={locked || suggestionLocked}
                 className="mt-1.5 inline-flex items-center gap-1 rounded-control border border-edge-strong px-2 py-1 text-[11px] font-bold text-ink-faint transition-colors duration-150 hover:text-offwhite disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Wand2 className="size-3" aria-hidden="true" />

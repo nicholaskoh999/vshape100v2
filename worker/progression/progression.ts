@@ -29,7 +29,7 @@ import type {
   StoredCalibration,
 } from '../../shared/progression/engine'
 import { deriveSessionProgression } from '../../shared/progression/engine'
-import type { CalibrationInput } from '../../shared/progression/lane'
+import { chosenLoadFor, type CalibrationInput } from '../../shared/progression/lane'
 import { MAX_SETS_PER_OCCURRENCE } from '../../shared/workoutLog'
 
 /**
@@ -237,6 +237,8 @@ export type CalibrationOutcome =
  *     the load stored alongside the judgement is read from that set here — the
  *     request never supplies it
  *   - a chosen load must be in the lane's own unit, so "each" cannot be lost
+ *   - "good" stores NO chosen load: it is a statement about the load that was
+ *     actually lifted, and a different number is not that (see `chosenLoadFor`)
  *
  * The completed set itself is not touched. Saying "too light" does not rewrite
  * what was lifted; it changes only what is suggested next.
@@ -262,7 +264,12 @@ export async function saveCalibration(
   const observed = lane.calibration.observedLoad
   if (!observed) return { ok: false, reason: 'no_completed_set' }
 
-  if (input.chosenLoad && input.chosenLoad.unit !== lane.lane.loadMode) {
+  // Re-applied here rather than trusted from the parser, so a caller that
+  // reaches this function without going through the HTTP validation boundary
+  // still cannot store a Good judgement carrying someone else's number.
+  const chosenLoad = chosenLoadFor(input.feedback, input.chosenLoad)
+
+  if (chosenLoad && chosenLoad.unit !== lane.lane.loadMode) {
     return { ok: false, reason: 'load_unit_mismatch' }
   }
 
@@ -274,7 +281,7 @@ export async function saveCalibration(
     fingerprint: lane.fingerprint,
     feedback: input.feedback,
     observedLoad: observed,
-    chosenLoad: input.chosenLoad,
+    chosenLoad,
     now,
   })
 

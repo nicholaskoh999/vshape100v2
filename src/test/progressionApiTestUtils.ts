@@ -10,7 +10,8 @@
  * a lane that is genuinely calibrating, only once a first working set has been
  * completed with a recorded load, and only in that lane's own unit. The
  * observed load is read from stored workout truth here exactly as it is on the
- * server; a request never supplies one.
+ * server; a request never supplies one, and "good" stores no chosen load —
+ * the shared rule itself is called, not a copy of it.
  */
 
 import {
@@ -20,7 +21,7 @@ import {
   type SessionProgression,
   type StoredCalibration,
 } from '@shared/progression/engine'
-import { isCalibrationFeedback } from '@shared/progression/lane'
+import { chosenLoadFor, isCalibrationFeedback } from '@shared/progression/lane'
 import type { WorkoutLoadUnit } from '@shared/workoutLog'
 import type { ServerSet, WorkoutServer } from './workoutApiTestUtils'
 
@@ -176,7 +177,9 @@ export function createProgressionServer(workouts: WorkoutServer): ProgressionSer
     }
     const observed = lane.calibration.observedLoad
     if (!observed) return jsonResponse({ error: 'no_completed_set' }, 409)
-    if (payload.chosenLoad && payload.chosenLoad.unit !== lane.lane.loadMode) {
+
+    const chosenLoad = chosenLoadFor(payload.feedback, payload.chosenLoad ?? null)
+    if (chosenLoad && chosenLoad.unit !== lane.lane.loadMode) {
       return jsonResponse({ error: 'load_unit_mismatch' }, 409)
     }
 
@@ -187,7 +190,7 @@ export function createProgressionServer(workouts: WorkoutServer): ProgressionSer
       fingerprint: lane.fingerprint,
       feedback: payload.feedback,
       observedLoad: observed,
-      chosenLoad: payload.chosenLoad ?? null,
+      chosenLoad,
     })
 
     return jsonResponse(body(date, sessionId))

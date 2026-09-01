@@ -13,7 +13,12 @@
  * the completed set itself.
  */
 
-import type { WorkoutLoadUnit } from '@shared/workoutLog'
+import { isSetLoad, isSetResult, type WorkoutLoadUnit } from '@shared/workoutLog'
+import {
+  isEvidenceGap,
+  isProgressionReasonCode,
+  isProgressionState,
+} from '@shared/progression/engine'
 import type {
   CalibrationView,
   EvidenceGap,
@@ -24,6 +29,7 @@ import type {
   ProgressionRuleset,
   ProgressionState,
 } from '@shared/progression/engine'
+import { isCalibrationFeedback } from '@shared/progression/lane'
 import type { CalibrationFeedback, ProgressionLane } from '@shared/progression/lane'
 
 export type {
@@ -84,24 +90,44 @@ async function ensureOk(response: Response): Promise<void> {
 /* Wire → app                                                          */
 /* ------------------------------------------------------------------ */
 
-const STATES: readonly ProgressionState[] = [
-  'calibrate',
-  'build_reps',
-  'increase_load',
-  'hold',
-  'reduce_load',
-  'quality',
-  'unavailable',
-]
+/** A whole number of things: a set count, a rep target, a position. */
+function isWholeNumber(value: unknown, min: number): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= min
+}
 
+/**
+ * A load, or null when it is not one.
+ *
+ * `isSetLoad` is the same bound the server accepts when STORING a load, so a
+ * value the database could never hold — NaN, Infinity, a negative weight — is
+ * refused here rather than reaching an input or a suggestion.
+ */
 function toLoad(raw: unknown): ProgressionLoad | null {
   if (typeof raw !== 'object' || raw === null) return null
   const row = raw as Partial<ProgressionLoad>
-  if (typeof row.value !== 'number') return null
+  if (!isSetLoad(row.value)) return null
   if (row.unit !== 'kg' && row.unit !== 'kg_each') return null
   return { value: row.value, unit: row.unit }
 }
 
+/** True when a field was sent at all. Absent and null both mean "none". */
+function present(value: unknown): boolean {
+  return value !== undefined && value !== null
+}
+
+/**
+ * The calibration block, or null when it is not a coherent one.
+ *
+ * The three stages are not decoration — they decide whether the Too light /
+ * Good / Too heavy buttons appear and what they mean — so each one is checked
+ * against what it CLAIMS:
+ *
+ *   awaiting_first_set  nothing has been judged, so nothing may be attached
+ *   awaiting_feedback   a first set exists, so its load must be there
+ *   settled             a judgement was made, so both it and its load must be
+ *
+ * A block that contradicts its own stage is refused rather than half-rendered.
+ */
 function toCalibration(raw: unknown): CalibrationView | null {
   if (typeof raw !== 'object' || raw === null) return null
   const row = raw as Record<string, unknown>
@@ -112,16 +138,27 @@ function toCalibration(raw: unknown): CalibrationView | null {
   ) {
     return null
   }
-  const feedback = row.feedback
-  return {
-    stage: row.stage,
-    observedLoad: toLoad(row.observedLoad),
-    feedback:
-      feedback === 'too_light' || feedback === 'good' || feedback === 'too_heavy'
-        ? feedback
-        : null,
-    chosenLoad: toLoad(row.chosenLoad),
+
+  const observedLoad = toLoad(row.observedLoad)
+  if (present(row.observedLoad) && observedLoad === null) return null
+
+  const chosenLoad = toLoad(row.chosenLoad)
+  if (present(row.chosenLoad) && chosenLoad === null) return null
+
+  if (present(row.feedback) && !isCalibrationFeedback(row.feedback)) return null
+  const feedback = isCalibrationFeedback(row.feedback) ? row.feedback : null
+
+  if (row.stage === 'awaiting_first_set') {
+    if (observedLoad !== null || feedback !== null || chosenLoad !== null) return null
   }
+  if (row.stage === 'awaiting_feedback') {
+    if (observedLoad === null || feedback !== null) return null
+  }
+  if (row.stage === 'settled') {
+    if (observedLoad === null || feedback === null) return null
+  }
+
+  return { stage: row.stage, observedLoad, feedback, chosenLoad }
 }
 
 /**
@@ -134,13 +171,20 @@ function toCalibration(raw: unknown): CalibrationView | null {
 function toLaneIdentity(raw: unknown): ProgressionLane | null {
   if (typeof raw !== 'object' || raw === null) return null
   const row = raw as Record<string, unknown>
-  if (typeof row.sessionId !== 'string' || typeof row.exerciseId !== 'string') return null
-  if (typeof row.setCount !== 'number') return null
-  if (typeof row.lower !== 'number' || typeof row.upper !== 'number') return null
+  if (typeof row.sessionId !== 'string' || row.sessionId.length === 0) return null
+  if (typeof row.exerciseId !== 'string' || row.exerciseId.length === 0) return null
+  if (!isWholeNumber(row.setCount, 1)) return null
+  if (!isWholeNumber(row.lower, 1) || !isWholeNumber(row.upper, 1)) return null
+  if (row.lower > row.upper) return null
   if (row.resultKind !== 'reps' && row.resultKind !== 'seconds') return null
   if (row.loadMode !== 'none' && row.loadMode !== 'kg' && row.loadMode !== 'kg_each') {
     return null
   }
+  // A real boolean, not "anything that is not true". Per-side reps and
+  // both-sides reps are different work, and a coerced flag would quietly pick
+  // one of them.
+  if (typeof row.perSide !== 'boolean') return null
+
   return {
     sessionId: row.sessionId,
     exerciseId: row.exerciseId,
@@ -149,42 +193,56 @@ function toLaneIdentity(raw: unknown): ProgressionLane | null {
     upper: row.upper,
     resultKind: row.resultKind,
     loadMode: row.loadMode,
-    perSide: row.perSide === true,
+    perSide: row.perSide,
   }
 }
 
 function toTarget(raw: unknown): LaneTarget | null {
   if (typeof raw !== 'object' || raw === null) return null
   const row = raw as Record<string, unknown>
-  if (typeof row.text !== 'string') return null
-  if (typeof row.lower !== 'number' || typeof row.upper !== 'number') return null
+  if (typeof row.text !== 'string' || row.text.length === 0) return null
+  if (!isWholeNumber(row.lower, 1) || !isWholeNumber(row.upper, 1)) return null
+  if (row.lower > row.upper) return null
   if (row.resultKind !== 'reps' && row.resultKind !== 'seconds') return null
-  if (typeof row.setCount !== 'number') return null
+  if (!isWholeNumber(row.setCount, 1)) return null
+  if (typeof row.perSide !== 'boolean') return null
+
   return {
     text: row.text,
     lower: row.lower,
     upper: row.upper,
     resultKind: row.resultKind,
-    perSide: row.perSide === true,
+    perSide: row.perSide,
     setCount: row.setCount,
   }
 }
 
+/**
+ * The factual reference, or null when it is not a whole one.
+ *
+ * A result list is accepted only if EVERY entry is a real recorded result.
+ * Filtering out the bad ones would silently shorten the row and show a session
+ * as having fewer sets than it did.
+ */
 function toLastResult(raw: unknown): FactualReference | null {
   if (typeof raw !== 'object' || raw === null) return null
   const row = raw as Record<string, unknown>
-  if (typeof row.date !== 'string') return null
-  const results = Array.isArray(row.results)
-    ? row.results.filter((value): value is number => typeof value === 'number')
-    : []
+  if (typeof row.date !== 'string' || row.date.length === 0) return null
+  if (!Array.isArray(row.results)) return null
+  if (!row.results.every((value) => isSetResult(value))) return null
+  if (present(row.load) && toLoad(row.load) === null) return null
+  for (const count of [row.prescribed, row.completed, row.skipped, row.pending]) {
+    if (!isWholeNumber(count, 0)) return null
+  }
+
   return {
     date: row.date,
-    results,
+    results: row.results as number[],
     load: toLoad(row.load),
-    prescribed: typeof row.prescribed === 'number' ? row.prescribed : 0,
-    completed: typeof row.completed === 'number' ? row.completed : 0,
-    skipped: typeof row.skipped === 'number' ? row.skipped : 0,
-    pending: typeof row.pending === 'number' ? row.pending : 0,
+    prescribed: row.prescribed as number,
+    completed: row.completed as number,
+    skipped: row.skipped as number,
+    pending: row.pending as number,
   }
 }
 
@@ -197,10 +255,42 @@ function toLastResult(raw: unknown): FactualReference | null {
 function toLane(raw: unknown): LaneRecommendation | null {
   if (typeof raw !== 'object' || raw === null) return null
   const row = raw as Record<string, unknown>
-  if (typeof row.exerciseOrder !== 'number') return null
-  if (typeof row.exerciseId !== 'string') return null
-  if (!STATES.includes(row.state as ProgressionState)) return null
-  if (typeof row.reason !== 'string' || typeof row.reasonCode !== 'string') return null
+
+  if (!isWholeNumber(row.exerciseOrder, 0)) return null
+  if (typeof row.exerciseId !== 'string' || row.exerciseId.length === 0) return null
+  if (typeof row.reason !== 'string' || row.reason.length === 0) return null
+
+  // The three vocabularies are checked against the lists the engine itself is
+  // built from, so an arbitrary string cannot enter the app wearing the type
+  // of a state, a reason or an evidence gap.
+  if (!isProgressionState(row.state)) return null
+  if (!isProgressionReasonCode(row.reasonCode)) return null
+  if (present(row.gap) && !isEvidenceGap(row.gap)) return null
+
+  // EVERY sub-object fails the whole lane when it is present and unreadable.
+  // Quietly nulling one would leave a panel that still reads like guidance
+  // while the thing it describes — the suggestion, the target, the last
+  // session, the calibration buttons — has silently gone missing.
+  const suggestedLoad = toLoad(row.suggestedLoad)
+  if (present(row.suggestedLoad) && suggestedLoad === null) return null
+
+  const loadDirection =
+    row.loadDirection === 'increase' || row.loadDirection === 'reduce'
+      ? row.loadDirection
+      : null
+  if (present(row.loadDirection) && loadDirection === null) return null
+
+  const calibration = toCalibration(row.calibration)
+  if (present(row.calibration) && calibration === null) return null
+
+  const lane = toLaneIdentity(row.lane)
+  if (present(row.lane) && lane === null) return null
+
+  const target = toTarget(row.target)
+  if (present(row.target) && target === null) return null
+
+  const lastResult = toLastResult(row.lastResult)
+  if (present(row.lastResult) && lastResult === null) return null
 
   return {
     exerciseOrder: row.exerciseOrder,
@@ -208,19 +298,16 @@ function toLane(raw: unknown): LaneRecommendation | null {
     exerciseName: typeof row.exerciseName === 'string' ? row.exerciseName : row.exerciseId,
     prescription: typeof row.prescription === 'string' ? row.prescription : '',
     fingerprint: typeof row.fingerprint === 'string' ? row.fingerprint : null,
-    lane: toLaneIdentity(row.lane),
-    state: row.state as ProgressionState,
-    reasonCode: row.reasonCode as ProgressionReasonCode,
-    gap: (row.gap ?? null) as EvidenceGap | null,
+    lane,
+    state: row.state,
+    reasonCode: row.reasonCode,
+    gap: isEvidenceGap(row.gap) ? row.gap : null,
     reason: row.reason,
-    suggestedLoad: toLoad(row.suggestedLoad),
-    loadDirection:
-      row.loadDirection === 'increase' || row.loadDirection === 'reduce'
-        ? row.loadDirection
-        : null,
-    target: toTarget(row.target),
-    lastResult: toLastResult(row.lastResult),
-    calibration: toCalibration(row.calibration),
+    suggestedLoad,
+    loadDirection,
+    target,
+    lastResult,
+    calibration,
   }
 }
 

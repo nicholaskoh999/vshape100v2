@@ -141,6 +141,28 @@ export type CalibrationInput = {
   chosenLoad: { value: number; unit: WorkoutLoadUnit } | null
 }
 
+/**
+ * THE GOOD INVARIANT.
+ *
+ * "Good" is a statement about the load that was ACTUALLY LIFTED — the first
+ * completed working set's recorded load. It cannot name a different number,
+ * because a different number is not what the person did and not what they said
+ * felt right. Only "too light" and "too heavy" ask for a load the person moved
+ * to instead, and only those may carry one.
+ *
+ * This is the single definition of that rule. It is applied at the API
+ * validation boundary, again when a judgement is written, and again when a
+ * stored row is read back — so a Good row cannot carry a foreign load however
+ * it got there: a direct API call, a future caller that skips the parser, or a
+ * row written before this rule existed.
+ */
+export function chosenLoadFor(
+  feedback: CalibrationFeedback,
+  chosenLoad: { value: number; unit: WorkoutLoadUnit } | null,
+): { value: number; unit: WorkoutLoadUnit } | null {
+  return feedback === 'good' ? null : chosenLoad
+}
+
 export type CalibrationField = 'body' | 'feedback' | 'load' | 'unit'
 
 export type ParsedCalibration =
@@ -154,6 +176,12 @@ export type ParsedCalibration =
  * carries an identity. Neither is the observed load: that is read from stored
  * workout truth server-side, so a client cannot claim a first set it did not
  * complete.
+ *
+ * A chosen load sent alongside "good" is DROPPED rather than refused. The
+ * payload is still well formed — the person did say the set felt right — and
+ * the number simply has no meaning under that answer, so the honest result is
+ * a Good judgement with no chosen load rather than a 400 for a field the
+ * caller was allowed to send.
  */
 export function parseCalibrationInput(body: unknown): ParsedCalibration {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) {
@@ -178,7 +206,7 @@ export function parseCalibrationInput(body: unknown): ParsedCalibration {
     ok: true,
     value: {
       feedback: raw.feedback,
-      chosenLoad: { value: load.value, unit: load.unit },
+      chosenLoad: chosenLoadFor(raw.feedback, { value: load.value, unit: load.unit }),
     },
   }
 }
