@@ -98,7 +98,7 @@ export function SettingsPage() {
             className="block rounded-card"
             aria-label="Exercise Library"
           >
-            <motion.div {...press}>
+            <motion.div {...press} tabIndex={-1}>
               <Card className="flex items-center gap-4 px-5 py-4 transition-colors duration-150 hover:border-edge-strong">
                 <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-surface-overlay text-ink-dim">
                   <Dumbbell className="size-5" aria-hidden="true" />

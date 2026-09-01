@@ -62,6 +62,7 @@ export function ExerciseDetailPage() {
             >
               <motion.span
                 {...press}
+                tabIndex={-1}
                 className="inline-flex items-center gap-1.5 rounded-control border border-edge bg-surface-overlay px-3 py-2 text-[13px] font-bold text-ink-dim transition-colors duration-150 hover:border-edge-strong hover:text-offwhite"
               >
                 <Pencil className="size-4" aria-hidden="true" />

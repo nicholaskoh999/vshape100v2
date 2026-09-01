@@ -105,7 +105,7 @@ function ExerciseRow({
       aria-label={`Edit media for ${entry.name}`}
       className="block rounded-card"
     >
-      <motion.div {...press}>
+      <motion.div {...press} tabIndex={-1}>
         <Card className="flex items-center gap-4 p-4.5 transition-colors duration-150 hover:border-edge-strong">
           <span
             aria-hidden="true"

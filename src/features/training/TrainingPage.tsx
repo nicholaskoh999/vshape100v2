@@ -34,7 +34,7 @@ export function TrainingPage() {
         {trainingSessions.map((session) => (
           <motion.li key={session.id} variants={listItemVariants}>
             <Link to={`/training/${session.id}`} className="block rounded-card">
-              <motion.div {...press}>
+              <motion.div {...press} tabIndex={-1}>
                 <Card className="flex items-center gap-4 p-4.5 transition-colors duration-150 hover:border-edge-strong">
                   <div className="min-w-0 flex-1">
                     <div className="mb-1 flex items-center gap-2">
@@ -105,7 +105,7 @@ function ExtraWorkoutEntry() {
       </p>
 
       <Link to="/training/extra" className="block rounded-card">
-        <motion.div {...press}>
+        <motion.div {...press} tabIndex={-1}>
           <Card className="flex items-center gap-4 border-dashed p-4.5 transition-colors duration-150 hover:border-edge-strong">
             <span
               aria-hidden="true"

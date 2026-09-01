@@ -38,6 +38,7 @@ export function SideNav({ variant }: { variant: 'rail' | 'full' }) {
               {({ isActive }) => (
                 <motion.span
                   {...press}
+                  tabIndex={-1}
                   className={cn(
                     'relative flex items-center rounded-control transition-colors duration-150',
                     isRail

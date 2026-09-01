@@ -42,6 +42,7 @@ export function BottomNav() {
                   )}
                   <motion.span
                     {...pressStrong}
+                    tabIndex={-1}
                     className={cn(
                       'flex flex-col items-center gap-0.5 transition-colors duration-150',
                       isActive
@@ -86,6 +87,7 @@ export function BottomNav() {
             )}
             <motion.span
               {...pressStrong}
+              tabIndex={-1}
               className={cn(
                 'flex flex-col items-center gap-0.5 transition-colors duration-150',
                 moreActive

@@ -133,6 +133,7 @@ export function TodayHero({
           <Link to={entry.item.to} className="rounded-control">
             <motion.span
               whileTap={press.whileTap}
+              tabIndex={-1}
               transition={press.transition}
               className="inline-flex h-12 w-full items-center justify-center gap-1 rounded-control border border-edge-strong px-4 text-sm font-bold text-ink-dim transition-colors duration-150 hover:border-blue/60 hover:text-offwhite sm:w-auto"
             >
