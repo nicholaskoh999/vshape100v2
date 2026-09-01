@@ -35,6 +35,15 @@ export type SettingsServer = {
    * rather than coerce it into "no preference".
    */
   corruptRead: (value: unknown, count?: number) => void
+  /**
+   * Answer the next `count` reads with this ENTIRE body verbatim, 200 OK.
+   *
+   * Unlike `corruptRead`, nothing is wrapped: the body is sent exactly as given,
+   * so a test can reproduce an envelope with the required field missing — `{}`,
+   * a bare `null`, an array, a primitive, or an object carrying some other
+   * shape. That is the case Correction 2 exists for.
+   */
+  corruptBody: (body: unknown, count?: number) => void
   /** Fail the next `count` writes. */
   failWrites: (count?: number) => void
   /** Hold every write until the returned function is called. */
@@ -57,6 +66,8 @@ export function createSettingsServer(): SettingsServer {
   let writeFailures = 0
   let corruptReads = 0
   let corruptValue: unknown = undefined
+  let corruptBodies = 0
+  let corruptBodyValue: unknown = undefined
   let gate: Promise<void> | null = null
 
   async function handle(url: string, init?: RequestInit): Promise<Response> {
@@ -67,6 +78,10 @@ export function createSettingsServer(): SettingsServer {
       if (readFailures > 0) {
         readFailures -= 1
         return jsonResponse({ error: 'server_error' }, 500)
+      }
+      if (corruptBodies > 0) {
+        corruptBodies -= 1
+        return jsonResponse(corruptBodyValue)
       }
       if (corruptReads > 0) {
         corruptReads -= 1
@@ -123,6 +138,10 @@ export function createSettingsServer(): SettingsServer {
     corruptRead: (value, count = 1) => {
       corruptValue = value
       corruptReads = count
+    },
+    corruptBody: (body, count = 1) => {
+      corruptBodyValue = body
+      corruptBodies = count
     },
     failWrites: (count = 1) => {
       writeFailures = count

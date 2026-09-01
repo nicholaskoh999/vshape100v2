@@ -7,7 +7,7 @@
  * can never see. A refresh re-reads; it never replays a cache.
  */
 
-import { readFoundationStart, type AccountSettings } from '@shared/settings'
+import { parseSettingsEnvelope, type AccountSettings } from '@shared/settings'
 
 export type { AccountSettings }
 
@@ -36,18 +36,30 @@ const REQUEST_INIT: RequestInit = {
  * 2026-08-31. A corrupt column, a wrong type, or a value from a schema newer
  * than this client therefore became an authoritative-looking Day number.
  *
+ * Round 18 Correction 2: the ENVELOPE is now validated before the field is
+ * classified. This function used to begin `(body ?? {})`, which turned a `null`
+ * body into an empty object, and then read an absent `foundationStartDate` as
+ * "unset" — so `{}`, a bare `null`, an error payload carrying only `{ error }`,
+ * or a future schema that moved the field all resolved to the legacy date. "No
+ * preference" has exactly one wire spelling, `{ foundationStartDate: null }`,
+ * and anything else is a response this client cannot read.
+ *
  * The client re-classifies independently of the server rather than trusting the
  * envelope: the two boundaries fail closed separately, so neither relies on the
- * other having done it. An unreadable value is an error, and the provider shows
- * its error state instead of a day count.
+ * other having done it. An unreadable response is an error, and the provider
+ * shows its error state instead of a day count.
  */
 function toSettings(body: unknown, status: number): AccountSettings {
-  const raw = (body ?? {}) as Record<string, unknown>
-  const value = readFoundationStart(raw.foundationStartDate)
-  if (value.kind === 'unreadable') {
-    throw new SettingsApiError('Settings response could not be read', status)
+  const envelope = parseSettingsEnvelope(body)
+  if (!envelope.ok) {
+    throw new SettingsApiError(
+      envelope.reason === 'malformed'
+        ? 'Settings response was not in a readable shape'
+        : 'Settings response could not be read',
+      status,
+    )
   }
-  return { foundationStartDate: value.kind === 'date' ? value.date : null }
+  return envelope.settings
 }
 
 async function ensureOk(response: Response): Promise<void> {

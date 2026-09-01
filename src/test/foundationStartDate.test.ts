@@ -44,7 +44,13 @@ describe('1. an account that has never chosen keeps the legacy start', () => {
       startDate: LEGACY,
       persisted: null,
     })
-    // An absent field is the same real answer as an explicit null.
+    // A MISSING VALUE resolves like an explicit null, which is what the D1
+    // no-row path needs: an absent row is a real "no preference".
+    //
+    // This is not in tension with Correction 2. That rule is about the API
+    // ENVELOPE — an absent `foundationStartDate` KEY on the wire is malformed
+    // and is refused by `parseSettingsEnvelope` before it ever reaches here.
+    // An absent row and an absent field are different claims.
     expect(resolveFoundationStart(undefined)).toEqual({
       status: 'ready',
       startDate: LEGACY,

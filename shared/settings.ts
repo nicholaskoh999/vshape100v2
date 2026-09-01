@@ -94,6 +94,69 @@ export type FoundationStartResolution =
   | { status: 'ready'; startDate: string; persisted: string | null }
   | { status: 'unreadable' }
 
+/* ------------------------------------------------------------------ */
+/* Reading an API envelope — the field must be PRESENT                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The result of reading a settings response body.
+ *
+ * `malformed` covers the ENVELOPE being wrong, which is a different failure from
+ * the field's value being wrong, and is deliberately not merged with it: one
+ * says "this is not the shape I speak", the other says "this value is not usable".
+ * Both fail closed, but keeping them apart is what stops an absent field from
+ * quietly borrowing the meaning of a present null.
+ */
+export type SettingsEnvelope =
+  | { ok: true; settings: AccountSettings }
+  | { ok: false; reason: 'malformed' | 'value' }
+
+/**
+ * Validate a settings response envelope, then classify its field.
+ *
+ * Round 18 Correction 2. The wire contract requires `foundationStartDate` to be
+ * PRESENT. "No preference" is spelled explicitly:
+ *
+ *     { "foundationStartDate": null }
+ *
+ * so `{}` is NOT that. Reading an absent field as "unset" let a malformed or
+ * unrecognised envelope — an empty object, a `null` body, an error payload
+ * carrying only `{ error }`, or a future schema that moved the field — resolve
+ * to the legacy 2026-08-31 and be rendered as an authoritative Day number. An
+ * absent required field means the response is not the shape this client
+ * understands, and the only safe answer is to refuse.
+ *
+ * The envelope is checked BEFORE the field is classified, so the two questions
+ * cannot be confused for one another:
+ *
+ *   is this an object carrying the required key at all?   → malformed if not
+ *   is the value it carries usable?                        → value if not
+ *
+ * This is a WIRE-format rule and applies only here. It says nothing about
+ * storage: a database with no `account_settings` row remains a legitimate
+ * "unset", because an absent ROW is a real answer in a way an absent FIELD is not.
+ */
+export function parseSettingsEnvelope(body: unknown): SettingsEnvelope {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    return { ok: false, reason: 'malformed' }
+  }
+  if (!Object.hasOwn(body, 'foundationStartDate')) {
+    return { ok: false, reason: 'malformed' }
+  }
+
+  const raw = (body as Record<string, unknown>).foundationStartDate
+  // JSON cannot produce an explicit `undefined`, so a present-but-undefined
+  // field means something built this object by hand and left it unset.
+  if (raw === undefined) return { ok: false, reason: 'malformed' }
+
+  const value = readFoundationStart(raw)
+  if (value.kind === 'unreadable') return { ok: false, reason: 'value' }
+  return {
+    ok: true,
+    settings: { foundationStartDate: value.kind === 'date' ? value.date : null },
+  }
+}
+
 export function resolveFoundationStart(raw: unknown): FoundationStartResolution {
   const value = readFoundationStart(raw)
   if (value.kind === 'unreadable') return { status: 'unreadable' }
