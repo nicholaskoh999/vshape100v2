@@ -22,8 +22,21 @@ export type StoredFlexRow = { localDate: string; kind: unknown }
 export interface TrainingFlexStore {
   /** Every choice this account has stored in the inclusive range. */
   listRange(googleSub: string, from: string, to: string): Promise<StoredFlexRow[]>
-  /** Create or replace this account's choice for one day. */
-  put(googleSub: string, date: string, kind: TrainingFlexKind, now: number): Promise<void>
+  /**
+   * Create or replace this account's choice for one day — CONDITIONALLY.
+   *
+   * The write must succeed only while no scheduled occurrence exists for
+   * `scheduledSessionId` on that date, evaluated as part of the write itself
+   * rather than by the caller beforehand. `written: false` means the guard
+   * refused it, and nothing was stored.
+   */
+  put(
+    googleSub: string,
+    date: string,
+    kind: TrainingFlexKind,
+    scheduledSessionId: string | null,
+    now: number,
+  ): Promise<{ written: boolean }>
   /** Remove this account's choice for one day, if any. */
   clear(googleSub: string, date: string): Promise<void>
 }
@@ -40,6 +53,18 @@ export interface TrainingFlexStore {
 export type TrainingFlexRead =
   | { status: 'ok'; choices: TrainingFlexChoice[] }
   | { status: 'unreadable' }
+
+/**
+ * The outcome of a write.
+ *
+ * `conflict` is not an error state of the process — it is the mutual exclusion
+ * doing its job, decided at the moment the write committed rather than by an
+ * earlier read that may already have been stale.
+ */
+export type TrainingFlexWrite =
+  | { status: 'ok'; choices: TrainingFlexChoice[] }
+  | { status: 'unreadable' }
+  | { status: 'conflict' }
 
 /**
  * Read an account's choices over a range, refusing rather than guessing.
@@ -78,12 +103,21 @@ export async function writeTrainingFlex(
   googleSub: string,
   date: string,
   kind: TrainingFlexKind | null,
+  /** The session that date plans, or null when it plans none. */
+  scheduledSessionId: string | null,
   now: number = Date.now(),
-): Promise<TrainingFlexRead> {
+): Promise<TrainingFlexWrite> {
   if (kind === null) {
+    // Clearing is always allowed. It is how a day is handed back to the
+    // scheduled workout, and refusing it would leave a conflicting day with no
+    // way out. It also removes nothing but the choice itself.
     await store.clear(googleSub, date)
   } else {
-    await store.put(googleSub, date, kind, now)
+    const { written } = await store.put(googleSub, date, kind, scheduledSessionId, now)
+    // The guard fired at commit time: a scheduled workout exists for this day,
+    // so the alternative cannot be chosen. Nothing was stored, and nothing
+    // about the workout was touched.
+    if (!written) return { status: 'conflict' }
   }
   return readTrainingFlexRange(store, googleSub, date, date)
 }

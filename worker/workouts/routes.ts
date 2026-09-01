@@ -26,12 +26,6 @@ import {
   requireAccount,
   withSessionHeaders,
 } from '../http/authenticated'
-import { kindForSessionId } from '../../shared/workoutLog'
-import { createD1TrainingFlexStore } from '../trainingFlex/d1Store'
-import {
-  readTrainingFlexRange,
-  type TrainingFlexStore,
-} from '../trainingFlex/trainingFlex'
 import { createD1WorkoutStore } from './d1Store'
 import {
   applySetUpdate,
@@ -166,7 +160,6 @@ async function handleRead(
 async function handleStart(
   request: Request,
   store: WorkoutStore,
-  flexStore: TrainingFlexStore,
   googleSub: string,
   date: string,
   sessionId: string,
@@ -192,32 +185,30 @@ async function handleStart(
     return json({ error: 'invalid_start', field: 'source_session_id' }, { status: 400 })
   }
 
-  // MUTUAL EXCLUSION, enforced in server truth rather than by hiding a button.
+  // MUTUAL EXCLUSION.
   //
-  // A day the user explicitly resolved as Recovery or Fitness Boxing cannot
-  // then start its scheduled session: the three Today choices are alternatives.
-  // The refusal is the whole response — the flex row is NOT cleared here, and
-  // nothing is written. The user resolves it by choosing "Do scheduled
-  // workout", which clears the choice, and may then start normally.
+  // There is deliberately NO pre-read here. Round 19 Correction 2 moved the
+  // decision into the occurrence claim itself, and once it lives there a
+  // handler-level check earns nothing and costs something:
   //
-  // Only a SCHEDULED start is covered. An Extra keeps the Round 17 semantics it
-  // was given: voluntary, separately identified, and never the day's obligation.
-  if (kindForSessionId(sessionId) === 'scheduled') {
-    const flex = await readTrainingFlexRange(flexStore, googleSub, date, date)
-    // Fail closed: a choice we cannot read might be a real one, and starting
-    // over it would create exactly the contradictory state this prevents.
-    if (flex.status !== 'ok') {
-      return json({ error: 'flex_unreadable' }, { status: 500 })
-    }
-    if (flex.choices.length > 0) {
-      return json(
-        { error: 'training_flex_active', kind: flex.choices[0].kind },
-        { status: 409 },
-      )
-    }
+  //   - the friendly 409 is identical either way, because the write reports the
+  //     same refusal
+  //   - fail-closed on an unreadable choice is already covered, because the
+  //     guard's subquery matches ANY flex row for the day regardless of whether
+  //     this build can name its kind
+  //   - and a pre-read that fires before the resume path is reached would
+  //     refuse to reopen a workout the user is in the middle of
+  //
+  // One decision, in one place, evaluated against committed state.
+  const outcome = await startWorkout(store, googleSub, date, sessionId, parsed.value)
+  // The authoritative refusal: the conditional insert itself declined, because
+  // the day carried a flex choice at the moment the write committed. Nothing
+  // was created — no occurrence, and no sets.
+  if (!outcome.ok) {
+    return json({ error: outcome.reason }, { status: 409 })
   }
 
-  const result = await startWorkout(store, googleSub, date, sessionId, parsed.value)
+  const result = outcome.result
   // 200 for a resume, 201 for a workout this request actually created.
   return json(
     { date, sessionId, created: result.created, ...toPublicLog(result) },
@@ -394,14 +385,7 @@ export async function handleWorkoutRequest(
 
     if (isStart) {
       return withSessionHeaders(
-        await handleStart(
-          request,
-          store,
-          createD1TrainingFlexStore(env.DB),
-          account.googleSub,
-          date,
-          sessionId,
-        ),
+        await handleStart(request, store, account.googleSub, date, sessionId),
         sessionHeaders,
       )
     }

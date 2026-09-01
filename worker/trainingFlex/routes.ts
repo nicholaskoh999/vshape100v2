@@ -31,7 +31,7 @@ import { daysBetween, isLocalDate } from '../../shared/localDate.ts'
 import { parseTrainingFlexUpdate } from '../../shared/trainingFlex.ts'
 import { createD1WorkoutStore } from '../workouts/d1Store.ts'
 import { createD1TrainingFlexStore } from './d1Store.ts'
-import { scheduledWorkoutStarted } from './exclusivity.ts'
+import { scheduledSessionFor, scheduledWorkoutStarted } from './exclusivity.ts'
 import { readTrainingFlexRange, writeTrainingFlex } from './trainingFlex.ts'
 
 const PATH = '/api/training-flex'
@@ -120,11 +120,17 @@ export async function handleTrainingFlexRequest(
       )
     }
 
-    // MUTUAL EXCLUSION. Choosing an alternative is refused once the day's
-    // scheduled workout has been started, because the two are alternatives and
-    // the workout already happened. The started workout is left untouched —
-    // nothing here deletes or neutralises real training history to make the
-    // choice fit.
+    // MUTUAL EXCLUSION, part one of two.
+    //
+    // This pre-read is a COURTESY, not the safety mechanism: it turns the
+    // ordinary sequential case into an immediate, explanatory 409 instead of a
+    // silent no-op. It cannot be relied on for correctness, because a read and
+    // a later write are not one operation — two isolates can both read "no
+    // workout" and then both commit. The guarantee lives in the conditional
+    // INSERT inside the store (see ./d1Store.ts), which is checked again below.
+    //
+    // The started workout is left untouched either way — nothing here deletes
+    // or neutralises real training history to make the choice fit.
     //
     // Clearing (`kind: null`) is deliberately exempt: it is how the user says
     // "I will do the scheduled workout after all", and blocking it would leave
@@ -148,7 +154,17 @@ export async function handleTrainingFlexRequest(
       account.googleSub,
       parsed.value.date,
       parsed.value.kind,
+      scheduledSessionFor(parsed.value.date),
     )
+    // MUTUAL EXCLUSION, part two: the authoritative one. The write itself
+    // refused because a scheduled workout existed at the moment it committed —
+    // which is the case a pre-read can lose. Nothing was stored.
+    if (stored.status === 'conflict') {
+      return withSessionHeaders(
+        json({ error: 'workout_already_started' }, { status: 409 }),
+        sessionHeaders,
+      )
+    }
     if (stored.status === 'unreadable') {
       return withSessionHeaders(
         json({ error: 'flex_unreadable' }, { status: 500 }),

@@ -192,10 +192,10 @@ describe('a flexed day refuses its scheduled workout', () => {
     expect(extra.response.status).toBe(201)
   })
 
-  it('fails closed when the flex truth cannot be read', async () => {
+  it('fails closed when the stored kind cannot be read', async () => {
     const fake = createFakeD1()
     const token = await seedToken(fake.db)
-    // A stored kind this build cannot read might be a real choice.
+    // A stored kind this build cannot name — a future schema, or corruption.
     fake.trainingFlex.set('x', {
       google_sub: 'sub-1',
       local_date: TODAY,
@@ -204,9 +204,17 @@ describe('a flexed day refuses its scheduled workout', () => {
       updated_at: 1,
     })
 
+    // Correction 2 moved the decision into the write, whose guard asks only
+    // whether a choice EXISTS for the day — it does not need to name it. So an
+    // unreadable row still blocks the Start, and does so as the same honest
+    // conflict rather than as a server error: the day IS resolved, we simply
+    // cannot say into what.
     const start = await startWorkout(fake.db, token)
-    expect(start.response.status).toBe(500)
+    expect(start.response.status).toBe(409)
+    expect(start.body.error).toBe('training_flex_active')
+    // The point either way: nothing was written.
     expect(fake.occurrences.size).toBe(0)
+    expect(fake.workoutSets.size).toBe(0)
   })
 })
 

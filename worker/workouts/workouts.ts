@@ -258,6 +258,17 @@ export async function readWorkout(
 export type StartResult = WorkoutLog & { created: boolean }
 
 /**
+ * What a Start attempt did.
+ *
+ * A refusal is a first-class outcome rather than an exception: the day was
+ * explicitly resolved as something other than the scheduled session, which is a
+ * legitimate state of the data, not a failure of the process.
+ */
+export type StartOutcome =
+  | { ok: true; result: StartResult }
+  | { ok: false; reason: 'training_flex_active' }
+
+/**
  * Start, or resume, one workout occurrence.
  *
  * Idempotent by design. When the occurrence already exists nothing is written
@@ -279,9 +290,11 @@ export async function startWorkout(
   input: WorkoutStartInput,
   now: number = Date.now(),
   snapshotId: string = newSnapshotId(),
-): Promise<StartResult> {
+): Promise<StartOutcome> {
   const existing = await readWorkout(store, googleSub, workoutDate, sessionId)
-  if (existing) return { ...existing, created: false }
+  // A resume is never blocked: the workout already exists, so there is no
+  // exclusion left to enforce, and refusing would strand a started session.
+  if (existing) return { ok: true, result: { ...existing, created: false } }
 
   const snapshot = buildSnapshot(googleSub, workoutDate, sessionId, snapshotId, input, now)
   await store.insertOccurrence(snapshot.occurrence, snapshot.sets)
@@ -290,13 +303,23 @@ export async function startWorkout(
   // the race, the stored snapshot is theirs and that is the truthful answer.
   const stored = await readWorkout(store, googleSub, workoutDate, sessionId)
   if (!stored) {
-    // The store accepted the insert but cannot read it back. Treat that as a
-    // storage failure rather than inventing a workout.
-    throw new Error('workout occurrence could not be read back after insert')
+    // Nothing is stored at all, and the insert did not throw. The occurrence
+    // statement carries exactly two conditions: ON CONFLICT DO NOTHING, which
+    // can only no-op when a row already EXISTS — and it does not — and the
+    // Round 19 flex guard. So the day was explicitly resolved as Recovery or
+    // Fitness Boxing at the moment this write committed, which a pre-read
+    // taken earlier can miss.
+    //
+    // Nothing was written: no occurrence, and no sets either, because every set
+    // insert is gated on the occurrence carrying this token.
+    return { ok: false, reason: 'training_flex_active' }
   }
   // Whether this attempt created the workout is answered by whose token is
   // stored — a fact, not a timestamp comparison.
-  return { ...stored, created: stored.occurrence.snapshotId === snapshotId }
+  return {
+    ok: true,
+    result: { ...stored, created: stored.occurrence.snapshotId === snapshotId },
+  }
 }
 
 export type SetOutcome =

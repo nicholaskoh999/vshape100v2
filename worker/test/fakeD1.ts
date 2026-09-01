@@ -234,6 +234,8 @@ export function createFakeD1() {
   let holidayFailure: Error | null = null
   /** Set to hold every Holiday write, so a race can be forced. */
   let holidayGate: Promise<void> | null = null
+  /** Set to hold every training_flex write, so a race can be forced. */
+  let trainingFlexGate: Promise<void> | null = null
 
   /**
    * The scheduled-provenance filter the progression reads carry, in the
@@ -278,13 +280,37 @@ export function createFakeD1() {
   }
 
   function execute(sql: string, args: unknown[]) {
-    if (sql.includes('training_flex')) {
+    // Dispatch on the statement's TARGET, not on any table it merely mentions.
+    // Round 19 Correction 2 made each side's write name the other side's table
+    // inside a guard subquery, so a plain `includes` would route the occurrence
+    // claim into this branch and silently drop it.
+    if (sql.includes('training_flex') && !sql.includes('INTO workout_occurrences')) {
       if (trainingFlexFailure) throw trainingFlexFailure
 
       if (sql.includes('INSERT INTO training_flex')) {
         const [google_sub, local_date, kind, created_at, updated_at] = args as [
           string, string, string, number, number,
         ]
+        // Round 19 Correction 2 — the workout guard, modelled ONLY when the real
+        // statement actually carries it. Same rule as the occurrence insert:
+        // remove the `WHERE NOT EXISTS (... workout_occurrences ...)` from the
+        // production SQL and this stops applying, so the forced-race test fails
+        // rather than passing on the stand-in's goodwill.
+        if (sql.includes('workout_occurrences')) {
+          // The guard's own bindings follow the five inserted values.
+          const guardSub = args[5] as string
+          const guardDate = args[6] as string
+          const guardSession = args[7] as string
+          const started = [...occurrences.values()].some(
+            (row) =>
+              row.google_sub === guardSub &&
+              row.workout_date === guardDate &&
+              row.session_id === guardSession &&
+              row.kind === 'scheduled',
+          )
+          if (started) return 0
+        }
+
         const key = `${google_sub}\u0000${local_date}`
         const existing = trainingFlex.get(key)
         // ON CONFLICT DO UPDATE: one row per account per day, and `created_at`
@@ -297,7 +323,7 @@ export function createFakeD1() {
           created_at: existing?.created_at ?? created_at,
           updated_at,
         })
-        return null
+        return 1
       }
 
       if (sql.includes('DELETE FROM training_flex')) {
@@ -1099,16 +1125,9 @@ export function createFakeD1() {
     if (sql.includes('workout_occurrences')) {
       if (workoutFailure) throw workoutFailure
 
-      if (sql.includes('SELECT')) {
-        const [google_sub, workout_date, session_id] = args as [string, string, string]
-        const row = occurrences.get(occurrenceId(google_sub, workout_date, session_id))
-        if (!row) return null
-        // The progression read carries `AND kind = 'scheduled'`; the workout
-        // API's read does not. Honouring the difference is what lets a test
-        // prove an Extra is invisible to progression but readable as a workout.
-        return scheduledOnly(sql, [row])[0] ?? null
-      }
-
+      // INSERT is matched BEFORE SELECT here, because Round 19 Correction 2 made
+      // the occurrence claim an `INSERT ... SELECT ... WHERE NOT EXISTS`. It
+      // contains the word SELECT and is emphatically not a read.
       if (sql.includes('INSERT INTO workout_occurrences')) {
         const [
           google_sub,
@@ -1127,6 +1146,25 @@ export function createFakeD1() {
           string, string, string, number, number,
         ]
         const id = occurrenceId(google_sub, workout_date, session_id)
+
+        // Round 19 Correction 2 — the flex guard, modelled ONLY when the real
+        // statement actually carries it.
+        //
+        // The condition is read off the SQL the production store sent. Remove
+        // the `WHERE NOT EXISTS (... training_flex ...)` from that statement and
+        // this branch stops applying it, so the forced-race test fails. The
+        // stand-in cannot "know the answer the test wants" — it only mirrors the
+        // contract the statement itself declares.
+        if (sql.includes('training_flex') && kind === 'scheduled') {
+          const flexed = [...trainingFlex.values()].some(
+            (row) => row.google_sub === google_sub && row.local_date === workout_date,
+          )
+          // The guard refuses: zero rows inserted. Every set insert is separately
+          // gated on the occurrence carrying this token, so they write nothing
+          // either — no extra modelling is needed here.
+          if (flexed) return 0
+        }
+
         // ON CONFLICT DO NOTHING: one occurrence per account + date + session.
         // This is what decides the winner of a concurrent first Start —
         // exactly one attempt's token reaches the table.
@@ -1144,8 +1182,19 @@ export function createFakeD1() {
             started_at,
             updated_at,
           })
+          return 1
         }
-        return null
+        return 0
+      }
+
+      if (sql.includes('SELECT')) {
+        const [google_sub, workout_date, session_id] = args as [string, string, string]
+        const row = occurrences.get(occurrenceId(google_sub, workout_date, session_id))
+        if (!row) return null
+        // The progression read carries `AND kind = 'scheduled'`; the workout
+        // API's read does not. Honouring the difference is what lets a test
+        // prove an Extra is invisible to progression but readable as a workout.
+        return scheduledOnly(sql, [row])[0] ?? null
       }
 
       if (sql.includes('UPDATE workout_occurrences')) {
@@ -1318,8 +1367,17 @@ export function createFakeD1() {
             // D1 has a single writer, so statements commit one at a time. The
             // gate lets a test park two of them mid-flight and release them in
             // order, which is the window a check-then-write would lose.
-            if (holidayGate && sql.includes('holiday_overrides')) {
-              await holidayGate
+            // Round 19 Correction 2: the flex write is a single statement, so
+            // it parks here rather than at the batch gate. Parking it lets a
+            // test drive BOTH sides past their pre-reads before either commits.
+            const gate =
+              holidayGate && sql.includes('holiday_overrides')
+                ? holidayGate
+                : trainingFlexGate && sql.includes('INSERT INTO training_flex')
+                  ? trainingFlexGate
+                  : null
+            if (gate) {
+              await gate
               const previous = writeChain
               let finished!: () => void
               writeChain = new Promise<void>((resolve) => {
@@ -1428,6 +1486,22 @@ export function createFakeD1() {
      * persistence before either commits — the window the conditional writes
      * exist to close. Released writes run one at a time, in arrival order.
      */
+    /**
+     * Hold every training-flex write until the returned function is called.
+     *
+     * The counterpart to `holdBatches` for the other side of the Round 19
+     * exclusion, so a test can force either write order deterministically.
+     */
+    holdTrainingFlexWrites() {
+      let release!: () => void
+      trainingFlexGate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      return () => {
+        release()
+        trainingFlexGate = null
+      }
+    },
     holdHolidayWrites() {
       let release!: () => void
       holidayGate = new Promise<void>((resolve) => {

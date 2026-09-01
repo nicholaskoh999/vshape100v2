@@ -25,6 +25,14 @@
  *   4. The composite foreign key on (account, date, session, snapshot_id)
  *      backs this up structurally: a set row whose token is not the stored
  *      occurrence's cannot exist even if a future caller bypassed (2).
+ *   5. Round 19 Correction 2: the occurrence insert additionally requires that
+ *      no training-flex row exists for that account and date, evaluated inside
+ *      the same statement. A day resolved as Recovery or Fitness Boxing
+ *      therefore cannot have its scheduled session started even by a request
+ *      that read "no flex" a moment earlier — and because every set insert is
+ *      already gated on the occurrence carrying THIS token, a blocked Start
+ *      writes zero sets too, with no extra code. The guard is inert for an
+ *      Extra, which was never the day's obligation.
  *
  * None of this depends on timing, on a process-local lock, or on comparing
  * timestamps — a lock inside one isolate would not be seen by another.
@@ -285,8 +293,25 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
         // their token nowhere in the table.
         db
           .prepare(
+            // Two conditions, both evaluated as part of the write.
+            //
+            // ON CONFLICT DO NOTHING settles concurrent Starts: exactly one
+            // token reaches the table.
+            //
+            // WHERE NOT EXISTS settles the Round 19 exclusion: a day the user
+            // explicitly resolved as Recovery or Fitness Boxing cannot have its
+            // scheduled session started, and that is decided HERE rather than by
+            // an earlier read the winner may already have invalidated.
+            //
+            // The `? = 'scheduled'` term carries this occurrence's own kind, so
+            // the guard applies to a scheduled Start and is inert for an Extra —
+            // Extra is voluntary and was never the day's obligation.
             `INSERT INTO workout_occurrences (${OCCURRENCE_COLUMNS})
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+              WHERE NOT EXISTS (
+                    SELECT 1 FROM training_flex
+                     WHERE google_sub = ? AND local_date = ? AND ? = 'scheduled'
+              )
              ON CONFLICT (google_sub, workout_date, session_id) DO NOTHING`,
           )
           .bind(
@@ -301,6 +326,10 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
             occurrence.intensity,
             occurrence.startedAt,
             occurrence.updatedAt,
+            // The flex guard's own bindings.
+            occurrence.googleSub,
+            occurrence.workoutDate,
+            occurrence.kind,
           ),
         ...sets.map((set) =>
           db

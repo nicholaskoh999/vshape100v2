@@ -7,10 +7,22 @@ import {
   startWorkout,
   summariseSets,
   undoSet,
+  type StartOutcome,
+  type StartResult,
   type WorkoutStartInput,
   type WorkoutStore,
 } from '../workouts/workouts'
 import { createFakeD1 } from './fakeD1'
+
+/**
+ * Round 19 Correction 2 made Start return an outcome rather than a log, because
+ * the conditional write can now legitimately refuse. These tests are about the
+ * ordinary path, so they assert the refusal never happens and read through.
+ */
+function unwrap(outcome: StartOutcome): StartResult {
+  if (!outcome.ok) throw new Error(`unexpected Start refusal: ${outcome.reason}`)
+  return outcome.result
+}
 
 /**
  * Round 08 — the workout log store and its rules.
@@ -97,7 +109,7 @@ describe('starting a workout', () => {
   it('creates the occurrence and every expected set, all pending', async () => {
     const { store } = makeStore()
 
-    const result = await startWorkout(store, ACCOUNT_A, DATE, 'monday', MONDAY)
+    const result = unwrap(await startWorkout(store, ACCOUNT_A, DATE, 'monday', MONDAY))
 
     expect(result.created).toBe(true)
     expect(result.occurrence.day).toBe('Monday')
@@ -128,7 +140,7 @@ describe('starting a workout', () => {
 
   it('carries the snapshot onto every set of its exercise', async () => {
     const { store } = makeStore()
-    const result = await startWorkout(store, ACCOUNT_A, DATE, 'monday', MONDAY)
+    const result = unwrap(await startWorkout(store, ACCOUNT_A, DATE, 'monday', MONDAY))
 
     const first = result.sets.filter((set) => set.exerciseOrder === 0)
     expect(first).toHaveLength(4)
@@ -145,7 +157,7 @@ describe('starting a workout', () => {
 
   it('keeps a null equipment snapshot null rather than inventing one', async () => {
     const { store } = makeStore()
-    const result = await startWorkout(store, ACCOUNT_A, DATE, 'wednesday', WEDNESDAY)
+    const result = unwrap(await startWorkout(store, ACCOUNT_A, DATE, 'wednesday', WEDNESDAY))
     expect(result.sets[0].equipment).toBeNull()
   })
 
@@ -153,7 +165,7 @@ describe('starting a workout', () => {
     const { store, db } = makeStore()
 
     await startWorkout(store, ACCOUNT_A, DATE, 'monday', MONDAY)
-    const second = await startWorkout(store, ACCOUNT_A, DATE, 'monday', MONDAY)
+    const second = unwrap(await startWorkout(store, ACCOUNT_A, DATE, 'monday', MONDAY))
 
     expect(second.created).toBe(false)
     expect(second.sets).toHaveLength(7)
@@ -198,7 +210,7 @@ describe('historical snapshot immutability', () => {
         },
       ],
     }
-    const resumed = await startWorkout(store, ACCOUNT_A, DATE, 'monday', changed)
+    const resumed = unwrap(await startWorkout(store, ACCOUNT_A, DATE, 'monday', changed))
 
     expect(resumed.created).toBe(false)
     // The stored history still describes what was actually performed.
@@ -221,7 +233,7 @@ describe('historical snapshot immutability', () => {
       load: { value: 20, unit: 'kg' },
     })
 
-    const resumed = await startWorkout(store, ACCOUNT_A, DATE, 'monday', MONDAY)
+    const resumed = unwrap(await startWorkout(store, ACCOUNT_A, DATE, 'monday', MONDAY))
 
     expect(resumed.sets[0].status).toBe('completed')
     expect(resumed.sets[0].result).toBe(12)
@@ -366,9 +378,15 @@ async function raceStarts(first: WorkoutStartInput, second: WorkoutStartInput) {
 
   await flushMicrotasks()
   release()
-  const [firstResult, secondResult] = await Promise.all([firstStart, secondStart])
+  const [firstOutcome, secondOutcome] = await Promise.all([firstStart, secondStart])
 
-  return { store, db, observed, firstResult, secondResult }
+  return {
+    store,
+    db,
+    observed,
+    firstResult: unwrap(firstOutcome),
+    secondResult: unwrap(secondOutcome),
+  }
 }
 
 /** Assert the stored workout is EXACTLY `winner` and carries nothing of `loser`. */
@@ -488,7 +506,7 @@ describe('concurrent first start', () => {
 
     // And a later ordinary Start still resumes the winner rather than
     // reopening the race.
-    const resumed = await startWorkout(store, ACCOUNT_A, DATE, 'monday', RACE_B)
+    const resumed = unwrap(await startWorkout(store, ACCOUNT_A, DATE, 'monday', RACE_B))
     expect(resumed.created).toBe(false)
     expect(resumed.occurrence.focus).toBe(RACE_A.focus)
     expect(resumed.sets).toHaveLength(4)
