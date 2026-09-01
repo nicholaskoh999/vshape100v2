@@ -46,8 +46,13 @@ export type ProgressionState = {
   clearFeedback: (exerciseOrder: number) => Promise<void>
 }
 
-type Attempt = { date: string; sessionId: string; id: string }
-type Loaded = { id: string; guidance: SessionGuidance }
+/**
+ * The workout guidance belongs to. Stable for the life of the page, so a
+ * re-read triggered by a change to the workout REPLACES the answer rather than
+ * emptying the panel and letting the layout jump on every Complete.
+ */
+type Attempt = { date: string; sessionId: string; key: string; id: string }
+type Loaded = { key: string; guidance: SessionGuidance }
 
 export function useProgression(
   date: string,
@@ -57,12 +62,17 @@ export function useProgression(
   const { enabled, revision } = options
 
   const attempt: Attempt = useMemo(
-    () => ({ date, sessionId, id: `${date}#${sessionId}#${revision}` }),
+    () => ({
+      date,
+      sessionId,
+      key: `${date}#${sessionId}`,
+      id: `${date}#${sessionId}#${revision}`,
+    }),
     [date, sessionId, revision],
   )
 
   const [loaded, setLoaded] = useState<Loaded | null>(null)
-  const [failedId, setFailedId] = useState<string | null>(null)
+  const [failedKey, setFailedKey] = useState<string | null>(null)
   const [busyLane, setBusyLane] = useState<number | null>(null)
   const [mutationError, setMutationError] = useState<string | null>(null)
 
@@ -75,14 +85,17 @@ export function useProgression(
     fetchProgression(attempt.date, attempt.sessionId, controller.signal)
       .then((result) => {
         if (!active) return
-        setLoaded({ id: attempt.id, guidance: result })
+        setLoaded({ key: attempt.key, guidance: result })
+        setFailedKey(null)
       })
       .catch((error: unknown) => {
         if (!active || controller.signal.aborted) return
-        // Guidance is subordinate to logging. Say nothing rather than showing a
-        // suggestion built on a read that failed.
+        // Guidance is subordinate to logging. Drop what was on screen rather
+        // than leaving a suggestion up that this read could not confirm — a
+        // stale one could describe history the user has since taken back.
         console.error('Training guidance could not be loaded', error)
-        setFailedId(attempt.id)
+        setLoaded(null)
+        setFailedKey(attempt.key)
       })
 
     return () => {
@@ -91,13 +104,13 @@ export function useProgression(
     }
   }, [attempt, enabled])
 
-  const matched = loaded?.id === attempt.id
+  const matched = loaded?.key === attempt.key
 
   const status: ProgressionStatus = !enabled
     ? 'idle'
     : matched
       ? 'ready'
-      : failedId === attempt.id
+      : failedKey === attempt.key
         ? 'error'
         : 'loading'
 
@@ -127,8 +140,8 @@ export function useProgression(
         const next = await request()
         // The server's re-derived answer is adopted, so what is on screen is
         // what a fresh read would say — not what the browser assumed.
-        setLoaded({ id: attempt.id, guidance: next })
-        setFailedId(null)
+        setLoaded({ key: attempt.key, guidance: next })
+        setFailedKey(null)
       } catch (error: unknown) {
         console.error('Calibration could not be saved', error)
         setMutationError(failure)

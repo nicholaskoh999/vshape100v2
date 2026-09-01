@@ -24,7 +24,7 @@ import type {
   ProgressionRuleset,
   ProgressionState,
 } from '@shared/progression/engine'
-import type { CalibrationFeedback } from '@shared/progression/lane'
+import type { CalibrationFeedback, ProgressionLane } from '@shared/progression/lane'
 
 export type {
   CalibrationView,
@@ -32,6 +32,7 @@ export type {
   FactualReference,
   LaneRecommendation,
   LaneTarget,
+  ProgressionLane,
   ProgressionReasonCode,
   ProgressionRuleset,
   ProgressionState,
@@ -123,6 +124,35 @@ function toCalibration(raw: unknown): CalibrationView | null {
   }
 }
 
+/**
+ * The lane identity, read back for display only.
+ *
+ * The browser never BUILDS one: lane identity is server-side truth, derived
+ * from the stored snapshot. Reading it back lets a surface show what work a
+ * recommendation is about without re-deriving anything.
+ */
+function toLaneIdentity(raw: unknown): ProgressionLane | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const row = raw as Record<string, unknown>
+  if (typeof row.sessionId !== 'string' || typeof row.exerciseId !== 'string') return null
+  if (typeof row.setCount !== 'number') return null
+  if (typeof row.lower !== 'number' || typeof row.upper !== 'number') return null
+  if (row.resultKind !== 'reps' && row.resultKind !== 'seconds') return null
+  if (row.loadMode !== 'none' && row.loadMode !== 'kg' && row.loadMode !== 'kg_each') {
+    return null
+  }
+  return {
+    sessionId: row.sessionId,
+    exerciseId: row.exerciseId,
+    setCount: row.setCount,
+    lower: row.lower,
+    upper: row.upper,
+    resultKind: row.resultKind,
+    loadMode: row.loadMode,
+    perSide: row.perSide === true,
+  }
+}
+
 function toTarget(raw: unknown): LaneTarget | null {
   if (typeof raw !== 'object' || raw === null) return null
   const row = raw as Record<string, unknown>
@@ -178,9 +208,7 @@ function toLane(raw: unknown): LaneRecommendation | null {
     exerciseName: typeof row.exerciseName === 'string' ? row.exerciseName : row.exerciseId,
     prescription: typeof row.prescription === 'string' ? row.prescription : '',
     fingerprint: typeof row.fingerprint === 'string' ? row.fingerprint : null,
-    // The lane identity itself is server-side truth; the browser never rebuilds
-    // one, so it is carried opaquely and only used for display keys.
-    lane: null,
+    lane: toLaneIdentity(row.lane),
     state: row.state as ProgressionState,
     reasonCode: row.reasonCode as ProgressionReasonCode,
     gap: (row.gap ?? null) as EvidenceGap | null,

@@ -503,6 +503,32 @@ describe('5. guidance is subordinate to logging', () => {
     await panel.findByText(/Completed · 12 reps/)
   })
 
+  it('stays on screen while it re-reads, so the flow does not jump', async () => {
+    seedWorkout('monday', LAST_WEEK, { 0: atLoad(20, [12, 12, 11, 10]) })
+    seedWorkout('monday', DATE)
+    const progression = createProgressionServer(server)
+    mockAuthFetch({ session: authenticatedSession, workouts: server, progression })
+
+    const u = await openSession('monday')
+    await screen.findByText('Resume workout')
+    const panel = await openExercise(u, 'Lat Pulldown')
+    expect(await guidanceState(0)).toBe('Build reps')
+
+    // Hold the re-read that completing a set triggers.
+    const release = progression.holdReads()
+    await u.type(panel.getAllByLabelText('Reps')[0], '15')
+    await u.click(panel.getAllByRole('button', { name: /^Complete$/ })[0])
+    await panel.findByText(/Completed · 15 reps/)
+
+    // The previous answer is still up: guidance never blanks mid-workout.
+    expect(screen.getByTestId('guidance-state-0')).toBeInTheDocument()
+
+    release()
+    await waitFor(() => {
+      expect(progression.calls.filter((call) => call.method === 'GET').length).toBeGreaterThan(1)
+    })
+  })
+
   it('never asks for guidance before a workout exists', async () => {
     const spy = mockAuthFetch({ session: authenticatedSession, workouts: server })
     await openSession('monday')

@@ -33,6 +33,8 @@ export type ProgressionServer = {
   failReads: (count?: number) => void
   /** Fail the next `count` writes. */
   failMutations: (count?: number) => void
+  /** Hold every read until the returned function is called. */
+  holdReads: () => () => void
   handle: (url: string, init?: RequestInit) => Promise<Response>
 }
 
@@ -71,6 +73,7 @@ export function createProgressionServer(workouts: WorkoutServer): ProgressionSer
   const calls: ProgressionServer['calls'] = []
   let readFailures = 0
   let mutationFailures = 0
+  let readGate: Promise<void> | null = null
 
   function calibrationKey(date: string, sessionId: string, exerciseOrder: number) {
     return `${date}#${sessionId}#${exerciseOrder}`
@@ -124,6 +127,7 @@ export function createProgressionServer(workouts: WorkoutServer): ProgressionSer
     const [date, sessionId] = segments
 
     if (segments.length === 2 && method === 'GET') {
+      if (readGate) await readGate
       if (readFailures > 0) {
         readFailures -= 1
         return jsonResponse({ error: 'server_error' }, 500)
@@ -197,6 +201,16 @@ export function createProgressionServer(workouts: WorkoutServer): ProgressionSer
     },
     failMutations: (count = 1) => {
       mutationFailures = count
+    },
+    holdReads: () => {
+      let release!: () => void
+      readGate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      return () => {
+        readGate = null
+        release()
+      }
     },
     handle,
   }
