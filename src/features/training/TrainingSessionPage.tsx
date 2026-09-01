@@ -5,11 +5,12 @@ import { Link, useParams } from 'react-router'
 import { Card } from '@/components/ui/Card'
 import { IntensityBadge } from '@/components/ui/IntensityBadge'
 import { PageHeader } from '@/components/ui/PageHeader'
+import { useLocalToday } from '@/features/progress/useLocalToday'
 import { ExerciseAccordion } from './ExerciseAccordion'
 import { getSession, type TrainingSession } from './sessions'
 import { useProgression } from './useProgression'
 import { useWorkoutLog } from './useWorkoutLog'
-import { buildWorkoutPlan, localWorkoutDate, toStartPayload } from './workoutPlan'
+import { buildWorkoutPlan, toStartPayload } from './workoutPlan'
 
 /** Nested shell: /training/:session */
 export function TrainingSessionPage() {
@@ -33,10 +34,24 @@ export function TrainingSessionPage() {
 }
 
 function SessionView({ session }: { session: TrainingSession }) {
-  // The user's own calendar date, fixed for this mount so the workout cannot
-  // change identity mid-session. No timezone is hardcoded.
-  const [date] = useState(() => localWorkoutDate())
+  // Round 18: the same rollover fix Round 17 gave the Extra page, for the same
+  // reason. Read once at mount, a session opened at 23:58 and started at 00:05
+  // filed the workout under YESTERDAY — a day the user did not train on.
+  //
+  // So the date follows the clock while nothing has been started, and is PINNED
+  // the moment a workout exists: sets already logged happened on that date, and
+  // a started occurrence is never moved or rewritten.
+  const liveToday = useLocalToday()
+  const [pinnedDate, setPinnedDate] = useState<string | null>(null)
+  const date = pinnedDate ?? liveToday
+
   const workout = useWorkoutLog(date, session.id)
+
+  // Adjusted during render rather than in an effect — React supports this for
+  // deriving state from what was just learned, and an effect here would trip
+  // the cascading-render rule and flash the wrong date first. Pinning on the
+  // CONFIRMED read means a resumed workout is held too, not only a new one.
+  if (workout.started && pinnedDate === null) setPinnedDate(date)
 
   // Guidance is DERIVED from stored history, so it is read only once a workout
   // exists, and re-read whenever that workout changes — a Complete, a Skip or

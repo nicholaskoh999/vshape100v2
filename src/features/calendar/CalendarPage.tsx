@@ -5,7 +5,7 @@ import { useMemo, useRef, useState } from 'react'
 import { Card } from '@/components/ui/Card'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { listItemVariants, listVariants, press } from '@/design/motion'
-import { localWorkoutDate } from '@/features/training/workoutPlan'
+import { useLocalToday } from '@/features/progress/useLocalToday'
 import { cn } from '@/lib/utils'
 import { rangeCanTrain, type HolidayRecord } from '@shared/holiday'
 import {
@@ -54,7 +54,9 @@ type Feedback =
   | { state: 'error'; message: string }
 
 export function CalendarPage() {
-  const [today] = useState(() => localWorkoutDate())
+  // Round 18: kept current, so the "today" ring moves to the new day at local
+  // midnight instead of staying on yesterday until a reload.
+  const today = useLocalToday()
   const [view, setView] = useState(() => monthOf(today))
 
   // Selection is a pair of local dates. `anchor` is set by the first click of

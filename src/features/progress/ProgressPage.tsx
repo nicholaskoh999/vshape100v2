@@ -1,6 +1,6 @@
 import { CalendarDays, Dumbbell, Loader2, RefreshCw } from "lucide-react";
 import { motion } from "motion/react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import { Card } from "@/components/ui/Card";
 import { IntensityBadge } from "@/components/ui/IntensityBadge";
@@ -8,7 +8,6 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { listItemVariants, listVariants } from "@/design/motion";
 import { useFoundationStart } from "@/features/settings/FoundationStartContext";
 import type { SessionIntensity } from "@/features/training/sessions";
-import { localWorkoutDate } from "@/features/training/workoutPlan";
 import { cn } from "@/lib/utils";
 import { pendingSets, type WorkoutProgress } from "@shared/workoutLog";
 import { BodyWeightCard } from "./BodyWeightCard";
@@ -17,6 +16,7 @@ import { foundationLabel, foundationStatus } from "./foundation";
 import type { WorkoutHistoryEntry } from "./historyApi";
 import { PersonalBestCard } from "./PersonalBestCard";
 import { usePerformance } from "./usePerformance";
+import { useLocalToday } from "./useLocalToday";
 import { useWorkoutHistory } from "./useWorkoutHistory";
 
 /**
@@ -36,8 +36,11 @@ import { useWorkoutHistory } from "./useWorkoutHistory";
  * need it, so opening Progress does not walk the whole set history twice.
  */
 export function ProgressPage() {
-  // The user's own calendar date, fixed for this mount.
-  const [today] = useState(() => localWorkoutDate());
+  // Round 18: the user's own calendar date, kept CURRENT while the page stays
+  // open. Pinned at mount, a Progress tab left open overnight kept showing
+  // yesterday's Foundation day until someone reloaded — the day number is the
+  // headline of this page, so it has to follow the clock.
+  const today = useLocalToday();
   // The one shared Foundation start contract.
   const foundationStart = useFoundationStart();
   const foundation = useMemo(

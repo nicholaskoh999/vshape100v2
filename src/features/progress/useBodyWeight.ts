@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import type { BodyWeightRange } from '@shared/bodyWeight'
 
+import { useLocalToday } from './useLocalToday'
+
 import {
   deleteWeight,
   fetchWeightHistory,
@@ -52,9 +54,20 @@ export function useBodyWeight(): BodyWeightState {
   const [failedId, setFailedId] = useState<number | null>(null)
   const [write, setWrite] = useState<WriteState>({ status: 'idle' })
 
+  // Round 18: the local date is part of the read identity.
+  //
+  // 30D and 90D are windows ending TODAY, computed server-side. A card left
+  // open across local midnight therefore kept showing yesterday's window under
+  // today's label until something else happened to refetch. Folding the date in
+  // re-reads exactly once, when the day actually turns.
+  //
+  // Only this hook re-reads. The entry form's typed draft and its selected
+  // backfill date live in the form's own state and are untouched by a refetch.
+  const today = useLocalToday()
+
   // A read is identified by its attempt AND its range, so switching windows
   // shows "loading" rather than the previous window's points relabelled.
-  const readId = useMemo(() => `${attempt}:${range}`, [attempt, range])
+  const readId = useMemo(() => `${attempt}:${range}:${today}`, [attempt, range, today])
   const matched = loaded?.id === attempt && loaded.history.range === range
 
   const status: BodyWeightStatus = matched
@@ -84,7 +97,7 @@ export function useBodyWeight(): BodyWeightState {
       active = false
       controller.abort()
     }
-    // readId folds both dependencies into one identity.
+    // readId folds all three dependencies into one identity.
   }, [readId, attempt, range])
 
   const reload = useCallback(() => setAttempt((n) => n + 1), [])

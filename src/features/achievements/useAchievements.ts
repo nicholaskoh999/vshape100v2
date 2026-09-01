@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 
 import { foundationStatus } from '@/features/progress/foundation'
+import { useLocalToday } from '@/features/progress/useLocalToday'
 import { useFoundationStart } from '@/features/settings/FoundationStartContext'
-import { localWorkoutDate } from '@/features/training/workoutPlan'
 
 import { buildMilestones, type Milestone } from './model/milestones'
 import { evaluateStreaks, type StreakEvaluation } from './model/streak'
@@ -36,9 +36,12 @@ export type AchievementsView = {
 }
 
 export function useAchievements(): AchievementsView {
-  // Pinned once, like Calendar and Progress: the page must not re-derive its
-  // period on every clock tick and refetch behind the user.
-  const [today] = useState(() => localWorkoutDate())
+  // Round 18: the local date, kept current. It changes at most once a day —
+  // `useLocalToday` fires on the next local midnight and on visibility/focus
+  // recovery, never on a clock tick — so this does not refetch behind the user,
+  // and at midnight the evaluation period genuinely should extend to the new
+  // day rather than silently stopping at yesterday.
+  const today = useLocalToday()
 
   // The one shared start date. Achievements no longer decides for itself when
   // Foundation began.
