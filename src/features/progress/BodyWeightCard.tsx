@@ -37,6 +37,22 @@ const RANGE_LABELS: Record<BodyWeightRange, string> = {
 export function BodyWeightCard() {
   const { status, history, range, setRange, write, save, remove, reload } = useBodyWeight();
 
+  // Round 18 Correction 1: has a read EVER settled?
+  //
+  // The entry form must keep its own state — a half-typed weight, a deliberately
+  // chosen backfill date — across a background refetch. Folding the local date
+  // into the read identity means midnight now genuinely re-reads, so the card
+  // passes through `loading` (and possibly `error`) while the user may be in the
+  // middle of typing. If the form only existed inside the `ready` branch it
+  // would UNMOUNT on the way through, and React would discard that draft.
+  //
+  // So once history has arrived the form stays mounted at a fixed position in
+  // the tree, whatever the read is doing afterwards. History-derived props fall
+  // back to empty rather than to the previous day's values: the draft is the
+  // user's, but the numbers are not ours to keep showing.
+  const [everLoaded, setEverLoaded] = useState(false);
+  if (history !== null && !everLoaded) setEverLoaded(true);
+
   return (
     <Card className="p-5">
       <div data-body-weight data-body-weight-state={status}>
@@ -111,14 +127,22 @@ export function BodyWeightCard() {
               </div>
             )}
 
-            <MeasurementForm
-              write={write}
-              latest={history.summary.latest}
-              onSave={save}
-              onDelete={remove}
-              points={history.points}
-            />
           </>
+        )}
+
+        {/*
+          A FIXED position in the tree, deliberately outside every status
+          branch, so a refetch cannot remount it and throw away what the user
+          was typing.
+        */}
+        {(status === "ready" || everLoaded) && (
+          <MeasurementForm
+            write={write}
+            latest={history?.summary.latest ?? null}
+            onSave={save}
+            onDelete={remove}
+            points={history?.points ?? []}
+          />
         )}
       </div>
     </Card>

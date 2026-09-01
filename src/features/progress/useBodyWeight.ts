@@ -45,13 +45,19 @@ export type BodyWeightState = {
   reload: () => void
 }
 
-type Loaded = { id: number; history: WeightHistory }
+/**
+ * A settled read, tagged with the FULL identity it answered.
+ *
+ * `id` is the whole read key — attempt, range and local date — not just the
+ * attempt. See the note on `readId` below for why the day has to be in here.
+ */
+type Loaded = { id: string; history: WeightHistory }
 
 export function useBodyWeight(): BodyWeightState {
   const [range, setRange] = useState<BodyWeightRange>('90d')
   const [attempt, setAttempt] = useState(0)
   const [loaded, setLoaded] = useState<Loaded | null>(null)
-  const [failedId, setFailedId] = useState<number | null>(null)
+  const [failedId, setFailedId] = useState<string | null>(null)
   const [write, setWrite] = useState<WriteState>({ status: 'idle' })
 
   // Round 18: the local date is part of the read identity.
@@ -65,14 +71,23 @@ export function useBodyWeight(): BodyWeightState {
   // backfill date live in the form's own state and are untouched by a refetch.
   const today = useLocalToday()
 
-  // A read is identified by its attempt AND its range, so switching windows
-  // shows "loading" rather than the previous window's points relabelled.
+  // A read is identified by its attempt, its range AND the local day.
+  //
+  // Round 18 Correction 1: the day was folded into the key that STARTS a read
+  // but not into the identity that SETTLES one, which meant the two disagreed
+  // for exactly as long as a rollover refetch was in flight — and permanently
+  // if that refetch failed. Yesterday's 30D window then stayed on screen
+  // labelled `ready` under today's heading, and the failure never surfaced,
+  // because the stale result kept satisfying `matched`.
+  //
+  // One key now does both jobs, so a settled result can only ever answer the
+  // read it was actually issued for.
   const readId = useMemo(() => `${attempt}:${range}:${today}`, [attempt, range, today])
-  const matched = loaded?.id === attempt && loaded.history.range === range
+  const matched = loaded?.id === readId && loaded.history.range === range
 
   const status: BodyWeightStatus = matched
     ? 'ready'
-    : failedId === attempt
+    : failedId === readId
       ? 'error'
       : 'loading'
 
@@ -83,14 +98,16 @@ export function useBodyWeight(): BodyWeightState {
     fetchWeightHistory(range, controller.signal)
       .then((history) => {
         if (!active) return
-        setLoaded({ id: attempt, history })
+        setLoaded({ id: readId, history })
       })
       .catch((error: unknown) => {
         if (!active || controller.signal.aborted) return
         // Never fall back to an empty history: that would tell someone they
-        // have recorded nothing when the truth is we could not find out.
+        // have recorded nothing when the truth is we could not find out. And
+        // never leave the PREVIOUS day's history standing as the answer — a
+        // failed rollover must read as an error, not as yesterday's numbers.
         console.error('Body weight could not be loaded', error)
-        setFailedId(attempt)
+        setFailedId(readId)
       })
 
     return () => {
@@ -98,7 +115,7 @@ export function useBodyWeight(): BodyWeightState {
       controller.abort()
     }
     // readId folds all three dependencies into one identity.
-  }, [readId, attempt, range])
+  }, [readId, range])
 
   const reload = useCallback(() => setAttempt((n) => n + 1), [])
 
