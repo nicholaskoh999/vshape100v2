@@ -24,6 +24,7 @@ import { runScheduledDelivery } from './notifications/scheduler'
 import { createD1ScheduleTruth } from './notifications/truth'
 import { handleSettingsRequest } from './settings/routes'
 import { handleTodayRequest } from './today/routes'
+import { handleTrainingFlexRequest } from './trainingFlex/routes'
 import { handleWorkoutRequest } from './workouts/routes'
 
 export default {
@@ -57,6 +58,9 @@ export default {
 
     const settingsResponse = await handleSettingsRequest(request, env)
     if (settingsResponse) return settingsResponse
+
+    const trainingFlexResponse = await handleTrainingFlexRequest(request, env)
+    if (trainingFlexResponse) return trainingFlexResponse
 
     return env.ASSETS.fetch(request)
   },

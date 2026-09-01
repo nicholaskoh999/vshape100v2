@@ -17,6 +17,8 @@ import { createD1HolidayStore } from '../holiday/d1Store'
 import { listHolidays } from '../holiday/holiday'
 import { createD1CompletionStore } from '../today/d1Store'
 import { listCompletions } from '../today/completions'
+import { createD1TrainingFlexStore } from '../trainingFlex/d1Store'
+import { readTrainingFlexRange } from '../trainingFlex/trainingFlex'
 import { createD1WorkoutStore, UnreadableProvenanceError } from '../workouts/d1Store'
 import { readWorkout } from '../workouts/workouts'
 import { isFullyResolved, summariseSets } from '../../shared/workoutLog'
@@ -44,6 +46,24 @@ export function createD1ScheduleTruth(db: D1Database): ScheduleTruth {
         // The occurrence key IS the identity Today uses, so a completion made
         // on the page suppresses the reminder for the same occurrence.
         return new Set(rows.map((row) => row.occurrenceKey))
+      } catch {
+        return null
+      }
+    },
+
+    async flexResolved(googleSub, date) {
+      try {
+        const read = await readTrainingFlexRange(
+          createD1TrainingFlexStore(db),
+          googleSub,
+          date,
+          date,
+        )
+        // A kind this build cannot read is NOT proof the day was resolved, and
+        // it is not proof it was not either. Withholding is the honest answer,
+        // and matches how every other unreadable truth is treated here.
+        if (read.status !== 'ok') return null
+        return read.choices.length > 0
       } catch {
         return null
       }

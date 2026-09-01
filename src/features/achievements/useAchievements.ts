@@ -7,7 +7,11 @@ import { useFoundationStart } from '@/features/settings/FoundationStartContext'
 import { buildMilestones, type Milestone } from './model/milestones'
 import { evaluateStreaks, type StreakEvaluation } from './model/streak'
 import { evaluationChunks, evaluationWindow, type DateRange } from './model/window'
-import { useHolidayChunks, useWorkoutChunks } from './useEvaluationSources'
+import {
+  useHolidayChunks,
+  useTrainingFlexChunks,
+  useWorkoutChunks,
+} from './useEvaluationSources'
 
 /**
  * Everything the Achievements page needs, derived from existing facts.
@@ -67,6 +71,10 @@ export function useAchievements(): AchievementsView {
 
   const workouts = useWorkoutChunks(chunks)
   const holidays = useHolidayChunks(chunks)
+  // Explicit training choices over the same period. A day resolved as Recovery
+  // or Fitness Boxing is neutral — it neither extends nor breaks a streak —
+  // and this is where that truth reaches the evaluation.
+  const flex = useTrainingFlexChunks(chunks)
 
   const streak = useMemo(
     () =>
@@ -75,6 +83,8 @@ export function useAchievements(): AchievementsView {
         from: window.from,
         holidayStatus: holidays.status,
         holidays: holidays.holidays,
+        flexStatus: flex.status,
+        flex: flex.flex,
         historyStatus: workouts.status,
         entries: workouts.entries,
         // Complete only when every chunk covered its own span. Anything less
@@ -86,6 +96,8 @@ export function useAchievements(): AchievementsView {
       window.from,
       holidays.status,
       holidays.holidays,
+      flex.status,
+      flex.flex,
       workouts.status,
       workouts.entries,
       workouts.complete,
@@ -113,8 +125,9 @@ export function useAchievements(): AchievementsView {
     () => () => {
       workouts.reload()
       holidays.reload()
+      flex.reload()
     },
-    [workouts, holidays],
+    [workouts, holidays, flex],
   )
 
   return { today, window, chunks, streak, milestones, reload, foundationStart }

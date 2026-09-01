@@ -99,6 +99,10 @@ function truthOf(
       if (over.workoutFinished === undefined) return false
       return over.workoutFinished
     },
+    // Round 19.2: no day was flexed, so nothing is suppressed here.
+    async flexResolved() {
+      return false
+    },
   }
 }
 
@@ -373,6 +377,10 @@ describe('4. already done', () => {
         return new Set()
       },
       async workoutFinished() {
+        return false
+      },
+      // Round 19.2: no day was flexed, so nothing is suppressed here.
+      async flexResolved() {
         return false
       },
     }

@@ -14,6 +14,13 @@ import {
 import { readProvenance, type WorkoutHistoryEntry } from '@shared/workoutLog'
 
 /**
+ * No day was flexed — the Round 19.2 baseline that preserves what this test
+ * already meant. Flex neutrality has its own file, trainingFlex.test.ts.
+ */
+const NO_FLEX = new Map<string, never>()
+
+
+/**
  * Round 17 correction 1, finding 3 — the client half of failing closed.
  *
  * `scheduled` is the most privileged status the app has: it can satisfy a
@@ -50,6 +57,8 @@ function sources(over: Partial<StreakSources> = {}): StreakSources {
     from: '2026-08-31',
     holidayStatus: 'ready',
     holidays: [],
+    flexStatus: 'ready',
+    flex: NO_FLEX,
     historyStatus: 'ready',
     entries: [],
     coverage: 'complete',

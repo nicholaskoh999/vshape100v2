@@ -446,6 +446,10 @@ describe('D. the production driver', () => {
       async workoutFinished() {
         return null
       },
+      // Round 19.2: no day was flexed, so nothing is suppressed here.
+      async flexResolved() {
+        return false
+      },
     }
 
     const run = await runDriver(db, blind)

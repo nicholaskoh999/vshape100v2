@@ -103,6 +103,14 @@ type OccurrenceRow = {
   updated_at: number
 }
 
+type TrainingFlexRowShape = {
+  google_sub: string
+  local_date: string
+  kind: string | null
+  created_at: number
+  updated_at: number
+}
+
 type AccountSettingsRow = {
   google_sub: string
   foundation_start_date: string | null
@@ -207,6 +215,9 @@ export function createFakeD1() {
   const notificationDeliveries = new Map<string, DeliveryRowShape>()
   const accountSettings = new Map<string, AccountSettingsRow>()
   let settingsFailure: Error | null = null
+  /** Round 19.2 training flex, keyed `google_sub\u0000local_date`. */
+  const trainingFlex = new Map<string, TrainingFlexRowShape>()
+  let trainingFlexFailure: Error | null = null
   const occurrences = new Map<string, OccurrenceRow>()
   const workoutSets = new Map<string, WorkoutSetRow>()
   const calibrations = new Map<string, CalibrationRow>()
@@ -267,6 +278,49 @@ export function createFakeD1() {
   }
 
   function execute(sql: string, args: unknown[]) {
+    if (sql.includes('training_flex')) {
+      if (trainingFlexFailure) throw trainingFlexFailure
+
+      if (sql.includes('INSERT INTO training_flex')) {
+        const [google_sub, local_date, kind, created_at, updated_at] = args as [
+          string, string, string, number, number,
+        ]
+        const key = `${google_sub}\u0000${local_date}`
+        const existing = trainingFlex.get(key)
+        // ON CONFLICT DO UPDATE: one row per account per day, and `created_at`
+        // is kept so a change of mind does not rewrite when the day was first
+        // decided.
+        trainingFlex.set(key, {
+          google_sub,
+          local_date,
+          kind,
+          created_at: existing?.created_at ?? created_at,
+          updated_at,
+        })
+        return null
+      }
+
+      if (sql.includes('DELETE FROM training_flex')) {
+        const [google_sub, local_date] = args as [string, string]
+        trainingFlex.delete(`${google_sub}\u0000${local_date}`)
+        return null
+      }
+
+      if (sql.includes('SELECT')) {
+        const [google_sub, from, to] = args as [string, string, string]
+        return [...trainingFlex.values()]
+          .filter(
+            (row) =>
+              row.google_sub === google_sub &&
+              row.local_date >= from &&
+              row.local_date <= to,
+          )
+          .sort((a, b) => (a.local_date < b.local_date ? -1 : 1))
+      }
+
+      throw new Error(`fakeD1 received an unexpected statement: ${sql}`)
+    }
+
     if (sql.includes('account_settings')) {
       if (settingsFailure) throw settingsFailure
 
@@ -1335,6 +1389,7 @@ export function createFakeD1() {
     completions,
     media,
     accountSettings,
+    trainingFlex,
     occurrences,
     workoutSets,
     calibrations,
@@ -1352,6 +1407,10 @@ export function createFakeD1() {
     },
     breakSettings(error = new Error('D1 unavailable')) {
       settingsFailure = error
+    },
+    /** Make every training_flex statement throw, as D1 would. */
+    breakTrainingFlex(error = new Error('D1 unavailable')) {
+      trainingFlexFailure = error
     },
     breakWorkouts(error = new Error('D1 unavailable')) {
       workoutFailure = error

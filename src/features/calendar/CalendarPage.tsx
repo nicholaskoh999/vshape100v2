@@ -29,6 +29,8 @@ import {
   updateHoliday,
   HolidayApiError,
 } from './holidayApi'
+import { useTrainingFlexRange } from '@/features/today/useTrainingFlexRange'
+import { TRAINING_FLEX_LABELS, type TrainingFlexKind } from '@shared/trainingFlex'
 import { useHolidays } from './useHolidays'
 
 /**
@@ -81,6 +83,10 @@ export function CalendarPage() {
   )
   const span = useMemo(() => gridSpan(emptyGrid), [emptyGrid])
   const { status, holidays, reload } = useHolidays(span)
+  // Explicit training choices over the same span. Shown alongside the day type
+  // rather than replacing it: a Recovery day is still a Monday, and the grid
+  // must not imply the programme changed.
+  const flexRange = useTrainingFlexRange(span)
 
   const days = useMemo(
     () => buildMonthGrid(view.year, view.month, holidays),
@@ -276,6 +282,7 @@ export function CalendarPage() {
             ) : (
               <MonthGrid
                 days={days}
+                flex={flexRange.flex}
                 today={today}
                 selection={selection}
                 // Until the read lands, the month's Holiday state is unknown.
@@ -371,17 +378,25 @@ const TYPE_STYLES: Record<DayType | 'unknown', string> = {
   unknown: 'text-ink-faint',
 }
 
+/** Short badges, so a dense grid can still say WHICH kind of day this was. */
+const FLEX_BADGE: Record<TrainingFlexKind, string> = {
+  recovery: 'Rec',
+  fitness_boxing_2: 'Box',
+}
+
 function MonthGrid({
   days,
   today,
   selection,
   resolved,
+  flex,
   onDayClick,
 }: {
   days: CalendarDay[]
   today: string
   selection: { start: string; end: string } | null
   resolved: boolean
+  flex: ReadonlyMap<string, TrainingFlexKind>
   onDayClick: (day: CalendarDay) => void
 }) {
   return (
@@ -402,6 +417,9 @@ function MonthGrid({
           const selected =
             selection !== null && day.date >= selection.start && day.date <= selection.end
           const shown = resolved ? day.type : 'unknown'
+          // Only a day that PLANS training can carry a flex mark: a weekend or
+          // an exempt Holiday had no session to resolve.
+          const chosen = shown === 'training' ? (flex.get(day.date) ?? null) : null
           return (
             <motion.button
               key={day.date}
@@ -410,18 +428,25 @@ function MonthGrid({
               onClick={() => onDayClick(day)}
               disabled={!resolved}
               aria-label={
-                resolved ? `${day.date} · ${DAY_TYPE_LABEL[day.type]}` : `${day.date} · Checking`
+                resolved
+                  ? `${day.date} · ${
+                      chosen ? TRAINING_FLEX_LABELS[chosen] : DAY_TYPE_LABEL[day.type]
+                    }`
+                  : `${day.date} · Checking`
               }
               aria-selected={selected}
               data-day={day.date}
               data-day-type={shown}
+              data-day-flex={chosen ?? undefined}
               whileTap={press.whileTap}
               transition={press.transition}
               className={cn(
                 'flex aspect-square min-w-0 flex-col items-center justify-center rounded-control border text-[13px] font-bold transition-colors duration-150',
                 day.inMonth ? 'border-edge' : 'border-transparent opacity-40',
                 TYPE_STYLES[shown],
-                selected && 'border-blue bg-blue/15 text-offwhite',
+                // A resolved day reads as deliberate, never as a gap.
+              chosen && 'border-lime/50 bg-lime/10 text-lime',
+              selected && 'border-blue bg-blue/15 text-offwhite',
                 day.date === today && !selected && 'border-blue/60',
                 !resolved && 'cursor-progress',
               )}
@@ -430,6 +455,11 @@ function MonthGrid({
               {shown === 'holiday' && (
                 <span aria-hidden="true" className="mt-0.5 text-[9px] font-extrabold uppercase">
                   Hol
+                </span>
+              )}
+              {chosen && (
+                <span aria-hidden="true" className="mt-0.5 text-[9px] font-extrabold uppercase text-lime">
+                  {FLEX_BADGE[chosen]}
                 </span>
               )}
             </motion.button>

@@ -14,7 +14,7 @@ import type { HolidayRecord } from '@shared/holiday'
 import { addLocalDays, isLocalDate, weekdayOf } from '@shared/localDate'
 import { isFullyResolved, type WorkoutHistoryEntry } from '@shared/workoutLog'
 
-import { scheduledDayFor } from './schedule'
+import { scheduledDayFor, type TrainingFlexDays } from './schedule'
 
 /**
  * What one date contributed.
@@ -118,6 +118,14 @@ export type OutcomeContext = {
   /** Today's local calendar date. */
   today: string
   holidays: readonly HolidayRecord[]
+  /**
+   * Days the user explicitly resolved as Recovery or an alternative activity.
+   *
+   * Carried here rather than consulted separately so a flex day can only reach
+   * the streak through `scheduledDayFor`, which is the one place that decides
+   * what a date plans.
+   */
+  flex: TrainingFlexDays
   qualifying: ReadonlySet<string>
 }
 
@@ -125,7 +133,7 @@ export type OutcomeContext = {
 export function outcomeFor(date: string, context: OutcomeContext): DayOutcome {
   if (date > context.today) return 'future'
 
-  const planned = scheduledDayFor(date, context.holidays)
+  const planned = scheduledDayFor(date, context.holidays, context.flex)
   // An unreadable date is not silently neutral — it is not judged either.
   if (planned === null) return 'future'
   if (planned.kind === 'neutral') return 'neutral'
@@ -141,6 +149,7 @@ export type StreakWindow = {
   /** Today's local calendar date; the window's last day. */
   today: string
   holidays: readonly HolidayRecord[]
+  flex: TrainingFlexDays
   qualifying: ReadonlySet<string>
 }
 
@@ -211,6 +220,8 @@ export type StreakFacts = {
  *   coverage — the log read did not prove the whole window, so an absent
  *              workout might simply be outside what was returned
  *   range    — the window itself is not a usable pair of local dates
+ *   flex     — the explicit training choices could not be read, so a day the
+ *              user resolved as Recovery would look like a missed session
  *   provenance — a workout in the window carries provenance that cannot be
  *              read, so we cannot say whether that day's planned session was
  *              performed. Refusing is not merely tidy: the alternative is a
@@ -225,6 +236,7 @@ export type StreakUnavailableReason =
   | 'coverage'
   | 'range'
   | 'provenance'
+  | 'flex'
 
 export type StreakEvaluation =
   | { status: 'ready'; facts: StreakFacts }
@@ -241,6 +253,15 @@ export type StreakSources = {
   from: string
   holidayStatus: SourceStatus
   holidays: readonly HolidayRecord[]
+  /**
+   * Explicit training flex choices over the window.
+   *
+   * Its own status is tracked separately: a flex read that failed cannot be
+   * treated as "no days were flexed", because that would turn a deliberately
+   * resolved day into a missed one and invent a broken streak.
+   */
+  flexStatus: SourceStatus
+  flex: TrainingFlexDays
   historyStatus: SourceStatus
   entries: readonly WorkoutHistoryEntry[]
   coverage: Coverage
@@ -262,7 +283,11 @@ export function evaluateStreaks(sources: StreakSources): StreakEvaluation {
     return { status: 'unavailable', reason: 'range' }
   }
   // Still arriving is not the same as failed: say "checking", not "broken".
-  if (sources.holidayStatus === 'loading' || sources.historyStatus === 'loading') {
+  if (
+    sources.holidayStatus === 'loading' ||
+    sources.historyStatus === 'loading' ||
+    sources.flexStatus === 'loading'
+  ) {
     return { status: 'checking' }
   }
   // Holiday first: without it, a rest day and a missed day look identical.
@@ -271,6 +296,11 @@ export function evaluateStreaks(sources: StreakSources): StreakEvaluation {
   }
   if (sources.historyStatus !== 'ready') {
     return { status: 'unavailable', reason: 'workouts' }
+  }
+  // Same rule as Holiday: without the explicit choices, a resolved day and a
+  // missed day look identical, and guessing would invent a broken streak.
+  if (sources.flexStatus !== 'ready') {
+    return { status: 'unavailable', reason: 'flex' }
   }
   // A read that did not cover the window cannot turn an absent workout into a
   // missed day, so no streak may be stated from it.
@@ -295,6 +325,7 @@ export function evaluateStreaks(sources: StreakSources): StreakEvaluation {
     from: sources.from,
     today: sources.today,
     holidays: sources.holidays,
+    flex: sources.flex,
     qualifying,
   }
 

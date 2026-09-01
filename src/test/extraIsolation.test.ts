@@ -20,6 +20,15 @@ import type { HolidayRecord } from '@shared/holiday'
 import type { WorkoutHistoryEntry } from '@shared/workoutLog'
 
 /**
+ * No day was flexed — the Round 19.2 baseline that preserves what every test
+ * here already meant. Flex neutrality has its own file, trainingFlex.test.ts.
+ */
+const NO_FLEX = new Map<string, never>()
+
+
+
+
+/**
  * Round 17 — Extra Workout must be NEUTRAL to scheduled truth.
  *
  * An Extra is real recorded training. It is not the obligation, so it may
@@ -111,6 +120,8 @@ function sources(over: Partial<StreakSources> = {}): StreakSources {
     from: '2026-08-31',
     holidayStatus: 'ready',
     holidays: [],
+    flexStatus: 'ready',
+    flex: NO_FLEX,
     historyStatus: 'ready',
     entries: [],
     coverage: 'complete',
@@ -130,6 +141,7 @@ function window(over: Partial<StreakSources> = {}) {
     from: input.from,
     today: input.today,
     holidays: input.holidays,
+    flex: input.flex,
     qualifying: buildQualifyingIndex(input.entries),
   }
 }
@@ -275,7 +287,7 @@ describe('6. Holiday stays Off, exempt and streak-neutral when an Extra happens'
     const holidays = [holiday('h1', MONDAY)]
 
     // The schedule for that date is decided by Holiday, not by what was logged.
-    expect(scheduledDayFor(MONDAY, holidays)).toEqual({
+    expect(scheduledDayFor(MONDAY, holidays, NO_FLEX)).toEqual({
       kind: 'neutral',
       date: MONDAY,
       reason: 'holiday',
@@ -314,7 +326,7 @@ describe('7. Holiday Training On keeps the scheduled session and the Extra apart
     const holidays = [holiday('h1', MONDAY, MONDAY, { trainingOn: true })]
 
     // Training On restores the weekday's own session as scheduled.
-    expect(scheduledDayFor(MONDAY, holidays)).toEqual({
+    expect(scheduledDayFor(MONDAY, holidays, NO_FLEX)).toEqual({
       kind: 'training',
       date: MONDAY,
       sessionId: 'monday',

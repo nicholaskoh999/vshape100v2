@@ -33,6 +33,15 @@ import { addLocalDays, daysBetween } from '@shared/localDate'
 import type { WorkoutHistoryEntry } from '@shared/workoutLog'
 
 /**
+ * No day was flexed — the Round 19.2 baseline that preserves what every test
+ * here already meant. Flex neutrality has its own file, trainingFlex.test.ts.
+ */
+const NO_FLEX = new Map<string, never>()
+
+
+
+
+/**
  * Round 12 — the streak and milestone rules.
  *
  * A streak counts SCHEDULED TRAINING DAYS. The two things these tests defend
@@ -109,6 +118,8 @@ function sources(over: Partial<StreakSources> = {}): StreakSources {
     from: '2026-08-31',
     holidayStatus: 'ready',
     holidays: [],
+    flexStatus: 'ready',
+    flex: NO_FLEX,
     historyStatus: 'ready',
     entries: [],
     coverage: 'complete',
@@ -130,6 +141,7 @@ function window(over: Partial<StreakSources> = {}) {
     from: input.from,
     today: input.today,
     holidays: input.holidays,
+    flex: input.flex,
     qualifying: buildQualifyingIndex(input.entries),
   }
 }
@@ -155,12 +167,12 @@ describe('1. scheduled days', () => {
     ]
 
     for (const [date, sessionId] of weekdays) {
-      expect(scheduledDayFor(date, []), date).toEqual({ kind: 'training', date, sessionId })
+      expect(scheduledDayFor(date, [], NO_FLEX), date).toEqual({ kind: 'training', date, sessionId })
     }
   })
 
   it('treats Saturday as neutral, not a missed session', () => {
-    expect(scheduledDayFor('2026-09-12', [])).toEqual({
+    expect(scheduledDayFor('2026-09-12', [], NO_FLEX)).toEqual({
       kind: 'neutral',
       date: '2026-09-12',
       reason: 'saturday',
@@ -168,7 +180,7 @@ describe('1. scheduled days', () => {
   })
 
   it('treats Sunday as neutral', () => {
-    expect(scheduledDayFor('2026-09-13', [])).toEqual({
+    expect(scheduledDayFor('2026-09-13', [], NO_FLEX)).toEqual({
       kind: 'neutral',
       date: '2026-09-13',
       reason: 'sunday',
@@ -178,7 +190,7 @@ describe('1. scheduled days', () => {
   it('treats a Holiday weekday as neutral, overriding its training day', () => {
     const days = [holiday('h1', '2026-09-07', '2026-09-11')]
     // A Monday that would otherwise plan the Monday session.
-    expect(scheduledDayFor('2026-09-07', days)).toEqual({
+    expect(scheduledDayFor('2026-09-07', days, NO_FLEX)).toEqual({
       kind: 'neutral',
       date: '2026-09-07',
       reason: 'holiday',
@@ -186,8 +198,8 @@ describe('1. scheduled days', () => {
   })
 
   it('refuses to classify something that is not a calendar date', () => {
-    expect(scheduledDayFor('2026-02-30', [])).toBeNull()
-    expect(scheduledDayFor('not-a-date', [])).toBeNull()
+    expect(scheduledDayFor('2026-02-30', [], NO_FLEX)).toBeNull()
+    expect(scheduledDayFor('not-a-date', [], NO_FLEX)).toBeNull()
   })
 })
 
@@ -233,6 +245,7 @@ describe('2. qualifying workouts', () => {
     const outcome = outcomeFor('2026-09-07', {
       today: '2026-09-11',
       holidays: [],
+      flex: NO_FLEX,
       qualifying: buildQualifyingIndex([tuesdayLog]),
     })
     expect(outcome).toBe('failure')
@@ -292,6 +305,7 @@ describe('3. current streak', () => {
     expect(outcomeFor('2026-09-11', {
       today: '2026-09-11',
       holidays: [],
+      flex: NO_FLEX,
       qualifying: buildQualifyingIndex(entries),
     })).toBe('pending')
 
@@ -412,6 +426,7 @@ describe('5. qualifying session count', () => {
     expect(outcomeFor('2026-09-07', {
       today: '2026-09-07',
       holidays,
+      flex: NO_FLEX,
       qualifying: buildQualifyingIndex(entries),
     })).toBe('neutral')
   })
@@ -861,7 +876,7 @@ function trainingHoliday(id: string, startDate: string, endDate = startDate) {
 describe('10. Holiday training', () => {
   it('is neutral while training is off', () => {
     const days = [holiday('h1', '2026-09-14')]
-    expect(scheduledDayFor('2026-09-14', days)).toEqual({
+    expect(scheduledDayFor('2026-09-14', days, NO_FLEX)).toEqual({
       kind: 'neutral',
       date: '2026-09-14',
       reason: 'holiday',
@@ -870,7 +885,7 @@ describe('10. Holiday training', () => {
 
   it('becomes that weekday"s scheduled training day when training is on', () => {
     const days = [trainingHoliday('h1', '2026-09-14')]
-    expect(scheduledDayFor('2026-09-14', days)).toEqual({
+    expect(scheduledDayFor('2026-09-14', days, NO_FLEX)).toEqual({
       kind: 'training',
       date: '2026-09-14',
       sessionId: 'monday',
@@ -902,6 +917,7 @@ describe('10. Holiday training', () => {
       outcomeFor('2026-09-15', {
         today: '2026-09-15',
         holidays,
+        flex: NO_FLEX,
         qualifying: buildQualifyingIndex(entries),
       }),
     ).toBe('pending')
@@ -914,7 +930,7 @@ describe('10. Holiday training', () => {
     // The fail-safe. There is no Saturday session to restore, so nothing is
     // scheduled and nothing can be missed.
     const holidays = [trainingHoliday('h1', '2026-09-12')]
-    expect(scheduledDayFor('2026-09-12', holidays)).toEqual({
+    expect(scheduledDayFor('2026-09-12', holidays, NO_FLEX)).toEqual({
       kind: 'neutral',
       date: '2026-09-12',
       reason: 'holiday',
@@ -927,9 +943,9 @@ describe('10. Holiday training', () => {
   it('keeps weekend days inside a Training-On RANGE neutral', () => {
     // Saturday through Monday with training on: only the Monday is scheduled.
     const holidays = [trainingHoliday('h1', '2026-09-12', '2026-09-14')]
-    expect(scheduledDayFor('2026-09-12', holidays)?.kind).toBe('neutral')
-    expect(scheduledDayFor('2026-09-13', holidays)?.kind).toBe('neutral')
-    expect(scheduledDayFor('2026-09-14', holidays)).toEqual({
+    expect(scheduledDayFor('2026-09-12', holidays, NO_FLEX)?.kind).toBe('neutral')
+    expect(scheduledDayFor('2026-09-13', holidays, NO_FLEX)?.kind).toBe('neutral')
+    expect(scheduledDayFor('2026-09-14', holidays, NO_FLEX)).toEqual({
       kind: 'training',
       date: '2026-09-14',
       sessionId: 'monday',
@@ -944,6 +960,7 @@ describe('10. Holiday training', () => {
       outcomeFor('2026-09-14', {
         today: '2026-09-15',
         holidays,
+        flex: NO_FLEX,
         qualifying: buildQualifyingIndex(entries),
       }),
     ).toBe('failure')
@@ -956,6 +973,7 @@ describe('10. Holiday training', () => {
       outcomeFor('2026-09-14', {
         today: '2026-09-15',
         holidays,
+        flex: NO_FLEX,
         qualifying: buildQualifyingIndex(entries),
       }),
     ).toBe('failure')
@@ -968,6 +986,7 @@ describe('10. Holiday training', () => {
       outcomeFor('2026-09-14', {
         today: '2026-09-15',
         holidays,
+        flex: NO_FLEX,
         qualifying: buildQualifyingIndex(entries),
       }),
     ).toBe('failure')
@@ -1011,7 +1030,7 @@ describe('10. Holiday training', () => {
     // exactly what sessionIdForWeekday says, for every weekday.
     const weekdays = ['2026-09-14', '2026-09-15', '2026-09-16', '2026-09-17', '2026-09-18']
     for (const date of weekdays) {
-      const day = scheduledDayFor(date, [trainingHoliday(`h-${date}`, date)])
+      const day = scheduledDayFor(date, [trainingHoliday(`h-${date}`, date)], NO_FLEX)
       const weekday = new Date(
         Number(date.slice(0, 4)),
         Number(date.slice(5, 7)) - 1,

@@ -48,6 +48,10 @@ const TRUTH: ScheduleTruth = {
   async workoutFinished() {
     return false
   },
+  // Round 19.2: no day was flexed, so nothing is suppressed here.
+  async flexResolved() {
+    return false
+  },
 }
 
 async function seedDevice(db: D1Database, id = 'sub-a', endpointHash = 'a'.repeat(64)) {

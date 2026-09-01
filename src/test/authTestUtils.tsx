@@ -10,6 +10,10 @@ import { createHolidayServer, type HolidayServer } from './holidayApiTestUtils'
 import { createProgressServer, type ProgressServer } from './progressApiTestUtils'
 import { createSettingsServer, type SettingsServer } from './settingsApiTestUtils'
 import {
+  createTrainingFlexServer,
+  type TrainingFlexServer,
+} from './trainingFlexApiTestUtils'
+import {
   createProgressionServer,
   type ProgressionServer,
 } from './progressionApiTestUtils'
@@ -82,6 +86,12 @@ export function mockAuthFetch(options: {
    * stays under test.
    */
   settings?: SettingsServer
+  /**
+   * Today Training Flex stand-in. Absent means an account that has chosen
+   * nothing for any day, which is what every day looks like before the user
+   * decides — and keeps every pre-Round-19 test meaning what it meant.
+   */
+  trainingFlex?: TrainingFlexServer
 }) {
   const today = options.today ?? createTodayServer()
   const media = options.media ?? createMediaServer()
@@ -90,6 +100,7 @@ export function mockAuthFetch(options: {
   const progress = options.progress ?? createProgressServer()
   const progression = options.progression ?? createProgressionServer(workouts)
   const settings = options.settings ?? createSettingsServer()
+  const trainingFlex = options.trainingFlex ?? createTrainingFlexServer()
 
   const handler: FetchHandler = async (url, init) => {
     if (url.startsWith('/api/auth/session')) {
@@ -122,6 +133,9 @@ export function mockAuthFetch(options: {
     }
     if (url.startsWith('/api/settings')) {
       return settings.handle(url, init)
+    }
+    if (url.startsWith('/api/training-flex')) {
+      return trainingFlex.handle(url, init)
     }
     if (url.startsWith('/api/notifications')) {
       if (options.notifications) return options.notifications(url, init)

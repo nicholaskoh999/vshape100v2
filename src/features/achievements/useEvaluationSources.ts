@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { fetchHolidays, type HolidayRecord } from '@/features/calendar/holidayApi'
 import { fetchWorkoutHistory } from '@/features/progress/historyApi'
+import { fetchTrainingFlex } from '@/features/today/trainingFlexApi'
 import type { WorkoutHistoryEntry } from '@shared/workoutLog'
+import type { TrainingFlexKind } from '@shared/trainingFlex'
 
 import type { DateRange } from './model/window'
 
@@ -32,6 +34,13 @@ export type WorkoutChunkState = {
   entries: WorkoutHistoryEntry[]
   /** True only when EVERY chunk reported that it covered its own span. */
   complete: boolean
+  reload: () => void
+}
+
+export type TrainingFlexChunkState = {
+  status: SourceStatus
+  /** Every explicit choice in the period, by local date. */
+  flex: ReadonlyMap<string, TrainingFlexKind>
   reload: () => void
 }
 
@@ -214,6 +223,76 @@ export function useHolidayChunks(ranges: readonly DateRange[]): HolidayChunkStat
   return {
     status,
     holidays: matched ? (loaded as LoadedHolidays).holidays : NO_HOLIDAYS,
+    reload,
+  }
+}
+
+const NO_FLEX: ReadonlyMap<string, TrainingFlexKind> = new Map()
+
+type LoadedFlex = { key: string; flex: ReadonlyMap<string, TrainingFlexKind> }
+
+/**
+ * The explicit training choices across the period, in the same bounded chunks.
+ *
+ * Read exactly like Holiday, and withheld exactly like Holiday: a failed read
+ * must never collapse to "no days were flexed", because a day the user
+ * deliberately resolved as Recovery would then read as a missed session and
+ * invent a broken streak.
+ */
+export function useTrainingFlexChunks(
+  ranges: readonly DateRange[],
+): TrainingFlexChunkState {
+  const { attempt, reload } = useAttempt(ranges)
+  const [loaded, setLoaded] = useState<LoadedFlex | null>(null)
+  const [failedKey, setFailedKey] = useState<string | null>(null)
+
+  const matched = loaded?.key === attempt.key
+  const empty = attempt.ranges.length === 0
+
+  const status: SourceStatus = empty
+    ? 'ready'
+    : matched
+      ? 'ready'
+      : failedKey === attempt.key
+        ? 'error'
+        : 'loading'
+
+  useEffect(() => {
+    if (attempt.ranges.length === 0) return
+
+    const controller = new AbortController()
+    let active = true
+
+    Promise.all(
+      attempt.ranges.map((range) =>
+        fetchTrainingFlex(range.from, range.to, controller.signal),
+      ),
+    )
+      .then((results) => {
+        if (!active) return
+        // Chunks tile the period without overlapping and a choice belongs to a
+        // single date, so no de-duplication is needed — one date, one row.
+        const byDate = new Map<string, TrainingFlexKind>()
+        for (const result of results) {
+          for (const choice of result) byDate.set(choice.date, choice.kind)
+        }
+        setLoaded({ key: attempt.key, flex: byDate })
+      })
+      .catch((error: unknown) => {
+        if (!active || controller.signal.aborted) return
+        console.error('Training choices could not be loaded', error)
+        setFailedKey(attempt.key)
+      })
+
+    return () => {
+      active = false
+      controller.abort()
+    }
+  }, [attempt])
+
+  return {
+    status,
+    flex: matched ? (loaded as LoadedFlex).flex : NO_FLEX,
     reload,
   }
 }

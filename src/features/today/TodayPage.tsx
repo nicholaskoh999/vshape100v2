@@ -9,9 +9,12 @@ import { foundationStatus } from '@/features/progress/foundation'
 import { useFoundationStart } from '@/features/settings/FoundationStartContext'
 import { localDateOf } from '@shared/localDate'
 import type { Route } from './model/types'
+import { GYM_ITEM_ID } from '@shared/notifications/due'
 import { TodayHero } from './components/TodayHero'
+import { TrainingFlexCard } from './components/TrainingFlexCard'
 import { TodaySection } from './components/TodaySection'
 import { TodayStatusNotice } from './components/TodayStatusNotice'
+import { useTrainingFlex } from './useTrainingFlex'
 import { useToday } from './useToday'
 
 /**
@@ -99,6 +102,20 @@ export function TodayPage() {
   // locally, so this page cannot disagree with Progress or Achievements.
   const foundationStart = useFoundationStart()
 
+  // Today's explicit training choice. Read here so the card and the schedule
+  // below cannot disagree about what today was resolved as.
+  const flex = useTrainingFlex()
+
+  /**
+   * Does today actually plan a strength session?
+   *
+   * Read from the agenda the engine already built rather than re-derived from
+   * the weekday, so Holiday Training Off/On stays the authority: a day with no
+   * gym item has nothing to flex away from, and offering the choice there would
+   * imply a session that does not exist.
+   */
+  const plansGym = agenda.entries.some((entry) => entry.item.id === GYM_ITEM_ID)
+
   // Completing something before saved progress has loaded would be acting on
   // state we have not read yet, so the controls wait for hydration.
   const controlsDisabled = hydration !== 'ready'
@@ -160,6 +177,7 @@ export function TodayPage() {
         {/* Schedule column */}
         <div className="contents xl:flex xl:flex-col xl:gap-5">
           <div className="order-1 flex flex-col gap-2.5 xl:order-none">
+            {plansGym && <TrainingFlexCard flex={flex} />}
             <TodayHero
               entry={hero}
               nowMinutes={agenda.nowMinutes}

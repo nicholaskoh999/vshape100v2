@@ -69,6 +69,16 @@ export type ScheduleTruth = {
     date: string,
     sessionId: string,
   ): Promise<boolean | null>
+
+  /**
+   * Did the user explicitly resolve this day as something other than the
+   * scheduled strength session?
+   *
+   * Round 19.2. A day answered as Recovery or Fitness Boxing has already been
+   * DEALT WITH, so continuing to nag about the workout treats a deliberate
+   * decision as an oversight. Null means the truth could not be read.
+   */
+  flexResolved(googleSub: string, date: string): Promise<boolean | null>
 }
 
 export type SweepResult = {
@@ -137,7 +147,17 @@ export async function dueForSubscription(
     // Unreadable workout truth withholds the WHOLE notification: sending the
     // rest would still be sending on the strength of a read that failed.
     if (finished === null) return null
-    if (!finished) kept.push(item)
+    if (finished) continue
+
+    // Not finished — but perhaps deliberately. An explicitly resolved day
+    // suppresses its own gym reminder, and note what this does NOT do: the
+    // workout is not marked complete, no set is written, and nothing about the
+    // strength record changes. The reminder is dropped because the day was
+    // answered, not because the session was performed.
+    const resolved = await truth.flexResolved(subscription.googleSub, item.anchorDay)
+    // Same fail-closed direction as the reads above.
+    if (resolved === null) return null
+    if (!resolved) kept.push(item)
   }
 
   return kept

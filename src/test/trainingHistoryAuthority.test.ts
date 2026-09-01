@@ -8,6 +8,15 @@ import type { WorkoutHistoryEntry } from '@shared/workoutLog'
 import { TRAINING_HISTORY_EPOCH } from '@shared/trainingHistory'
 
 /**
+ * No day was flexed — the Round 19.2 baseline that preserves what every test
+ * here already meant. Flex neutrality has its own file, trainingFlex.test.ts.
+ */
+const NO_FLEX = new Map<string, never>()
+
+
+
+
+/**
  * Round 18 Correction 1 — the Foundation Start Date is not training authority.
  *
  * THE BUG THIS DEFENDS AGAINST.
@@ -76,6 +85,8 @@ function evaluateWith(startDate: string) {
     from: window.from,
     holidayStatus: 'ready',
     holidays: [],
+    flexStatus: 'ready',
+    flex: NO_FLEX,
     historyStatus: 'ready',
     entries: HISTORY,
     coverage: 'complete',
@@ -149,6 +160,8 @@ describe('a completed session before the chosen start date still counts', () => 
         from: startDate,
         holidayStatus: 'ready',
         holidays: [],
+        flexStatus: 'ready',
+        flex: NO_FLEX,
         historyStatus: 'ready',
         entries: HISTORY,
         coverage: 'complete',

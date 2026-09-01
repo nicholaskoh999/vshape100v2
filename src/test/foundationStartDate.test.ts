@@ -13,11 +13,20 @@ import { sessionIdForWeekday } from '@/features/today/model/routines'
 import { addLocalDays, weekdayOf } from '@shared/localDate'
 import { TRAINING_HISTORY_EPOCH } from '@shared/trainingHistory'
 import {
+
+
   parseFoundationStartDate,
   parseSettingsUpdate,
   readFoundationStart,
   resolveFoundationStart,
 } from '@shared/settings'
+
+/**
+ * No day was flexed — the Round 19.2 baseline that preserves what every test
+ * here already meant. Flex neutrality has its own file, trainingFlex.test.ts.
+ */
+const NO_FLEX = new Map<string, never>()
+
 
 /**
  * Round 18.1 — the Foundation start date as an account setting.
@@ -264,6 +273,8 @@ describe('7. changing the start date changes no schedule semantics', () => {
       from,
       holidayStatus: 'ready',
       holidays: [],
+      flexStatus: 'ready',
+      flex: NO_FLEX,
       historyStatus: 'ready',
       entries,
       coverage: 'complete',
@@ -316,6 +327,8 @@ describe('8/9/10. day arithmetic moves consistently and never stops', () => {
       from: start,
       holidayStatus: 'ready',
       holidays: [],
+      flexStatus: 'ready',
+      flex: NO_FLEX,
       historyStatus: 'ready',
       entries: [],
       coverage: 'complete',
