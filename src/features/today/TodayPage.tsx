@@ -1,4 +1,5 @@
 import { CalendarRange, Dumbbell, Loader2, Palmtree, RefreshCw, Scale } from 'lucide-react'
+import { useMemo } from 'react'
 import { Link } from 'react-router'
 
 import { Card } from '@/components/ui/Card'
@@ -14,6 +15,7 @@ import { TodayHero } from './components/TodayHero'
 import { TrainingFlexCard } from './components/TrainingFlexCard'
 import { TodaySection } from './components/TodaySection'
 import { TodayStatusNotice } from './components/TodayStatusNotice'
+import { useScheduledStarted } from './useScheduledStarted'
 import { useTrainingFlex } from './useTrainingFlex'
 import { useToday } from './useToday'
 
@@ -114,7 +116,22 @@ export function TodayPage() {
    * gym item has nothing to flex away from, and offering the choice there would
    * imply a session that does not exist.
    */
-  const plansGym = agenda.entries.some((entry) => entry.item.id === GYM_ITEM_ID)
+  const gymEntry = agenda.entries.find((entry) => entry.item.id === GYM_ITEM_ID) ?? null
+  const plansGym = gymEntry !== null
+
+  /**
+   * The session today plans, read back out of the gym item's own link rather
+   * than re-derived from the weekday, so there is no second copy of the
+   * mapping. Null when the day plans none.
+   */
+  const gymSessionId = useMemo(() => {
+    const match = /^\/training\/([a-z]+)$/.exec(gymEntry?.item.to ?? '')
+    return match ? match[1] : null
+  }, [gymEntry])
+
+  // Whether that session has already been started. Only used to stop offering
+  // alternatives the server would refuse.
+  const scheduled = useScheduledStarted(flex.today, gymSessionId)
 
   // Completing something before saved progress has loaded would be acting on
   // state we have not read yet, so the controls wait for hydration.
@@ -133,11 +150,36 @@ export function TodayPage() {
     month: 'long',
   })
 
+  /**
+   * The day's items, with the gym session withdrawn while a flex choice stands.
+   *
+   * Round 19 Correction 1. A day resolved as Recovery must not simultaneously
+   * present the strength session as an immediately actionable obligation — that
+   * is the same day telling the user two different things, and it is the state
+   * the server now refuses to let them act on anyway.
+   *
+   * Withdrawn from view only. Nothing is completed, nothing is written, the
+   * programme is unchanged, and choosing "Do scheduled workout" in the card
+   * above brings it straight back.
+   */
+  const shown = useMemo(() => {
+    if (flex.status !== 'ready' || flex.choice === null) return groups
+    const withoutGym = (entries: typeof groups.NOW) =>
+      entries.filter((entry) => entry.item.id !== GYM_ITEM_ID)
+    return {
+      NOW: withoutGym(groups.NOW),
+      NEXT: withoutGym(groups.NEXT),
+      LATER: withoutGym(groups.LATER),
+      LATE: withoutGym(groups.LATE),
+      DONE_EARLIER: withoutGym(groups.DONE_EARLIER),
+    }
+  }, [groups, flex.status, flex.choice])
+
   // With nothing current, the closest upcoming item leads instead — and then
   // it must not appear a second time under "Up next".
-  const hero = groups.NOW[0] ?? groups.NEXT[0] ?? null
-  const alsoNow = groups.NOW.slice(1)
-  const upNext = groups.NOW.length > 0 ? groups.NEXT : []
+  const hero = shown.NOW[0] ?? shown.NEXT[0] ?? null
+  const alsoNow = shown.NOW.slice(1)
+  const upNext = shown.NOW.length > 0 ? shown.NEXT : []
 
   return (
     <>
@@ -177,7 +219,9 @@ export function TodayPage() {
         {/* Schedule column */}
         <div className="contents xl:flex xl:flex-col xl:gap-5">
           <div className="order-1 flex flex-col gap-2.5 xl:order-none">
-            {plansGym && <TrainingFlexCard flex={flex} />}
+            {plansGym && (
+              <TrainingFlexCard flex={flex} scheduledStarted={scheduled.started} />
+            )}
             <TodayHero
               entry={hero}
               nowMinutes={agenda.nowMinutes}
@@ -206,7 +250,7 @@ export function TodayPage() {
 
           <TodaySection
             title="Later today"
-            entries={groups.LATER}
+            entries={shown.LATER}
             onToggle={toggle}
             pendingKeys={pending}
             disabled={controlsDisabled}
@@ -219,7 +263,7 @@ export function TodayPage() {
         <div className="contents xl:flex xl:flex-col xl:gap-5">
           <TodaySection
             title="Needs attention"
-            entries={groups.LATE}
+            entries={shown.LATE}
             onToggle={toggle}
             pendingKeys={pending}
             disabled={controlsDisabled}
@@ -229,7 +273,7 @@ export function TodayPage() {
 
           <TodaySection
             title="Done earlier"
-            entries={groups.DONE_EARLIER}
+            entries={shown.DONE_EARLIER}
             onToggle={toggle}
             pendingKeys={pending}
             disabled={controlsDisabled}

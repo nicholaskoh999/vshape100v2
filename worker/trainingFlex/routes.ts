@@ -4,6 +4,10 @@
  *   GET /api/training-flex?from=YYYY-MM-DD&to=YYYY-MM-DD
  *   PUT /api/training-flex
  *
+ * A write is refused with 409 when the day's scheduled workout has already been
+ * started: the three Today choices are alternatives, and that exclusion is
+ * enforced here rather than only in the UI. See ./exclusivity.ts.
+ *
  * Both routes require the existing app-owned session. The account is always the
  * `google_sub` on that session — the client never supplies an identity, and one
  * is never read from a body, query string or header. A body field called
@@ -24,11 +28,10 @@ import {
   withSessionHeaders,
 } from '../http/authenticated.ts'
 import { daysBetween, isLocalDate } from '../../shared/localDate.ts'
-import {
-  isPlausibleToday,
-  parseTrainingFlexUpdate,
-} from '../../shared/trainingFlex.ts'
+import { parseTrainingFlexUpdate } from '../../shared/trainingFlex.ts'
+import { createD1WorkoutStore } from '../workouts/d1Store.ts'
 import { createD1TrainingFlexStore } from './d1Store.ts'
+import { scheduledWorkoutStarted } from './exclusivity.ts'
 import { readTrainingFlexRange, writeTrainingFlex } from './trainingFlex.ts'
 
 const PATH = '/api/training-flex'
@@ -104,7 +107,12 @@ export async function handleTrainingFlexRequest(
       return withSessionHeaders(json({ error: 'invalid_json' }, { status: 400 }), sessionHeaders)
     }
 
-    const parsed = parseTrainingFlexUpdate(body)
+    // TODAY ONLY, and exactly today: the caller supplies its IANA zone, the
+    // server derives the current calendar date in that zone from its own clock,
+    // and the payload date must equal it. Yesterday and tomorrow are both
+    // refused, and a missing or unknown zone fails closed rather than falling
+    // back to UTC.
+    const parsed = parseTrainingFlexUpdate(body, new Date())
     if (!parsed.ok) {
       return withSessionHeaders(
         json({ error: 'invalid_flex', field: parsed.field }, { status: 400 }),
@@ -112,15 +120,27 @@ export async function handleTrainingFlexRequest(
       )
     }
 
-    // TODAY ONLY. The server cannot know the caller's timezone, so it cannot
-    // compute their local today — but it can refuse anything that could not be
-    // anyone's today. That is what blocks past backfill and future scheduling
-    // without breaking a legitimate caller on the other side of the date line.
-    if (!isPlausibleToday(parsed.value.date, Date.now())) {
-      return withSessionHeaders(
-        json({ error: 'invalid_flex', field: 'date' }, { status: 400 }),
-        sessionHeaders,
+    // MUTUAL EXCLUSION. Choosing an alternative is refused once the day's
+    // scheduled workout has been started, because the two are alternatives and
+    // the workout already happened. The started workout is left untouched —
+    // nothing here deletes or neutralises real training history to make the
+    // choice fit.
+    //
+    // Clearing (`kind: null`) is deliberately exempt: it is how the user says
+    // "I will do the scheduled workout after all", and blocking it would leave
+    // a conflicting day with no way out.
+    if (parsed.value.kind !== null) {
+      const started = await scheduledWorkoutStarted(
+        createD1WorkoutStore(env.DB),
+        account.googleSub,
+        parsed.value.date,
       )
+      if (started) {
+        return withSessionHeaders(
+          json({ error: 'workout_already_started' }, { status: 409 }),
+          sessionHeaders,
+        )
+      }
     }
 
     const stored = await writeTrainingFlex(

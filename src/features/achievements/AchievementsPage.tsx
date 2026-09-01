@@ -73,6 +73,8 @@ const UNAVAILABLE_COPY: Record<StreakUnavailableReason, string> = {
   provenance:
     'A recorded workout could not be read as scheduled or extra, so this period cannot be judged.',
   flex: 'Your recovery and alternative-activity days could not be loaded, so a resolved day cannot be told from a missed one.',
+  conflict:
+    'A day is recorded both as a completed workout and as a recovery or alternative day, so this period cannot be judged.',
 }
 
 function StreakSummary({

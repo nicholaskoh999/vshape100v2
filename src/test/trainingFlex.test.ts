@@ -13,7 +13,6 @@ import { sessionIdForWeekday } from '@/features/today/model/routines'
 import { weekdayOf } from '@shared/localDate'
 import type { HolidayRecord } from '@shared/holiday'
 import {
-  isPlausibleToday,
   isTrainingFlexKind,
   parseTrainingFlexUpdate,
   readTrainingFlexKind,
@@ -122,15 +121,20 @@ describe('1. only the two agreed kinds exist', () => {
 /* ------------------------------------------------------------------ */
 
 describe('2. malformed input fails closed', () => {
+  /** Noon UTC on the Tuesday; read in UTC, the local date is also the Tuesday. */
+  const AT_NOON = new Date(`${TUE}T12:00:00Z`)
+  const update = (body: Record<string, unknown>) =>
+    parseTrainingFlexUpdate({ timezone: 'UTC', ...body }, AT_NOON)
+
   it('accepts a real date with an allowed kind', () => {
-    expect(parseTrainingFlexUpdate({ date: TUE, kind: 'recovery' })).toEqual({
+    expect(update({ date: TUE, kind: 'recovery' })).toEqual({
       ok: true,
       value: { date: TUE, kind: 'recovery' },
     })
   })
 
   it('accepts an explicit null as "I will do the scheduled workout"', () => {
-    expect(parseTrainingFlexUpdate({ date: TUE, kind: null })).toEqual({
+    expect(update({ date: TUE, kind: null })).toEqual({
       ok: true,
       value: { date: TUE, kind: null },
     })
@@ -144,45 +148,135 @@ describe('2. malformed input fails closed', () => {
     [{ date: TUE, kind: 'yoga' }, 'kind'],
     [{ date: TUE, kind: 1 }, 'kind'],
   ])('refuses %o on the %s field', (body, field) => {
-    expect(parseTrainingFlexUpdate(body)).toEqual({ ok: false, field })
+    expect(update(body)).toEqual({ ok: false, field })
   })
 
   it.each([null, [], 'recovery', 42])('refuses a non-object body: %s', (body) => {
-    expect(parseTrainingFlexUpdate(body)).toEqual({ ok: false, field: 'body' })
+    expect(parseTrainingFlexUpdate(body, AT_NOON)).toEqual({ ok: false, field: 'body' })
   })
 
   it('drops an identity supplied in the body', () => {
     // `googleSub` is not part of the accepted shape, so sending one changes
     // nothing: the account is the one on the session.
-    expect(
-      parseTrainingFlexUpdate({ date: TUE, kind: 'recovery', googleSub: 'somebody-else' }),
-    ).toEqual({ ok: true, value: { date: TUE, kind: 'recovery' } })
+    expect(update({ date: TUE, kind: 'recovery', googleSub: 'somebody-else' })).toEqual({
+      ok: true,
+      value: { date: TUE, kind: 'recovery' },
+    })
   })
 })
 
 /* ------------------------------------------------------------------ */
-/* 3. Today only                                                       */
+/* 3. Today only — EXACTLY today, in the caller's own zone              */
 /* ------------------------------------------------------------------ */
 
-describe('3. the choice is for the current local day only', () => {
-  const noonUtc = Date.UTC(2026, 8, 8, 12, 0, 0)
+describe('3. the choice is for the exact current local day', () => {
+  /**
+   * 17:00 UTC on 2026-09-08.
+   *
+   * Kuala Lumpur (UTC+8) has already rolled over to the 9th; Los Angeles
+   * (UTC-7 in September) is still on the 8th. One instant, two different local
+   * "todays" — which is exactly why the zone has to come from the caller and
+   * why the old UTC ±1 slack was wrong in both directions.
+   */
+  const EVENING_UTC = new Date('2026-09-08T17:00:00Z')
+  /** 05:00 UTC on 2026-09-08: Los Angeles is still on the 7th. */
+  const MORNING_UTC = new Date('2026-09-08T05:00:00Z')
 
-  it('accepts the UTC day and its neighbours, so every timezone works', () => {
-    expect(isPlausibleToday('2026-09-08', noonUtc)).toBe(true)
-    expect(isPlausibleToday('2026-09-07', noonUtc)).toBe(true)
-    expect(isPlausibleToday('2026-09-09', noonUtc)).toBe(true)
+  const KL = 'Asia/Kuala_Lumpur'
+  const LA = 'America/Los_Angeles'
+
+  const parse = (body: Record<string, unknown>, now: Date) =>
+    parseTrainingFlexUpdate({ kind: 'recovery', ...body }, now)
+
+  it('accepts the exact local today when the zone is AHEAD of UTC', () => {
+    expect(parse({ date: '2026-09-09', timezone: KL }, EVENING_UTC)).toEqual({
+      ok: true,
+      value: { date: '2026-09-09', kind: 'recovery' },
+    })
+    // The UTC date is not this caller's today. The removed ±1 rule accepted it.
+    expect(parse({ date: '2026-09-08', timezone: KL }, EVENING_UTC)).toEqual({
+      ok: false,
+      field: 'date',
+    })
   })
 
-  it('refuses past backfill and future scheduling', () => {
-    expect(isPlausibleToday('2026-09-01', noonUtc)).toBe(false)
-    expect(isPlausibleToday('2026-08-08', noonUtc)).toBe(false)
-    expect(isPlausibleToday('2026-09-20', noonUtc)).toBe(false)
-    expect(isPlausibleToday('2027-09-08', noonUtc)).toBe(false)
+  it('accepts the exact local today when the zone is BEHIND UTC', () => {
+    expect(parse({ date: '2026-09-07', timezone: LA }, MORNING_UTC)).toEqual({
+      ok: true,
+      value: { date: '2026-09-07', kind: 'recovery' },
+    })
+    expect(parse({ date: '2026-09-08', timezone: LA }, MORNING_UTC)).toEqual({
+      ok: false,
+      field: 'date',
+    })
   })
 
-  it('refuses a date that is not a date', () => {
-    expect(isPlausibleToday('2026-02-30', noonUtc)).toBe(false)
-    expect(isPlausibleToday('nonsense', noonUtc)).toBe(false)
+  it('refuses yesterday', () => {
+    expect(parse({ date: '2026-09-08', timezone: KL }, EVENING_UTC)).toEqual({
+      ok: false,
+      field: 'date',
+    })
+    expect(parse({ date: '2026-09-06', timezone: LA }, MORNING_UTC)).toEqual({
+      ok: false,
+      field: 'date',
+    })
+  })
+
+  it('refuses tomorrow', () => {
+    expect(parse({ date: '2026-09-10', timezone: KL }, EVENING_UTC)).toEqual({
+      ok: false,
+      field: 'date',
+    })
+    expect(parse({ date: '2026-09-08', timezone: LA }, MORNING_UTC)).toEqual({
+      ok: false,
+      field: 'date',
+    })
+  })
+
+  it('refuses anything further away', () => {
+    for (const date of ['2026-09-01', '2026-08-08', '2027-09-09', '2026-12-25']) {
+      expect(parse({ date, timezone: KL }, EVENING_UTC), date).toEqual({
+        ok: false,
+        field: 'date',
+      })
+    }
+  })
+
+  it.each([
+    ['missing', undefined],
+    ['empty', ''],
+    ['unknown', 'Mars/Olympus'],
+    ['an offset rather than a zone', '+08:00'],
+    ['a number', 8],
+    ['null', null],
+    ['free text', 'somewhere warm'],
+  ])('fails closed on a %s timezone, never falling back to UTC', (_why, timezone) => {
+    const body: Record<string, unknown> = { date: '2026-09-09', kind: 'recovery' }
+    if (timezone !== undefined) body.timezone = timezone
+    expect(parseTrainingFlexUpdate(body, EVENING_UTC)).toEqual({
+      ok: false,
+      field: 'timezone',
+    })
+  })
+
+  it('validates the zone BEFORE the date', () => {
+    // Without a usable zone there is no "today" to compare against, so the zone
+    // is the failure reported — not a date verdict reached by guessing UTC.
+    expect(
+      parseTrainingFlexUpdate({ date: '1999-01-01', kind: 'recovery' }, EVENING_UTC),
+    ).toEqual({ ok: false, field: 'timezone' })
+  })
+
+  it('applies the same rule to CLEARING a day', () => {
+    // Clearing is still a mutation aimed at a specific date.
+    expect(parse({ date: '2026-09-09', timezone: KL, kind: null }, EVENING_UTC)).toEqual({
+      ok: true,
+      value: { date: '2026-09-09', kind: null },
+    })
+    expect(parse({ date: '2026-09-08', timezone: KL, kind: null }, EVENING_UTC)).toEqual({
+      ok: false,
+      field: 'date',
+    })
   })
 })
 
@@ -356,5 +450,89 @@ describe('7. flex truth that could not be read is refused', () => {
       // day into a missed one and invent a broken streak.
       expect(result).toEqual({ status: 'unavailable', reason: 'flex' })
     }
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* 8. Mutual exclusion, seen from the derived truth                     */
+/* ------------------------------------------------------------------ */
+
+describe('8. a day is one thing or the other, never both', () => {
+  it('a COMPLETED scheduled workout still counts, with no flex present', () => {
+    // The control for the conflict rule below: without a competing choice, a
+    // real finished session is exactly as qualifying as it always was.
+    const facts = factsOf({ entries: [finished(TUE, 'tuesday')], today: TUE })
+    expect(facts.qualifyingSessions).toBe(1)
+    expect(facts.current).toBe(1)
+
+    const milestones = buildMilestones({
+      streak: evaluateStreaks(sources({ entries: [finished(TUE, 'tuesday')], today: TUE })),
+      foundation: foundationStatus(TUE, MON),
+    })
+    expect(milestones.find((m) => m.id === 'first-session')!.state).toEqual({
+      status: 'unlocked',
+    })
+  })
+
+  it('a flex-only day stays neutral, with no workout present', () => {
+    // The other control. Together these two prove the conflict verdict below is
+    // caused by the COMBINATION, not by either fact on its own.
+    const facts = factsOf({ today: TUE, flex: flexOn(TUE, 'recovery') })
+    expect(facts.qualifyingSessions).toBe(0)
+    expect(facts.current).toBe(0)
+    expect(
+      outcomeFor(TUE, {
+        today: TUE,
+        holidays: NO_HOLIDAYS,
+        flex: flexOn(TUE, 'recovery'),
+        qualifying: new Set<string>(),
+      }),
+    ).toBe('neutral')
+  })
+
+  it.each(TRAINING_FLEX_KINDS)(
+    'refuses to state ANY claim when %s and a real scheduled workout collide',
+    (kind) => {
+      // Server truth makes this impossible, so reaching it means the data is
+      // not something this model can describe. Silently neutralising the day
+      // would discount a workout the user genuinely did; ignoring the choice
+      // would contradict what they explicitly recorded. Neither is acceptable,
+      // so no number is stated at all.
+      const result = evaluateStreaks(
+        sources({ entries: [finished(TUE, 'tuesday')], today: TUE, flex: flexOn(TUE, kind) }),
+      )
+      expect(result).toEqual({ status: 'unavailable', reason: 'conflict' })
+    },
+  )
+
+  it('withholds the training milestones too, rather than half-answering', () => {
+    const streak = evaluateStreaks(
+      sources({ entries: [finished(TUE, 'tuesday')], today: TUE, flex: flexOn(TUE, 'recovery') }),
+    )
+    const milestones = buildMilestones({ streak, foundation: foundationStatus(TUE, MON) })
+    for (const id of ['first-session', 'full-week', 'consistency']) {
+      expect(milestones.find((m) => m.id === id)!.state.status, id).toBe('unresolved')
+    }
+  })
+
+  it('is not triggered by an EXTRA on a flexed day', () => {
+    // An Extra is not the day's scheduled obligation, so it is not in conflict
+    // with having resolved that obligation another way.
+    const extra = {
+      ...finished(TUE, 'extra'),
+      kind: 'extra',
+      sourceSessionId: 'tuesday',
+    } as WorkoutHistoryEntry
+    const result = evaluateStreaks(
+      sources({ entries: [extra], today: TUE, flex: flexOn(TUE, 'recovery') }),
+    )
+    expect(result.status).toBe('ready')
+  })
+
+  it('is not triggered by a workout on a DIFFERENT day', () => {
+    const result = evaluateStreaks(
+      sources({ entries: [finished(MON, 'monday')], today: TUE, flex: flexOn(TUE, 'recovery') }),
+    )
+    expect(result.status).toBe('ready')
   })
 })

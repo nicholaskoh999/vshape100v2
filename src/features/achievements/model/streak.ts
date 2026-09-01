@@ -222,6 +222,12 @@ export type StreakFacts = {
  *   range    — the window itself is not a usable pair of local dates
  *   flex     — the explicit training choices could not be read, so a day the
  *              user resolved as Recovery would look like a missed session
+ *   conflict — a date carries BOTH a flex choice and a real scheduled workout.
+ *              Server truth makes that impossible, so encountering it means the
+ *              data is not something this model can describe. Refusing is the
+ *              only honest answer: treating the day as neutral would silently
+ *              discount a workout the user genuinely did, and ignoring the
+ *              choice would contradict what they explicitly recorded.
  *   provenance — a workout in the window carries provenance that cannot be
  *              read, so we cannot say whether that day's planned session was
  *              performed. Refusing is not merely tidy: the alternative is a
@@ -237,6 +243,7 @@ export type StreakUnavailableReason =
   | 'range'
   | 'provenance'
   | 'flex'
+  | 'conflict'
 
 export type StreakEvaluation =
   | { status: 'ready'; facts: StreakFacts }
@@ -319,6 +326,20 @@ export function evaluateStreaks(sources: StreakSources): StreakEvaluation {
   ) {
     return { status: 'unavailable', reason: 'provenance' }
   }
+
+  // The impossible state. Round 19 makes the three Today choices mutually
+  // exclusive in server truth, so a date can carry a flex choice or a scheduled
+  // workout — never both. If both are present the data is corrupt or was
+  // written by something that bypassed the rules, and no streak claim derived
+  // from it would be trustworthy in either direction.
+  const conflicted = sources.entries.some(
+    (entry) =>
+      entry.kind === 'scheduled' &&
+      entry.date >= sources.from &&
+      entry.date <= sources.today &&
+      sources.flex.has(entry.date),
+  )
+  if (conflicted) return { status: 'unavailable', reason: 'conflict' }
 
   const qualifying = buildQualifyingIndex(sources.entries)
   const window: StreakWindow = {

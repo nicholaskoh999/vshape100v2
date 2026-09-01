@@ -7,7 +7,8 @@
  *
  * It mirrors the server's invariants rather than approximating them: identity
  * comes from the "session" the harness holds rather than from any payload, an
- * unknown kind is rejected exactly as the shared validator rejects it, and the
+ * unknown kind is rejected exactly as the shared validator rejects it, the
+ * caller's IANA zone must resolve to the EXACT date being written, and the
  * value returned after a write is the STORED one.
  *
  * The default is deliberately "nothing chosen". That is what every day looks
@@ -16,6 +17,7 @@
  */
 
 import { isLocalDate } from '@shared/localDate'
+import { localDateIn } from '@shared/timeZone'
 import { isTrainingFlexKind, type TrainingFlexKind } from '@shared/trainingFlex'
 
 export type TrainingFlexServer = {
@@ -96,10 +98,24 @@ export function createTrainingFlexServer(): TrainingFlexServer {
     }
 
     const raw = (parsedBody ?? {}) as Record<string, unknown>
+
+    // The same order the server applies: the zone first, because without it
+    // there is no "today" to compare the date against.
+    const today =
+      typeof raw.timezone === 'string' ? localDateIn(new Date(), raw.timezone) : null
+    if (today === null) {
+      return jsonResponse({ error: 'invalid_flex', field: 'timezone' }, 400)
+    }
+
     if (!isLocalDate(raw.date)) {
       return jsonResponse({ error: 'invalid_flex', field: 'date' }, 400)
     }
     const date = raw.date as string
+    // EXACTLY today, so a test cannot "prove" the client wrote to a day
+    // production would have refused.
+    if (date !== today) {
+      return jsonResponse({ error: 'invalid_flex', field: 'date' }, 400)
+    }
 
     if (!Object.hasOwn(raw, 'kind')) {
       return jsonResponse({ error: 'invalid_flex', field: 'kind' }, 400)

@@ -99,7 +99,15 @@ export async function saveTrainingFlex(
     method: 'PUT',
     headers: { ...REQUEST_INIT.headers, 'Content-Type': 'application/json' },
     // No identity is sent. The account is the one on the session.
-    body: JSON.stringify({ date, kind }),
+    //
+    // The zone IS sent, because only the browser knows where the user is: the
+    // server derives the exact local Today from it and refuses any other date.
+    // The same contract Body Weight already uses for its own writes.
+    body: JSON.stringify({
+      date,
+      kind,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    }),
     signal,
   })
   ensureOk(response)

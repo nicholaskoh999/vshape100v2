@@ -26,6 +26,12 @@ import {
   requireAccount,
   withSessionHeaders,
 } from '../http/authenticated'
+import { kindForSessionId } from '../../shared/workoutLog'
+import { createD1TrainingFlexStore } from '../trainingFlex/d1Store'
+import {
+  readTrainingFlexRange,
+  type TrainingFlexStore,
+} from '../trainingFlex/trainingFlex'
 import { createD1WorkoutStore } from './d1Store'
 import {
   applySetUpdate,
@@ -160,6 +166,7 @@ async function handleRead(
 async function handleStart(
   request: Request,
   store: WorkoutStore,
+  flexStore: TrainingFlexStore,
   googleSub: string,
   date: string,
   sessionId: string,
@@ -183,6 +190,31 @@ async function handleStart(
   // creating an Extra whose source is unknowable.
   if (!isValidStartProvenance(sessionId, parsed.value)) {
     return json({ error: 'invalid_start', field: 'source_session_id' }, { status: 400 })
+  }
+
+  // MUTUAL EXCLUSION, enforced in server truth rather than by hiding a button.
+  //
+  // A day the user explicitly resolved as Recovery or Fitness Boxing cannot
+  // then start its scheduled session: the three Today choices are alternatives.
+  // The refusal is the whole response — the flex row is NOT cleared here, and
+  // nothing is written. The user resolves it by choosing "Do scheduled
+  // workout", which clears the choice, and may then start normally.
+  //
+  // Only a SCHEDULED start is covered. An Extra keeps the Round 17 semantics it
+  // was given: voluntary, separately identified, and never the day's obligation.
+  if (kindForSessionId(sessionId) === 'scheduled') {
+    const flex = await readTrainingFlexRange(flexStore, googleSub, date, date)
+    // Fail closed: a choice we cannot read might be a real one, and starting
+    // over it would create exactly the contradictory state this prevents.
+    if (flex.status !== 'ok') {
+      return json({ error: 'flex_unreadable' }, { status: 500 })
+    }
+    if (flex.choices.length > 0) {
+      return json(
+        { error: 'training_flex_active', kind: flex.choices[0].kind },
+        { status: 409 },
+      )
+    }
   }
 
   const result = await startWorkout(store, googleSub, date, sessionId, parsed.value)
@@ -362,7 +394,14 @@ export async function handleWorkoutRequest(
 
     if (isStart) {
       return withSessionHeaders(
-        await handleStart(request, store, account.googleSub, date, sessionId),
+        await handleStart(
+          request,
+          store,
+          createD1TrainingFlexStore(env.DB),
+          account.googleSub,
+          date,
+          sessionId,
+        ),
         sessionHeaders,
       )
     }

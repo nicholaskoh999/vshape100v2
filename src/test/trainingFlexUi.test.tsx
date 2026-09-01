@@ -7,6 +7,7 @@ import {
   createTrainingFlexServer,
   type TrainingFlexServer,
 } from './trainingFlexApiTestUtils'
+import { createWorkoutServer, type WorkoutServer } from './workoutApiTestUtils'
 
 /**
  * Round 19.2 — Today Training Flex in the real app.
@@ -30,12 +31,14 @@ const WEDNESDAY = '2026-09-09'
 const SATURDAY = new Date(2026, 8, 12, 10, 0, 0)
 
 let flex: TrainingFlexServer
+let workouts: WorkoutServer
 
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
   vi.setSystemTime(BEFORE_MIDNIGHT)
   flex = createTrainingFlexServer()
-  mockAuthFetch({ session: authenticatedSession, trainingFlex: flex })
+  workouts = createWorkoutServer()
+  mockAuthFetch({ session: authenticatedSession, trainingFlex: flex, workouts })
 })
 
 afterEach(() => {
@@ -56,6 +59,22 @@ async function openToday() {
   await screen.findByRole('heading', { level: 1, name: 'Today' })
   await waitFor(() => expect(cardState()).toBe('ready'))
   return user()
+}
+
+/** Seed today's scheduled session as already started. */
+function seedStartedWorkout() {
+  workouts.seed(TUESDAY, 'tuesday', {
+    occurrence: {
+      date: TUESDAY,
+      sessionId: 'tuesday',
+      day: 'Tuesday',
+      focus: 'Upper Chest + Shoulders + Triceps',
+      intensity: 'HARD',
+      startedAt: 1,
+      updatedAt: 1,
+    },
+    sets: [],
+  })
 }
 
 function option(name: RegExp) {
@@ -129,7 +148,12 @@ describe('2. a choice persists and is shown back', () => {
     await waitFor(() => expect(flex.stored.get(TUESDAY)).toBe('recovery'))
 
     const write = flex.calls.find((call) => call.method === 'PUT')!
-    expect(Object.keys(write.body as object).sort()).toEqual(['date', 'kind'])
+    const body = write.body as Record<string, unknown>
+    // The zone IS sent — only the browser knows where the user is, and the
+    // server derives the exact local Today from it. No account key ever is.
+    expect(Object.keys(body).sort()).toEqual(['date', 'kind', 'timezone'])
+    expect(typeof body.timezone).toBe('string')
+    expect(body).not.toHaveProperty('googleSub')
   })
 
   it('goes back to the scheduled workout by clearing, not by storing a third kind', async () => {
@@ -303,5 +327,66 @@ describe('5. the Calendar distinguishes the three truths', () => {
     await openCalendar()
     await waitFor(() => expect(cell('2026-09-12')).not.toBeNull())
     expect(cell('2026-09-12')?.getAttribute('data-day-flex')).toBeNull()
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* 6. The three choices are alternatives, in the UI as well             */
+/* ------------------------------------------------------------------ */
+
+describe('6. Today stays coherent about which choice is in force', () => {
+  it('withdraws the gym session while a flex choice stands', async () => {
+    flex.seed(TUESDAY, 'recovery')
+    await openToday()
+
+    // A resolved day must not also present the session as an immediately
+    // actionable obligation — that is the same day saying two things.
+    await waitFor(() => expect(screen.queryByText(/Gym training/i)).toBeNull())
+    expect(screen.getByText(/Today is Recovery today/i)).toBeInTheDocument()
+  })
+
+  it('brings the gym session straight back when the choice is cleared', async () => {
+    flex.seed(TUESDAY, 'recovery')
+    const u = await openToday()
+    await waitFor(() => expect(screen.queryByText(/Gym training/i)).toBeNull())
+
+    await u.click(option(/Do scheduled workout/i))
+
+    // Nothing was deleted; it was only withdrawn from view.
+    await waitFor(() => expect(screen.getByText(/Gym training/i)).toBeInTheDocument())
+  })
+
+  it('shows the gym session normally when no choice is in force', async () => {
+    // The control: the withdrawal above is caused by the choice, not by the
+    // card merely being present.
+    await openToday()
+    expect(screen.getByText(/Gym training/i)).toBeInTheDocument()
+  })
+
+  it('stops offering the alternatives once the session has started', async () => {
+    // Started workouts are real history. The server refuses to flex over them,
+    // so the control must not look available.
+    seedStartedWorkout()
+    await openToday()
+
+    await waitFor(() =>
+      expect(option(/Recovery today/i)).toBeDisabled(),
+    )
+    expect(option(/Nintendo Fitness Boxing 2/i)).toBeDisabled()
+    // "Do scheduled workout" stays available: it is never in conflict.
+    expect(option(/Do scheduled workout/i)).not.toBeDisabled()
+    expect(
+      screen.getByText(/already under way, so it cannot be swapped/i),
+    ).toBeInTheDocument()
+  })
+
+  it('a blocked alternative writes nothing when clicked', async () => {
+    seedStartedWorkout()
+    const u = await openToday()
+    await waitFor(() => expect(option(/Recovery today/i)).toBeDisabled())
+
+    await u.click(option(/Recovery today/i))
+    expect(flex.stored.has(TUESDAY)).toBe(false)
+    expect(flex.calls.filter((call) => call.method === 'PUT')).toHaveLength(0)
   })
 })

@@ -20,7 +20,14 @@ import { createFakeD1 } from './fakeD1'
  */
 
 const ORIGIN = 'https://vshapev2.nkmwei.de'
-/** A Tuesday. The clock below is pinned to it so "today" is deterministic. */
+/**
+ * A Tuesday, and the zone the writes below declare.
+ *
+ * The clock is pinned to 12:00 UTC, at which point Kuala Lumpur (UTC+8) is on
+ * the SAME calendar day, so TODAY is unambiguously this account's local today.
+ * Zone-boundary behaviour itself is covered in src/test/trainingFlex.test.ts.
+ */
+const ZONE = 'Asia/Kuala_Lumpur'
 const TODAY = '2026-09-08'
 const NOW = Date.UTC(2026, 8, 8, 12, 0, 0)
 
@@ -78,7 +85,14 @@ async function flex(
   const headers: Record<string, string> = {}
   if (options.token) headers.Cookie = `vshape_session=${options.token}`
   if (options.origin) headers.Origin = options.origin
-  const payload = options.rawBody ?? (options.body === undefined ? undefined : JSON.stringify(options.body))
+  // Every write carries the caller's IANA zone, as production requires. A test
+  // that needs to omit or corrupt it passes `rawBody` or an explicit timezone.
+  const body =
+    options.body !== undefined && typeof options.body === 'object' && options.body !== null &&
+    !Array.isArray(options.body) && options.method === 'PUT'
+      ? { timezone: ZONE, ...(options.body as Record<string, unknown>) }
+      : options.body
+  const payload = options.rawBody ?? (body === undefined ? undefined : JSON.stringify(body))
   if (payload !== undefined) headers['Content-Type'] = 'application/json'
 
   const query = options.query ?? `?from=${TODAY}&to=${TODAY}`
@@ -182,14 +196,15 @@ describe('auth and account isolation', () => {
 })
 
 /* ------------------------------------------------------------------ */
-/* Today only                                                          */
+/* Today only — the exact local day, from the caller's IANA zone        */
 /* ------------------------------------------------------------------ */
 
 describe('today only', () => {
   it.each([
+    ['2026-09-07', 'yesterday'],
+    ['2026-09-09', 'tomorrow'],
     ['2026-09-01', 'a week ago'],
     ['2026-08-08', 'a month ago'],
-    ['2026-09-20', 'later this month'],
     ['2027-09-08', 'next year'],
   ])('refuses %s (%s) and writes nothing', async (date) => {
     const fake = createFakeD1()
@@ -206,18 +221,64 @@ describe('today only', () => {
     expect(fake.trainingFlex.size).toBe(0)
   })
 
-  it('accepts the neighbouring dates, so no timezone is locked out', async () => {
-    for (const date of ['2026-09-07', '2026-09-08', '2026-09-09']) {
-      const fake = createFakeD1()
-      const token = await seedToken(fake.db, 'sub-1', 'a@example.com')
-      const { response } = await flex(fake.db, {
-        method: 'PUT',
-        token,
-        origin: ORIGIN,
-        body: { date, kind: 'recovery' },
-      })
-      expect(response.status, date).toBe(200)
-    }
+  it('accepts the exact local today', async () => {
+    const fake = createFakeD1()
+    const token = await seedToken(fake.db, 'sub-1', 'a@example.com')
+    const { response } = await flex(fake.db, {
+      method: 'PUT',
+      token,
+      origin: ORIGIN,
+      body: { date: TODAY, kind: 'recovery' },
+    })
+    expect(response.status).toBe(200)
+    expect(fake.trainingFlex.size).toBe(1)
+  })
+
+  it('reads the day from the CALLER’s zone, not the server’s', async () => {
+    // 17:00 UTC on the 8th: Kuala Lumpur has already rolled into the 9th, so
+    // the 9th is that caller's today and the UTC date is not.
+    vi.setSystemTime(new Date('2026-09-08T17:00:00Z'))
+    const fake = createFakeD1()
+    const token = await seedToken(fake.db, 'sub-1', 'a@example.com')
+
+    const ahead = await flex(fake.db, {
+      method: 'PUT',
+      token,
+      origin: ORIGIN,
+      body: { date: '2026-09-09', kind: 'recovery' },
+    })
+    expect(ahead.response.status).toBe(200)
+
+    const utcDay = await flex(fake.db, {
+      method: 'PUT',
+      token,
+      origin: ORIGIN,
+      body: { date: '2026-09-08', kind: 'recovery' },
+    })
+    expect(utcDay.response.status).toBe(400)
+    expect(utcDay.body.field).toBe('date')
+  })
+
+  it.each([
+    ['missing', undefined],
+    ['unknown', 'Mars/Olympus'],
+    ['an offset', '+08:00'],
+    ['empty', ''],
+  ])('fails closed on a %s timezone and writes nothing', async (_why, timezone) => {
+    const fake = createFakeD1()
+    const token = await seedToken(fake.db, 'sub-1', 'a@example.com')
+
+    const payload: Record<string, unknown> = { date: TODAY, kind: 'recovery' }
+    if (timezone !== undefined) payload.timezone = timezone
+    const { response, body } = await flex(fake.db, {
+      method: 'PUT',
+      token,
+      origin: ORIGIN,
+      rawBody: JSON.stringify(payload),
+    })
+    expect(response.status).toBe(400)
+    expect(body.field).toBe('timezone')
+    expect(fake.trainingFlex.size).toBe(0)
   })
 })
 

@@ -1,4 +1,5 @@
 import { isLocalDate } from './localDate.ts'
+import { isIanaTimeZone, localDateIn } from './timeZone.ts'
 
 /**
  * Today Training Flex — the contract shared by the Worker and the React app.
@@ -92,22 +93,11 @@ export function readTrainingFlexKind(raw: unknown): TrainingFlexValue {
 /* Validation                                                          */
 /* ------------------------------------------------------------------ */
 
-export type TrainingFlexField = 'body' | 'date' | 'kind'
+export type TrainingFlexField = 'body' | 'timezone' | 'date' | 'kind'
 
 export type ParsedTrainingFlexUpdate =
   | { ok: true; value: { date: string; kind: TrainingFlexKind | null } }
   | { ok: false; field: TrainingFlexField }
-
-/**
- * How far from the server's own UTC date a submitted local date may be.
- *
- * The server cannot know the caller's timezone, so it cannot compute their
- * "today" — but every real local today on earth is within one day of the UTC
- * date. One day either side therefore accepts every genuine caller while still
- * refusing the thing this must refuse: backfilling last week or scheduling next
- * month. The client independently sends only its own current local date.
- */
-export const TRAINING_FLEX_DATE_SLACK_DAYS = 1
 
 /**
  * Validate an update body.
@@ -120,16 +110,33 @@ export const TRAINING_FLEX_DATE_SLACK_DAYS = 1
  * authenticated session, resolved server-side; there is no `googleSub` field in
  * any accepted payload, so sending one changes nothing.
  */
-export function parseTrainingFlexUpdate(body: unknown): ParsedTrainingFlexUpdate {
+export function parseTrainingFlexUpdate(
+  body: unknown,
+  now: Date,
+): ParsedTrainingFlexUpdate {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) {
     return { ok: false, field: 'body' }
   }
   const raw = body as Record<string, unknown>
 
+  // The zone is validated FIRST, because without a usable zone there is no such
+  // thing as the caller's "today" and therefore nothing to compare the date
+  // against. Missing, malformed or unknown all fail closed here — there is no
+  // silent fall back to UTC, which would be a different day from the user's for
+  // part of every day.
+  if (!isIanaTimeZone(raw.timezone)) return { ok: false, field: 'timezone' }
+  const today = localDateIn(now, raw.timezone)
+  if (today === null) return { ok: false, field: 'timezone' }
+
   if (!Object.hasOwn(raw, 'date') || !isLocalDate(raw.date)) {
     return { ok: false, field: 'date' }
   }
   const date = raw.date as string
+
+  // EXACTLY today in the caller's own zone. Not "close to" today: yesterday is
+  // past backfill and tomorrow is future scheduling, and Round 19 locked both
+  // out. A flex choice describes the day the user is actually living.
+  if (date !== today) return { ok: false, field: 'date' }
 
   if (!Object.hasOwn(raw, 'kind')) return { ok: false, field: 'kind' }
   const kind = raw.kind
@@ -139,22 +146,3 @@ export function parseTrainingFlexUpdate(body: unknown): ParsedTrainingFlexUpdate
   return { ok: true, value: { date, kind } }
 }
 
-/**
- * Is this date close enough to now to be somebody's "today"?
- *
- * Pure and explicit about its clock so it can be tested without one.
- */
-export function isPlausibleToday(date: string, nowUtcMs: number): boolean {
-  if (!isLocalDate(date)) return false
-
-  const day = 86_400_000
-  for (
-    let offset = -TRAINING_FLEX_DATE_SLACK_DAYS;
-    offset <= TRAINING_FLEX_DATE_SLACK_DAYS;
-    offset += 1
-  ) {
-    // Offset 0 is the server's own UTC date, so the loop already covers it.
-    if (new Date(nowUtcMs + offset * day).toISOString().slice(0, 10) === date) return true
-  }
-  return false
-}

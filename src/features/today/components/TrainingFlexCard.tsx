@@ -65,7 +65,21 @@ const OPTIONS: Option[] = [
   },
 ]
 
-export function TrainingFlexCard({ flex }: { flex: TrainingFlexState }) {
+export function TrainingFlexCard({
+  flex,
+  /**
+   * True once today's scheduled workout has been started.
+   *
+   * The alternatives are then no longer offered: the server refuses that write,
+   * and a control that looks available but cannot work is worse than one that
+   * is plainly unavailable. The started workout is real history and is left
+   * exactly as it is.
+   */
+  scheduledStarted,
+}: {
+  flex: TrainingFlexState
+  scheduledStarted: boolean
+}) {
   const { status, choice, saving, saveError } = flex
 
   return (
@@ -125,6 +139,9 @@ export function TrainingFlexCard({ flex }: { flex: TrainingFlexState }) {
             {OPTIONS.map((option) => {
               const active = choice === option.value
               const Icon = option.icon
+              // "Do scheduled workout" stays available: it is how a flexed day
+              // is handed back, and it is never in conflict with a started one.
+              const blocked = scheduledStarted && option.value !== null
               return (
                 <motion.button
                   key={option.label}
@@ -134,9 +151,9 @@ export function TrainingFlexCard({ flex }: { flex: TrainingFlexState }) {
                   aria-checked={active}
                   // A save in flight blocks a second one; the guard is also
                   // enforced in the hook, so a fast double tap cannot write twice.
-                  disabled={saving}
+                  disabled={saving || blocked}
                   onClick={() => {
-                    if (active) return
+                    if (active || blocked) return
                     void flex.choose(option.value)
                   }}
                   className={cn(
@@ -164,6 +181,8 @@ export function TrainingFlexCard({ flex }: { flex: TrainingFlexState }) {
                 <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
                 Saving…
               </span>
+            ) : scheduledStarted && choice === null ? (
+              'Today’s session is already under way, so it cannot be swapped for a recovery or alternative day.'
             ) : choice === null ? (
               'Today is the scheduled Foundation session.'
             ) : (
