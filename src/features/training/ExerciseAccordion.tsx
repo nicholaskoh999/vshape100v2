@@ -6,10 +6,13 @@ import { Link } from 'react-router'
 import { Card } from '@/components/ui/Card'
 import { listItemVariants, listVariants, press, tween } from '@/design/motion'
 import { cn } from '@/lib/utils'
+import { ExerciseGuidance } from './ExerciseGuidance'
 import { exercisePath } from './navigation'
+import type { LaneRecommendation, ProgressionLoad } from './progressionApi'
 import type { SessionExercise, TrainingSession } from './sessions'
 import type { WorkoutSet } from './workoutApi'
 import { WorkoutSetList, type WorkoutSetListProps } from './WorkoutSetList'
+import type { CalibrationFeedback } from '@shared/progression/lane'
 
 /**
  * Everything the expanded panel needs to log sets. Absent until the workout
@@ -22,6 +25,25 @@ export type AccordionLogging = Pick<
 > & {
   /** Every set of the workout, in performance order. */
   sets: WorkoutSet[]
+}
+
+/**
+ * Derived next-session guidance, matched to a row by its position in THIS
+ * session — the same `exercise_order` the sets are matched on, so guidance for
+ * Monday's Lat Pulldown can never appear against Wednesday's.
+ *
+ * Absent until the server has answered. Guidance is subordinate to logging: an
+ * exercise with none simply shows none.
+ */
+export type AccordionGuidance = {
+  laneFor: (exerciseOrder: number) => LaneRecommendation | null
+  busyLane: number | null
+  error: string | null
+  onFeedback: (
+    exerciseOrder: number,
+    feedback: CalibrationFeedback,
+    chosenLoad: ProgressionLoad | null,
+  ) => void
 }
 
 /**
@@ -44,9 +66,11 @@ export type AccordionLogging = Pick<
 export function ExerciseAccordion({
   session,
   logging,
+  guidance,
 }: {
   session: TrainingSession
   logging?: AccordionLogging
+  guidance?: AccordionGuidance
 }) {
   // Local, deliberately ephemeral: nothing here needs to survive a refresh,
   // so there is no URL state and no storage.
@@ -70,6 +94,7 @@ export function ExerciseAccordion({
             setExpandedIndex((current) => (current === index ? null : index))
           }
           logging={logging}
+          guidance={guidance}
         />
       ))}
     </motion.ol>
@@ -83,6 +108,7 @@ function ExerciseRow({
   expanded,
   onToggle,
   logging,
+  guidance,
 }: {
   exercise: SessionExercise
   index: number
@@ -90,6 +116,7 @@ function ExerciseRow({
   expanded: boolean
   onToggle: () => void
   logging?: AccordionLogging
+  guidance?: AccordionGuidance
 }) {
   const reduceMotion = useReducedMotion()
   // Unique per row: only one session renders at a time and `index` is unique
@@ -103,6 +130,10 @@ function ExerciseRow({
   // repeated canonical exercise never picks up another occurrence's sets.
   const sets = logging?.sets.filter((set) => set.exerciseOrder === index) ?? []
   const resolved = sets.filter((set) => set.status !== 'pending').length
+
+  // Matched on the same position, so a repeated canonical exercise cannot pick
+  // up the other slot's guidance any more than it can its sets.
+  const lane = guidance?.laneFor(index) ?? null
 
   return (
     <motion.li variants={listItemVariants}>
@@ -174,10 +205,21 @@ function ExerciseRow({
                   )}
                 </dl>
 
+                {logging && lane && guidance && (
+                  <ExerciseGuidance
+                    lane={lane}
+                    busy={guidance.busyLane === index}
+                    error={guidance.busyLane === index ? guidance.error : null}
+                    onFeedback={guidance.onFeedback}
+                  />
+                )}
+
                 {logging && (
                   <WorkoutSetList
                     sets={sets}
                     busySet={logging.busySet}
+                    // Offered to the draft field only; nothing is pre-filled.
+                    suggestedLoad={lane?.suggestedLoad ?? null}
                     onComplete={logging.onComplete}
                     onSkip={logging.onSkip}
                     onUndo={logging.onUndo}

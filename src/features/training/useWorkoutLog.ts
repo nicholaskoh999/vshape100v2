@@ -51,6 +51,15 @@ export type WorkoutLogState = {
   busySet: SetKey | null
   /** Last recoverable mutation failure. Previous state stays visible. */
   mutationError: string | null
+  /**
+   * Bumped whenever the stored workout has changed — a Start, a Complete, a
+   * Skip, an Undo, or an explicit reload.
+   *
+   * Anything DERIVED from workout history has to be recomputed when the history
+   * moves. Round 16's guidance is exactly that, so it watches this rather than
+   * trying to guess from the set rows which change mattered.
+   */
+  revision: number
   reload: () => void
   start: (payload: WorkoutStartPayload) => Promise<void>
   complete: (
@@ -80,6 +89,9 @@ export function useWorkoutLog(date: string, sessionId: string): WorkoutLogState 
   const [starting, setStarting] = useState(false)
   const [busySet, setBusySet] = useState<SetKey | null>(null)
   const [mutationError, setMutationError] = useState<string | null>(null)
+  // Counts confirmed changes to the STORED workout, so derived reads know when
+  // the truth they were derived from has moved.
+  const [revision, setRevision] = useState(0)
 
   // A mutation in flight. A ref so the double-submit guard is decided
   // synchronously inside the handler, the same rule Today's toggle and the
@@ -128,7 +140,10 @@ export function useWorkoutLog(date: string, sessionId: string): WorkoutLogState 
     }
   }, [attempt])
 
-  const reload = useCallback(() => setRetries((n) => n + 1), [])
+  const reload = useCallback(() => {
+    setRetries((n) => n + 1)
+    setRevision((n) => n + 1)
+  }, [])
 
   /** Replace one set in place, keeping every other row untouched. */
   const adoptSet = useCallback(
@@ -160,6 +175,7 @@ export function useWorkoutLog(date: string, sessionId: string): WorkoutLogState 
       try {
         const result = await startWorkoutRequest(attempt.date, attempt.sessionId, payload)
         setLoaded({ id: attempt.id, log: result })
+        setRevision((n) => n + 1)
       } catch (error: unknown) {
         console.error('Workout could not be started', error)
         setMutationError('Could not start this workout. Check your connection and try again.')
@@ -188,6 +204,8 @@ export function useWorkoutLog(date: string, sessionId: string): WorkoutLogState 
         // The server's row is adopted, so what the UI shows is what was
         // stored — not what was typed.
         if (next) adoptSet(next)
+        // The stored workout moved, so anything derived from it is now stale.
+        setRevision((n) => n + 1)
       } catch (error: unknown) {
         console.error('Workout set could not be saved', error)
         // The previously persisted state stays on screen; only a message is
@@ -254,6 +272,7 @@ export function useWorkoutLog(date: string, sessionId: string): WorkoutLogState 
     starting,
     busySet,
     mutationError,
+    revision,
     reload,
     start,
     complete,

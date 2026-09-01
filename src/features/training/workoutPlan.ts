@@ -8,71 +8,35 @@
  *
  * It is deliberately NOT a progression engine. Nothing here infers a next
  * load, judges a result against its target range, or reads history. The target
- * text is carried through verbatim for display only.
+ * text is carried through verbatim for display only. Round 16's guidance is
+ * derived server-side from stored history, in shared/progression/.
  *
  * An unrecognised prescription returns null rather than a guess: a fabricated
  * set count would silently invent history.
  */
 
-import type {
-  WorkoutExercisePlan,
-  WorkoutLoadMode,
-  WorkoutResultKind,
-} from '@shared/workoutLog'
+import type { WorkoutExercisePlan, WorkoutLoadMode } from '@shared/workoutLog'
+import {
+  parsePrescriptionShape,
+  type PrescriptionShape,
+} from '@shared/progression/prescription'
 import { trainingSessions, type SessionExercise, type TrainingSession } from './sessions'
 
-/** What one prescription string means for logging. */
-export type PrescriptionPlan = {
-  setCount: number
-  resultKind: WorkoutResultKind
-  /** True for "10 / side" — the logged number is per side. */
-  perSide: boolean
-  /** The rep/second target as written, e.g. "10–15". Display only. */
-  target: string
-}
-
-/** `<count> × <rest>` — the multiplication sign is U+00D7, as authored. */
-const PRESCRIPTION_PATTERN = /^(\d+)\s*×\s*(.+)$/
-/** A single number or a range, using an en dash or a plain hyphen. */
-const TARGET_PATTERN = /^\d+(?:\s*[–-]\s*\d+)?$/
-/** Trailing "/ side". */
-const PER_SIDE_PATTERN = /\s*\/\s*side$/i
-/** A seconds target ends in `s`, e.g. "30–60s". */
-const SECONDS_PATTERN = /^(.*\d)\s*s$/i
-
-/** Most sets any single Foundation prescription may ask for. */
-const MAX_PARSED_SETS = 20
+/**
+ * What one prescription string means for logging.
+ *
+ * The reading itself lives in shared/progression/prescription.ts, because the
+ * Worker now has to read the same authored text to derive guidance from the
+ * prescription snapshot it stored. One parser, so the set structure this page
+ * offers and the target range the engine judges can never disagree.
+ */
+export type PrescriptionPlan = PrescriptionShape
 
 /**
  * Parse one prescription, or return null when it is not a shape we understand.
  */
 export function parsePrescription(raw: string | null | undefined): PrescriptionPlan | null {
-  if (typeof raw !== 'string') return null
-
-  const match = PRESCRIPTION_PATTERN.exec(raw.trim())
-  if (!match) return null
-
-  const setCount = Number(match[1])
-  if (!Number.isInteger(setCount) || setCount < 1 || setCount > MAX_PARSED_SETS) return null
-
-  let rest = match[2].trim()
-
-  // "/ side" qualifies the reps; strip it before reading the number.
-  const perSide = PER_SIDE_PATTERN.test(rest)
-  if (perSide) rest = rest.replace(PER_SIDE_PATTERN, '').trim()
-
-  // A trailing `s` makes it a hold in seconds. Checked after "/ side" so a
-  // hypothetical "30s / side" would still read as seconds.
-  let resultKind: WorkoutResultKind = 'reps'
-  const seconds = SECONDS_PATTERN.exec(rest)
-  if (seconds) {
-    resultKind = 'seconds'
-    rest = seconds[1].trim()
-  }
-
-  if (!TARGET_PATTERN.test(rest)) return null
-
-  return { setCount, resultKind, perSide, target: rest }
+  return parsePrescriptionShape(raw)
 }
 
 /* ------------------------------------------------------------------ */

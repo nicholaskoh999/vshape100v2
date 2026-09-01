@@ -7,6 +7,7 @@ import { IntensityBadge } from '@/components/ui/IntensityBadge'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { ExerciseAccordion } from './ExerciseAccordion'
 import { getSession, type TrainingSession } from './sessions'
+import { useProgression } from './useProgression'
 import { useWorkoutLog } from './useWorkoutLog'
 import { buildWorkoutPlan, localWorkoutDate, toStartPayload } from './workoutPlan'
 
@@ -36,6 +37,14 @@ function SessionView({ session }: { session: TrainingSession }) {
   // change identity mid-session. No timezone is hardcoded.
   const [date] = useState(() => localWorkoutDate())
   const workout = useWorkoutLog(date, session.id)
+
+  // Guidance is DERIVED from stored history, so it is read only once a workout
+  // exists, and re-read whenever that workout changes — a Complete, a Skip or
+  // an Undo all move the truth it was derived from.
+  const guidance = useProgression(date, session.id, {
+    enabled: workout.started,
+    revision: workout.revision,
+  })
 
   // The set structure the accepted prescriptions imply. Null when any
   // prescription cannot be parsed — in which case the page refuses to offer a
@@ -71,6 +80,16 @@ function SessionView({ session }: { session: TrainingSession }) {
                 onComplete: workout.complete,
                 onSkip: workout.skip,
                 onUndo: workout.undo,
+              }
+            : undefined
+        }
+        guidance={
+          workout.started && guidance.status === 'ready'
+            ? {
+                laneFor: guidance.laneFor,
+                busyLane: guidance.busyLane,
+                error: guidance.mutationError,
+                onFeedback: guidance.saveFeedback,
               }
             : undefined
         }

@@ -1,9 +1,10 @@
 /**
  * VShape100 v2 Worker.
  *
- * Owns the auth, Today, exercise media, workout logging, Holiday and
- * notification APIs, and otherwise hands the request to Static Assets, which
- * serves the built React app (with SPA fallback for client routes).
+ * Owns the auth, Today, exercise media, workout logging, training progression,
+ * Holiday, notification and Progress APIs, and otherwise hands the request to
+ * Static Assets, which serves the built React app (with SPA fallback for client
+ * routes).
  *
  * It also runs the scheduled reminder sweep. That sweep derives what is due
  * from the SAME shared Today engine the page renders; it is a delivery layer,
@@ -17,6 +18,7 @@ import { handleHolidayRequest } from './holiday/routes'
 import { readVapidConfig } from './notifications/config'
 import { createD1PushStore } from './notifications/d1Store'
 import { handleNotificationRequest } from './notifications/routes'
+import { handleProgressionRequest } from './progression/routes'
 import { handleProgressRequest } from './progress/routes'
 import { runScheduledDelivery } from './notifications/scheduler'
 import { createD1ScheduleTruth } from './notifications/truth'
@@ -36,6 +38,12 @@ export default {
 
     const workoutResponse = await handleWorkoutRequest(request, env)
     if (workoutResponse) return workoutResponse
+
+    // `/api/progression/` and `/api/progress/` are different APIs. Both
+    // handlers match on a prefix that carries its trailing slash, so neither
+    // can claim the other's requests whichever order they are tried in.
+    const progressionResponse = await handleProgressionRequest(request, env)
+    if (progressionResponse) return progressionResponse
 
     const holidayResponse = await handleHolidayRequest(request, env)
     if (holidayResponse) return holidayResponse

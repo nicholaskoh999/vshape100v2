@@ -8,6 +8,10 @@ import type { SessionState } from '@/features/auth/api'
 import { createMediaServer, type MediaServer } from './exerciseMediaApiTestUtils'
 import { createHolidayServer, type HolidayServer } from './holidayApiTestUtils'
 import { createProgressServer, type ProgressServer } from './progressApiTestUtils'
+import {
+  createProgressionServer,
+  type ProgressionServer,
+} from './progressionApiTestUtils'
 import { createTodayServer, type TodayServer } from './todayApiTestUtils'
 import { createWorkoutServer, type WorkoutServer } from './workoutApiTestUtils'
 
@@ -38,10 +42,11 @@ function jsonResponse(body: unknown): Response {
  * promise, which lets a test hold the bootstrap open and assert that nothing
  * protected has rendered yet.
  *
- * Today completions, canonical exercise media, workout logs and Holiday
- * overrides are served by in-memory stand-ins so the real client, hooks and
- * engine all run; pass your own via `today` / `media` / `workouts` /
- * `holidays` to seed saved state or to make requests fail.
+ * Today completions, canonical exercise media, workout logs, training
+ * progression and Holiday overrides are served by in-memory stand-ins so the
+ * real client, hooks and engine all run; pass your own via `today` / `media` /
+ * `workouts` / `progression` / `holidays` to seed saved state or to make
+ * requests fail.
  */
 export function mockAuthFetch(options: {
   session: SessionState | Promise<SessionState>
@@ -62,12 +67,20 @@ export function mockAuthFetch(options: {
    * Progress, and one that never lets a page claim data it does not have.
    */
   progress?: ProgressServer
+  /**
+   * Training progression API stand-in. Absent means one derived from the same
+   * in-memory workouts the workout stand-in holds, which is the honest default:
+   * guidance is derived from history, so a test that seeds no history sees no
+   * guidance without anything having to say so.
+   */
+  progression?: ProgressionServer
 }) {
   const today = options.today ?? createTodayServer()
   const media = options.media ?? createMediaServer()
   const workouts = options.workouts ?? createWorkoutServer()
   const holidays = options.holidays ?? createHolidayServer()
   const progress = options.progress ?? createProgressServer()
+  const progression = options.progression ?? createProgressionServer(workouts)
 
   const handler: FetchHandler = async (url, init) => {
     if (url.startsWith('/api/auth/session')) {
@@ -89,7 +102,13 @@ export function mockAuthFetch(options: {
     if (url.startsWith('/api/holidays')) {
       return holidays.handle(url, init)
     }
-    if (url.startsWith('/api/progress')) {
+    // `/api/progression/` before `/api/progress/`, and both matched WITH their
+    // trailing slash: they are different APIs, and a prefix without the slash
+    // would let one swallow the other.
+    if (url.startsWith('/api/progression/')) {
+      return progression.handle(url, init)
+    }
+    if (url.startsWith('/api/progress/')) {
       return progress.handle(url, init)
     }
     if (url.startsWith('/api/notifications')) {

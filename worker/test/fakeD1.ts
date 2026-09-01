@@ -3,8 +3,8 @@ import { COMPANY_HOLIDAYS } from '../../shared/companyHolidays'
 /**
  * Minimal in-memory stand-in for D1, covering exactly the statements the
  * Worker issues against `auth_sessions`, `today_completions`,
- * `exercise_media`, `workout_occurrences`, `workout_sets` and
- * `holiday_overrides`.
+ * `exercise_media`, `workout_occurrences`, `workout_sets`,
+ * `workout_calibration` and `holiday_overrides`.
  *
  * Route-level tests use this so the real handler, the real D1 mapping layer
  * and the real rules all run together.
@@ -144,6 +144,31 @@ function occurrenceId(googleSub: string, date: string, sessionId: string): strin
   return [googleSub, date, sessionId].join('\u0000')
 }
 
+type CalibrationRow = {
+  google_sub: string
+  workout_date: string
+  session_id: string
+  exercise_order: number
+  lane_fingerprint: string
+  feedback: string
+  observed_load_value: number
+  observed_load_unit: string
+  chosen_load_value: number | null
+  chosen_load_unit: string | null
+  created_at: number
+  updated_at: number
+}
+
+/** The workout_calibration primary key: one judgement per occurrence slot. */
+function calibrationId(
+  googleSub: string,
+  date: string,
+  sessionId: string,
+  exerciseOrder: number,
+): string {
+  return [googleSub, date, sessionId, exerciseOrder].join('\u0000')
+}
+
 /** The workout_sets primary key. */
 function workoutSetId(
   googleSub: string,
@@ -172,6 +197,7 @@ export function createFakeD1() {
   const notificationDeliveries = new Map<string, DeliveryRowShape>()
   const occurrences = new Map<string, OccurrenceRow>()
   const workoutSets = new Map<string, WorkoutSetRow>()
+  const calibrations = new Map<string, CalibrationRow>()
   const bodyWeights = new Map<string, BodyWeightRow>()
   /** Set to make every Progress statement throw, as D1 would. */
   let progressFailure: Error | null = null
@@ -611,6 +637,126 @@ export function createFakeD1() {
           session_id: set.session_id,
           started_at: set.started_at,
         }))
+    }
+
+    // ---- Round 16 progression reads -------------------------------
+    //
+    // Matched BEFORE the general workout branches: each names a workout table
+    // and would otherwise be misrouted onto a statement with different
+    // bindings. Every one of them carries `google_sub`, exactly as the real
+    // statement does, so account scoping is exercised rather than assumed.
+
+    if (sql.includes('workout_calibration')) {
+      if (workoutFailure) throw workoutFailure
+
+      if (sql.includes('INSERT INTO workout_calibration')) {
+        const [
+          google_sub,
+          workout_date,
+          session_id,
+          exercise_order,
+          lane_fingerprint,
+          feedback,
+          observed_load_value,
+          observed_load_unit,
+          chosen_load_value,
+          chosen_load_unit,
+          created_at,
+          updated_at,
+        ] = args as [
+          string, string, string, number, string, string, number, string,
+          number | null, string | null, number, number,
+        ]
+
+        const id = calibrationId(google_sub, workout_date, session_id, exercise_order)
+        const existing = calibrations.get(id)
+        // ON CONFLICT DO UPDATE: one judgement per occurrence slot, replaced
+        // rather than duplicated, and created_at is not rewritten.
+        calibrations.set(id, {
+          google_sub,
+          workout_date,
+          session_id,
+          exercise_order,
+          lane_fingerprint,
+          feedback,
+          observed_load_value,
+          observed_load_unit,
+          chosen_load_value,
+          chosen_load_unit,
+          created_at: existing?.created_at ?? created_at,
+          updated_at,
+        })
+        return null
+      }
+
+      if (sql.includes('DELETE FROM workout_calibration')) {
+        const [google_sub, workout_date, session_id, exercise_order] = args as [
+          string, string, string, number,
+        ]
+        calibrations.delete(calibrationId(google_sub, workout_date, session_id, exercise_order))
+        return null
+      }
+
+      if (sql.includes('SELECT')) {
+        const [google_sub, workout_date, session_id] = args as [string, string, string]
+        return [...calibrations.values()]
+          .filter(
+            (row) =>
+              row.google_sub === google_sub &&
+              row.workout_date === workout_date &&
+              row.session_id === session_id,
+          )
+          .sort((a, b) => a.exercise_order - b.exercise_order)
+      }
+
+      throw new Error(`fakeD1 received an unexpected statement: ${sql}`)
+    }
+
+    // The earlier-occurrence date window: this session's occurrences strictly
+    // before the workout being guided, newest first.
+    if (sql.includes('FROM workout_occurrences') && sql.includes('workout_date < ?')) {
+      if (workoutFailure) throw workoutFailure
+
+      const [google_sub, session_id, before, limit] = args as [string, string, string, number]
+      return [...occurrences.values()]
+        .filter(
+          (row) =>
+            row.google_sub === google_sub &&
+            row.session_id === session_id &&
+            row.workout_date < before,
+        )
+        .sort((a, b) => b.workout_date.localeCompare(a.workout_date))
+        .slice(0, limit)
+        .map((row) => ({ workout_date: row.workout_date }))
+    }
+
+    // The lane history read: every owned set of this session inside a
+    // half-open local-date range.
+    if (sql.includes('workout_sets') && sql.includes('s.workout_date >= ?')) {
+      if (workoutFailure) throw workoutFailure
+
+      const [google_sub, session_id, from, before, limit] = args as [
+        string, string, string, string, number,
+      ]
+      return [...occurrences.values()]
+        .filter(
+          (row) =>
+            row.google_sub === google_sub &&
+            row.session_id === session_id &&
+            row.workout_date >= from &&
+            row.workout_date < before,
+        )
+        // ownedSets() IS the snapshot-token join, so a losing Start's rows can
+        // never become progression evidence.
+        .flatMap((occurrence) => ownedSets(occurrence))
+        .sort((a, b) => {
+          if (a.workout_date !== b.workout_date) {
+            return a.workout_date.localeCompare(b.workout_date)
+          }
+          if (a.exercise_order !== b.exercise_order) return a.exercise_order - b.exercise_order
+          return a.set_index - b.set_index
+        })
+        .slice(0, limit)
     }
 
     if (sql.includes('LEFT JOIN workout_sets')) {
@@ -1111,6 +1257,7 @@ export function createFakeD1() {
     media,
     occurrences,
     workoutSets,
+    calibrations,
     holidays,
     companyHolidays,
     companyPreferences,

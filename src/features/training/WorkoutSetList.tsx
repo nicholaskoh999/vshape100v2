@@ -1,4 +1,4 @@
-import { Check, Loader2, RotateCcw, SkipForward } from 'lucide-react'
+import { Check, Loader2, RotateCcw, SkipForward, Wand2 } from 'lucide-react'
 import { useId, useState } from 'react'
 
 import { cn } from '@/lib/utils'
@@ -26,11 +26,23 @@ import { setKey, type SetKey } from './useWorkoutLog'
  *
  * Load is shown only where the snapshot says load applies, and always with its
  * stored meaning — "kg each" is per dumbbell, never a combined weight.
+ *
+ * Round 16 adds ONE thing to this: where derived guidance has a load to
+ * suggest, a pending row offers "Use suggestion", which types that number into
+ * the DRAFT load field. It is an explicit action and nothing more — the field
+ * is still empty on render, the number is still editable, and only pressing
+ * Complete records anything. A suggestion never becomes history on its own.
  */
 
 export type WorkoutSetListProps = {
   sets: WorkoutSet[]
   busySet: SetKey | null
+  /**
+   * A load derived guidance can suggest for this exercise, or null.
+   *
+   * Offered, never applied: it reaches an input only through an explicit tap.
+   */
+  suggestedLoad?: WorkoutLoad | null
   onComplete: (
     exerciseOrder: number,
     setIndex: number,
@@ -43,6 +55,7 @@ export type WorkoutSetListProps = {
 export function WorkoutSetList({
   sets,
   busySet,
+  suggestedLoad = null,
   onComplete,
   onSkip,
   onUndo,
@@ -59,6 +72,7 @@ export function WorkoutSetList({
           // Any mutation anywhere locks the others, so a second submit cannot
           // start while one is in flight.
           locked={busySet !== null}
+          suggestedLoad={suggestedLoad}
           onComplete={onComplete}
           onSkip={onSkip}
           onUndo={onUndo}
@@ -72,6 +86,7 @@ function WorkoutSetRow({
   set,
   busy,
   locked,
+  suggestedLoad,
   onComplete,
   onSkip,
   onUndo,
@@ -79,6 +94,7 @@ function WorkoutSetRow({
   set: WorkoutSet
   busy: boolean
   locked: boolean
+  suggestedLoad: WorkoutLoad | null
 } & Pick<WorkoutSetListProps, 'onComplete' | 'onSkip' | 'onUndo'>) {
   const fieldId = useId()
   // Never prefilled: a default number would be a value the user did not do.
@@ -97,6 +113,11 @@ function WorkoutSetRow({
   const loadValid = loadTrimmed === '' || isSetLoad(loadValue)
 
   const canComplete = resultValid && loadValid && !locked
+
+  // Offered only where it means the same thing as this set's own load field.
+  // A kg suggestion must never land in a per-dumbbell input.
+  const offered =
+    takesLoad && suggestedLoad && unit && suggestedLoad.unit === unit ? suggestedLoad : null
 
   function handleComplete() {
     if (!canComplete) return
@@ -129,15 +150,28 @@ function WorkoutSetRow({
         <p className="min-w-14 text-[13px] font-bold text-ink-dim">{label}</p>
 
         {takesLoad && unit && (
-          <Field
-            id={`${fieldId}-load`}
-            label={`Load (${loadUnitLabel(unit)})`}
-            value={loadInput}
-            onChange={setLoadInput}
-            inputMode="decimal"
-            placeholder="—"
-            invalid={!loadValid}
-          />
+          <div className="min-w-0">
+            <Field
+              id={`${fieldId}-load`}
+              label={`Load (${loadUnitLabel(unit)})`}
+              value={loadInput}
+              onChange={setLoadInput}
+              inputMode="decimal"
+              placeholder="—"
+              invalid={!loadValid}
+            />
+            {offered && (
+              <button
+                type="button"
+                onClick={() => setLoadInput(String(offered.value))}
+                disabled={locked}
+                className="mt-1.5 inline-flex items-center gap-1 rounded-control border border-edge-strong px-2 py-1 text-[11px] font-bold text-ink-faint transition-colors duration-150 hover:text-offwhite disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Wand2 className="size-3" aria-hidden="true" />
+                {`Use ${offered.value}${loadUnitLabel(offered.unit)}`}
+              </button>
+            )}
+          </div>
         )}
 
         <Field
