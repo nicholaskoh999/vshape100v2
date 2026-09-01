@@ -4,7 +4,7 @@ import { COMPANY_HOLIDAYS } from '../../shared/companyHolidays'
  * Minimal in-memory stand-in for D1, covering exactly the statements the
  * Worker issues against `auth_sessions`, `today_completions`,
  * `exercise_media`, `workout_occurrences`, `workout_sets`,
- * `workout_calibration` and `holiday_overrides`.
+ * `workout_calibration`, `account_settings` and `holiday_overrides`.
  *
  * Route-level tests use this so the real handler, the real D1 mapping layer
  * and the real rules all run together.
@@ -103,6 +103,13 @@ type OccurrenceRow = {
   updated_at: number
 }
 
+type AccountSettingsRow = {
+  google_sub: string
+  foundation_start_date: string | null
+  created_at: number
+  updated_at: number
+}
+
 type BodyWeightRow = {
   google_sub: string
   local_date: string
@@ -198,6 +205,8 @@ export function createFakeD1() {
   // exists exactly once, whichever account holds it.
   const pushSubscriptions = new Map<string, PushSubscriptionRowShape>()
   const notificationDeliveries = new Map<string, DeliveryRowShape>()
+  const accountSettings = new Map<string, AccountSettingsRow>()
+  let settingsFailure: Error | null = null
   const occurrences = new Map<string, OccurrenceRow>()
   const workoutSets = new Map<string, WorkoutSetRow>()
   const calibrations = new Map<string, CalibrationRow>()
@@ -258,6 +267,33 @@ export function createFakeD1() {
   }
 
   function execute(sql: string, args: unknown[]) {
+    if (sql.includes('account_settings')) {
+      if (settingsFailure) throw settingsFailure
+
+      if (sql.includes('INSERT INTO account_settings')) {
+        const [google_sub, foundation_start_date, created_at, updated_at] = args as [
+          string, string | null, number, number,
+        ]
+        const existing = accountSettings.get(google_sub)
+        // ON CONFLICT DO UPDATE: one row per account, and `created_at` is kept
+        // so a correction does not rewrite when the account first chose.
+        accountSettings.set(google_sub, {
+          google_sub,
+          foundation_start_date,
+          created_at: existing?.created_at ?? created_at,
+          updated_at,
+        })
+        return null
+      }
+
+      if (sql.includes('SELECT')) {
+        const [google_sub] = args as [string]
+        return accountSettings.get(google_sub) ?? null
+      }
+
+      throw new Error(`fakeD1 received an unexpected statement: ${sql}`)
+    }
+
     if (sql.includes('notification_deliveries')) {
       if (sql.includes('INSERT INTO notification_deliveries')) {
         const [subscription_id, google_sub, trigger_minute, claimed_at, maxAttempts] =
@@ -1298,6 +1334,7 @@ export function createFakeD1() {
     sessions,
     completions,
     media,
+    accountSettings,
     occurrences,
     workoutSets,
     calibrations,
@@ -1312,6 +1349,9 @@ export function createFakeD1() {
     },
     breakMedia(error = new Error('D1 unavailable')) {
       mediaFailure = error
+    },
+    breakSettings(error = new Error('D1 unavailable')) {
+      settingsFailure = error
     },
     breakWorkouts(error = new Error('D1 unavailable')) {
       workoutFailure = error
