@@ -22,7 +22,14 @@ describe('routing', () => {
   it('redirects / to /today', async () => {
     const router = renderAt('/')
     expect(
-      await screen.findByRole('heading', { name: 'Today' }),
+      // This is the FIRST render in this file, so it pays the worker's
+      // cold-start cost — module evaluation plus the auth bootstrap — before
+      // Today can paint. Testing Library's 1s default is enough on an idle
+      // machine and not always enough when the whole suite is running in
+      // parallel on a loaded one. The wait is widened rather than the
+      // behaviour changed: every later assertion in this file keeps the
+      // default, and this one still fails if the redirect does not happen.
+      await screen.findByRole('heading', { name: 'Today' }, { timeout: 5000 }),
     ).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/today')
   })
