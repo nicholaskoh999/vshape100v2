@@ -13,6 +13,7 @@ import migration0008 from '../../migrations/0008_progress_upgrade.sql?raw'
 import migration0009 from '../../migrations/0009_training_progression.sql?raw'
 import migration0010 from '../../migrations/0010_flexible_training.sql?raw'
 import migration0011 from '../../migrations/0011_account_settings.sql?raw'
+import migration0012 from '../../migrations/0012_training_flex.sql?raw'
 
 import { runFreshStart } from '../../scripts/fresh-start.mjs'
 
@@ -42,7 +43,7 @@ import { runFreshStart } from '../../scripts/fresh-start.mjs'
 
 const CHAIN = [
   migration0001, migration0002, migration0003, migration0004, migration0005, migration0006,
-  migration0007, migration0008, migration0009, migration0010, migration0011,
+  migration0007, migration0008, migration0009, migration0010, migration0011, migration0012,
 ]
 
 const CUTOFF = '2026-09-01'

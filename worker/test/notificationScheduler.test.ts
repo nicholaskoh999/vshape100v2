@@ -84,6 +84,8 @@ function truthOf(
     holidays?: readonly HolidayRecord[] | null
     completed?: readonly string[] | null
     workoutFinished?: boolean | null
+    /** Round 19.2: was the day explicitly resolved as Recovery / Boxing? */
+    flexResolved?: boolean | null
   } = {},
 ): ScheduleTruth {
   return {
@@ -99,9 +101,10 @@ function truthOf(
       if (over.workoutFinished === undefined) return false
       return over.workoutFinished
     },
-    // Round 19.2: no day was flexed, so nothing is suppressed here.
+    // Round 19.2: no day was flexed unless a test says so.
     async flexResolved() {
-      return false
+      if (over.flexResolved === undefined) return false
+      return over.flexResolved
     },
   }
 }
@@ -341,6 +344,53 @@ describe('4. already done', () => {
       truth: truthOf({ workoutFinished: true }),
     })
     expect(sent).toHaveLength(0)
+  })
+
+  /* Round 19.2 — an explicitly resolved day. */
+
+  it('does not remind about a workout the user resolved as Recovery', async () => {
+    // The day was DEALT WITH. Continuing to nag would treat a deliberate
+    // decision as an oversight.
+    const { sent } = await sweep(at(2026, 9, 14, 20, 30), {
+      truth: truthOf({ workoutFinished: false, flexResolved: true }),
+    })
+    expect(sent).toHaveLength(0)
+  })
+
+  it('suppresses the reminder WITHOUT the workout being finished', async () => {
+    // The distinction the product depends on: the reminder is dropped because
+    // the day was answered, not because the session was performed. The truth
+    // still reports the workout as unfinished throughout.
+    const finishedCalls: boolean[] = []
+    const truth: ScheduleTruth = {
+      ...truthOf({ flexResolved: true }),
+      async workoutFinished() {
+        finishedCalls.push(true)
+        return false
+      },
+    }
+    const { sent } = await sweep(at(2026, 9, 14, 20, 30), { truth })
+
+    expect(sent).toHaveLength(0)
+    // It really did ask, and really was told "not finished".
+    expect(finishedCalls.length).toBeGreaterThan(0)
+  })
+
+  it('withholds everything when the flex truth cannot be read', async () => {
+    // Fail closed, exactly as an unreadable Holiday or workout read does.
+    const { sent } = await sweep(at(2026, 9, 14, 20, 30), {
+      truth: truthOf({ workoutFinished: false, flexResolved: null }),
+    })
+    expect(sent).toHaveLength(0)
+  })
+
+  it('still reminds about a day that was NOT resolved', async () => {
+    // The control: without this, the suppression above could be passing for
+    // some unrelated reason.
+    const { sent } = await sweep(at(2026, 9, 14, 20, 30), {
+      truth: truthOf({ workoutFinished: false, flexResolved: false }),
+    })
+    expect(sent.length).toBeGreaterThan(0)
   })
 
   it('still reminds when the workout is only in progress', async () => {

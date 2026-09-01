@@ -300,6 +300,9 @@ export const FRESH_START_PRESERVED_TABLES = [
   'auth_sessions',
   'oauth_states',
   'account_settings',
+  // Round 19.2. A flex choice is a decision about a day, not training
+  // evidence, so a history reset has no business deleting it.
+  'training_flex',
   'body_weight_entries',
   'company_holidays',
   'holiday_overrides',
