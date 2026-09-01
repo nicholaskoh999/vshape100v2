@@ -34,6 +34,7 @@ const MONDAY: WorkoutStartInput = {
   day: 'Monday',
   focus: 'Back Width + Biceps',
   intensity: 'HARD',
+  sourceSessionId: null,
   exercises: [
     {
       exerciseId: 'lat-pulldown',
@@ -63,6 +64,7 @@ const WEDNESDAY: WorkoutStartInput = {
   day: 'Wednesday',
   focus: 'Light Back + Rear Delts + Core',
   intensity: 'LIGHT',
+  sourceSessionId: null,
   exercises: [
     {
       exerciseId: 'lat-pulldown',
@@ -182,6 +184,7 @@ describe('historical snapshot immutability', () => {
       day: 'Monday',
       focus: 'Rebuilt Back Focus',
       intensity: 'PUMP',
+      sourceSessionId: null,
       exercises: [
         {
           exerciseId: 'lat-pulldown',
@@ -247,6 +250,7 @@ const RACE_A: WorkoutStartInput = {
   day: 'Monday',
   focus: 'Winner A focus',
   intensity: 'HARD',
+  sourceSessionId: null,
   exercises: [
     {
       exerciseId: 'lat-pulldown',
@@ -285,6 +289,7 @@ const RACE_B: WorkoutStartInput = {
   day: 'Monday',
   focus: 'Winner B focus',
   intensity: 'PUMP',
+  sourceSessionId: null,
   exercises: [
     {
       exerciseId: 'lat-pulldown',

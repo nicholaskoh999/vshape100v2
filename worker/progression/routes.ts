@@ -30,6 +30,7 @@ import {
 } from '../http/authenticated'
 import { parseCalibrationInput } from '../../shared/progression/lane'
 import {
+  isExtraSessionId,
   parseExerciseOrder,
   parseSessionId,
   parseWorkoutDate,
@@ -183,6 +184,22 @@ export async function handleProgressionRequest(
     if (!sessionId) {
       return withSessionHeaders(
         json({ error: 'invalid_session_id' }, { status: 400 }),
+        sessionHeaders,
+      )
+    }
+
+    // Round 17: progression is a property of the SCHEDULED programme. An Extra
+    // Workout logs actual set truth and nothing else — it has no calibration,
+    // no lane state and no recommendation — so the whole surface is refused
+    // for it rather than answered with an empty one. An empty answer would
+    // still be an answer, and a client could render controls around it.
+    //
+    // Defence in depth: the Extra UI never calls this, the store's reads are
+    // scheduled-only, and this refuses the request outright. Any one of the
+    // three would do; all three are cheap.
+    if (isExtraSessionId(sessionId)) {
+      return withSessionHeaders(
+        json({ error: 'progression_not_available' }, { status: 404 }),
         sessionHeaders,
       )
     }

@@ -31,7 +31,10 @@ export type DayOutcome = 'success' | 'failure' | 'pending' | 'neutral' | 'future
 /**
  * Did this workout genuinely finish the session it claims?
  *
- * All four conditions are required:
+ * All five conditions are required:
+ *   - it is a SCHEDULED workout (Round 17: voluntary Extra work is real
+ *     training and real history, but it is not the obligation, so it can
+ *     neither satisfy a planned day nor be counted as one)
  *   - it is the session that date planned (a Tuesday log cannot satisfy Monday)
  *   - it has sets at all
  *   - every set is resolved
@@ -40,12 +43,19 @@ export type DayOutcome = 'success' | 'failure' | 'pending' | 'neutral' | 'future
  * The last one is the important one: `resolved` counts skips, so a workout
  * whose every set was skipped is fully traversed and was not trained. Starting
  * a workout is likewise not enough — pending sets mean it is unfinished.
+ *
+ * The `kind` check is deliberate belt-and-braces. An Extra occupies its own
+ * reserved session slug, so `isPlannedSessionFor` already refuses it and the
+ * session comparison above could never match a weekday — but a streak is a
+ * claim about the user's discipline, and it should rest on persisted
+ * provenance rather than on a slug happening not to collide.
  */
 export function isQualifyingWorkout(
   entry: WorkoutHistoryEntry,
   date: string,
   sessionId: string,
 ): boolean {
+  if (entry.kind !== 'scheduled') return false
   if (entry.date !== date || entry.sessionId !== sessionId) return false
   return isFullyResolved(entry.progress) && entry.progress.completed > 0
 }

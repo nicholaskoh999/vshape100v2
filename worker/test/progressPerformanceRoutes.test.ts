@@ -58,6 +58,7 @@ async function startSession(
       day: 'Monday',
       focus: 'Back Width + Biceps',
       intensity: 'HARD',
+      sourceSessionId: null,
       exercises: exercises.map((exercise) => ({
         exerciseId: exercise.exerciseId ?? 'lat-pulldown',
         name: exercise.name ?? 'Lat Pulldown',

@@ -23,6 +23,57 @@ import { daysBetween, isLocalDate } from './localDate'
 /* Vocabulary                                                          */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Why a workout occurrence exists.
+ *
+ *   scheduled — the Foundation Monday–Friday obligation for that date
+ *   extra     — a voluntary additional workout the user chose to perform
+ *
+ * This is PERSISTED provenance, never inferred from a label or a slug at read
+ * time. Everything that derives *scheduled* truth — streaks, achievements,
+ * Round 16 progression, the reminder sweep — filters on it explicitly, so an
+ * Extra workout cannot satisfy, extend or break an obligation it never was.
+ */
+export type WorkoutKind = 'scheduled' | 'extra'
+
+export const WORKOUT_KINDS: readonly WorkoutKind[] = ['scheduled', 'extra']
+
+export function isWorkoutKind(value: unknown): value is WorkoutKind {
+  return typeof value === 'string' && (WORKOUT_KINDS as readonly string[]).includes(value)
+}
+
+/**
+ * The reserved session slug an Extra workout occupies.
+ *
+ * An occurrence is keyed by (account, local date, session). Giving Extra its
+ * OWN session id is what makes `EXTRA OCCURRENCE != SCHEDULED OCCURRENCE`
+ * structural: an Extra built from Monday's template is
+ * (account, date, 'extra'), never (account, date, 'monday'), so it cannot
+ * collide with — or be mistaken for — the real scheduled Monday workout on the
+ * same date. The two can therefore coexist.
+ *
+ * The slug is the KEY, not the evidence. Provenance is carried separately in
+ * `kind`, so nothing downstream has to recognise a magic string to know what a
+ * row is.
+ */
+export const EXTRA_SESSION_ID = 'extra'
+
+/** Is this the reserved Extra session slug? */
+export function isExtraSessionId(sessionId: string): boolean {
+  return sessionId === EXTRA_SESSION_ID
+}
+
+/**
+ * What kind of workout a session slug denotes.
+ *
+ * Derived SERVER-SIDE from the routed session id, never read from a request
+ * body. A client cannot declare a workout scheduled, and cannot declare one
+ * extra either — it can only address one identity or the other.
+ */
+export function kindForSessionId(sessionId: string): WorkoutKind {
+  return isExtraSessionId(sessionId) ? 'extra' : 'scheduled'
+}
+
 /** A set is pending until it is resolved either way. */
 export type WorkoutSetStatus = 'pending' | 'completed' | 'skipped'
 
@@ -211,11 +262,23 @@ export type WorkoutExercisePlan = {
   setCount: number
 }
 
-/** The whole snapshot a Start establishes. Identity is never part of it. */
+/**
+ * The whole snapshot a Start establishes.
+ *
+ * Identity is never part of it: the account comes from the session and the
+ * occurrence key comes from the route. `sourceSessionId` is the one piece of
+ * PROVENANCE a client may state, and it is deliberately not identity — it
+ * records which Foundation session an Extra workout was copied FROM, so
+ * history can say "Extra · based on Monday" without the occurrence ever
+ * becoming Monday's.
+ *
+ * It is null for a scheduled workout, which is its own source.
+ */
 export type WorkoutStartInput = {
   day: string
   focus: string
   intensity: string
+  sourceSessionId: string | null
   exercises: WorkoutExercisePlan[]
 }
 
@@ -225,6 +288,7 @@ export type StartField =
   | 'day'
   | 'focus'
   | 'intensity'
+  | 'source_session_id'
   | 'exercises'
   | 'exercise'
   | 'setCount'
@@ -288,6 +352,19 @@ export function parseStartInput(body: unknown): ParsedStart {
   const intensity = parseText(raw.intensity, MAX_INTENSITY_LENGTH)
   if (intensity === null) return { ok: false, field: 'intensity' }
 
+  // Absent means "no source", which is what a scheduled workout is. A present
+  // value must be a real slug, and must never be the reserved Extra slug: an
+  // Extra workout is not sourced from another Extra workout, and allowing it
+  // would let provenance point at itself.
+  let sourceSessionId: string | null = null
+  if (raw.sourceSessionId !== undefined && raw.sourceSessionId !== null) {
+    const parsed = parseSessionId(raw.sourceSessionId)
+    if (!parsed || isExtraSessionId(parsed)) {
+      return { ok: false, field: 'source_session_id' }
+    }
+    sourceSessionId = parsed
+  }
+
   if (!Array.isArray(raw.exercises)) return { ok: false, field: 'exercises' }
   if (raw.exercises.length === 0 || raw.exercises.length > MAX_EXERCISES_PER_SESSION) {
     return { ok: false, field: 'exercises' }
@@ -316,7 +393,29 @@ export function parseStartInput(body: unknown): ParsedStart {
     exercises.push({ ...plan, setCount })
   }
 
-  return { ok: true, value: { day, focus, intensity, exercises } }
+  return { ok: true, value: { day, focus, intensity, sourceSessionId, exercises } }
+}
+
+/**
+ * Is this Start payload's provenance right for the occurrence it addresses?
+ *
+ * The two halves are mutually exclusive, and both directions are refused
+ * rather than quietly normalised:
+ *
+ *   extra     — MUST name the Foundation session it was copied from. Without
+ *               it the workout could not honestly say what it was based on.
+ *   scheduled — must NOT name one. A scheduled workout IS its session, so a
+ *               source would be a second, contradictory answer to the same
+ *               question — and accepting one would let a client attach Extra-
+ *               shaped provenance to a real obligation.
+ */
+export function isValidStartProvenance(
+  sessionId: string,
+  input: Pick<WorkoutStartInput, 'sourceSessionId'>,
+): boolean {
+  return isExtraSessionId(sessionId)
+    ? input.sourceSessionId !== null
+    : input.sourceSessionId === null
 }
 
 /* ------------------------------------------------------------------ */
@@ -483,6 +582,14 @@ export function parseHistoryRange(
 export type WorkoutHistoryEntry = {
   date: string
   sessionId: string
+  /**
+   * Persisted provenance. History is where the difference is most visible to
+   * the user, so it travels with every row rather than being re-derived from
+   * the session id by each consumer.
+   */
+  kind: WorkoutKind
+  /** Which Foundation session an Extra was copied from. Null when scheduled. */
+  sourceSessionId: string | null
   day: string
   focus: string
   intensity: string

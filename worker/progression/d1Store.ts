@@ -14,6 +14,16 @@
  * counts only while it carries the snapshot token of the occurrence it is filed
  * under. A row left behind by a losing concurrent Start matches on date and
  * session but not on token, so it can never become progression evidence.
+ *
+ * ROUND 17: SCHEDULED EVIDENCE ONLY, STATED IN SQL.
+ *
+ * `o.kind = 'scheduled'` appears in every read below. An Extra Workout already
+ * lives under its own session slug, so a session-scoped read could not reach it
+ * by accident — but progression must not depend on that. The recommendation
+ * for next Monday is derived from the SCHEDULED Monday history and nothing
+ * else, and this is where that is asserted rather than assumed. Voluntary extra
+ * work is real training and factual history; it is not evidence about an
+ * obligation the user has not yet performed.
  */
 
 import type { ProgressionSetRow } from '../../shared/progression/engine'
@@ -92,7 +102,8 @@ const SET_COLUMNS = `s.workout_date, s.exercise_order, s.set_index,
 const OWNERSHIP_JOIN = `o.google_sub   = s.google_sub
                AND o.workout_date = s.workout_date
                AND o.session_id   = s.session_id
-               AND o.snapshot_id  = s.snapshot_id`
+               AND o.snapshot_id  = s.snapshot_id
+               AND o.kind         = 'scheduled'`
 
 const CALIBRATION_COLUMNS = `google_sub, workout_date, session_id, exercise_order,
   lane_fingerprint, feedback, observed_load_value, observed_load_unit,
@@ -105,7 +116,8 @@ export function createD1ProgressionStore(db: D1Database): ProgressionStore {
         .prepare(
           `SELECT workout_date, session_id, session_intensity_snapshot, started_at
              FROM workout_occurrences
-            WHERE google_sub = ? AND workout_date = ? AND session_id = ?`,
+            WHERE google_sub = ? AND workout_date = ? AND session_id = ?
+              AND kind = 'scheduled'`,
         )
         .bind(googleSub, workoutDate, sessionId)
         .first<OccurrenceRow>()
@@ -143,6 +155,7 @@ export function createD1ProgressionStore(db: D1Database): ProgressionStore {
           `SELECT workout_date
              FROM workout_occurrences
             WHERE google_sub = ? AND session_id = ? AND workout_date < ?
+              AND kind = 'scheduled'
             ORDER BY workout_date DESC
             LIMIT ?`,
         )

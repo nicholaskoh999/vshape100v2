@@ -7,6 +7,7 @@
  * which React can never see. A refresh re-reads; it never replays a cache.
  */
 
+import { isWorkoutKind, type WorkoutKind } from '@shared/workoutLog'
 import type {
   WorkoutLoadMode,
   WorkoutLoadUnit,
@@ -20,6 +21,10 @@ export type WorkoutLoad = { value: number; unit: WorkoutLoadUnit }
 export type WorkoutOccurrence = {
   date: string
   sessionId: string
+  /** Persisted provenance: the scheduled obligation, or a voluntary Extra. */
+  kind: WorkoutKind
+  /** The Foundation session an Extra was copied from. Null when scheduled. */
+  sourceSessionId: string | null
   day: string
   focus: string
   intensity: string
@@ -143,6 +148,13 @@ function toOccurrence(raw: unknown): WorkoutOccurrence | null {
   return {
     date: row.date,
     sessionId: row.sessionId,
+    // Checked, never cast. An unreadable or absent kind reads as the scheduled
+    // truth every pre-Round-17 workout has always been.
+    kind: isWorkoutKind(row.kind) ? row.kind : 'scheduled',
+    sourceSessionId:
+      typeof row.sourceSessionId === 'string' && row.sourceSessionId !== ''
+        ? row.sourceSessionId
+        : null,
     day: typeof row.day === 'string' ? row.day : '',
     focus: typeof row.focus === 'string' ? row.focus : '',
     intensity: typeof row.intensity === 'string' ? row.intensity : '',
@@ -184,6 +196,12 @@ export type WorkoutStartPayload = {
   day: string
   focus: string
   intensity: string
+  /**
+   * The Foundation session an Extra is copied from. Required by the server for
+   * the Extra occurrence and refused for a scheduled one, so this is omitted
+   * entirely by the normal training flow.
+   */
+  sourceSessionId?: string
   exercises: {
     exerciseId: string
     name: string

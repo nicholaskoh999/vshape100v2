@@ -6,6 +6,7 @@
  * logged and cannot change it.
  */
 
+import { isWorkoutKind } from '@shared/workoutLog'
 import type {
   WorkoutHistoryEntry,
   WorkoutHistoryTotals,
@@ -86,6 +87,13 @@ function toEntry(raw: unknown): WorkoutHistoryEntry | null {
   return {
     date: row.date,
     sessionId: row.sessionId,
+    // Anything unrecognised reads as scheduled — the truth every workout
+    // recorded before Round 17 has always carried.
+    kind: isWorkoutKind(row.kind) ? row.kind : 'scheduled',
+    sourceSessionId:
+      typeof row.sourceSessionId === 'string' && row.sourceSessionId !== ''
+        ? row.sourceSessionId
+        : null,
     day: typeof row.day === 'string' ? row.day : '',
     focus: typeof row.focus === 'string' ? row.focus : '',
     intensity: typeof row.intensity === 'string' ? row.intensity : '',

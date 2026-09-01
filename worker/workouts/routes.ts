@@ -29,6 +29,7 @@ import {
 import { createD1WorkoutStore } from './d1Store'
 import {
   applySetUpdate,
+  isValidStartProvenance,
   parseExerciseOrder,
   parseHistoryLimit,
   parseHistoryRange,
@@ -59,6 +60,10 @@ function toPublicOccurrence(record: WorkoutOccurrenceRecord) {
   return {
     date: record.workoutDate,
     sessionId: record.sessionId,
+    // Provenance travels with the occurrence so the client never has to infer
+    // it from the session slug. The ownership token deliberately does not.
+    kind: record.kind,
+    sourceSessionId: record.sourceSessionId,
     day: record.day,
     focus: record.focus,
     intensity: record.intensity,
@@ -169,6 +174,15 @@ async function handleStart(
   const parsed = parseStartInput(body)
   if (!parsed.ok) {
     return json({ error: 'invalid_start', field: parsed.field }, { status: 400 })
+  }
+
+  // Provenance has to match the identity being addressed. An Extra must name
+  // the Foundation session it was copied from; a scheduled workout must not
+  // name one at all. Refusing both directions is what stops a client from
+  // attaching Extra-shaped provenance to a real scheduled obligation, or from
+  // creating an Extra whose source is unknowable.
+  if (!isValidStartProvenance(sessionId, parsed.value)) {
+    return json({ error: 'invalid_start', field: 'source_session_id' }, { status: 400 })
   }
 
   const result = await startWorkout(store, googleSub, date, sessionId, parsed.value)

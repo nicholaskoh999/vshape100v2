@@ -55,6 +55,14 @@ export function createD1ScheduleTruth(db: D1Database): ScheduleTruth {
         // Never started is a real answer: not finished.
         if (!log) return false
 
+        // Round 17: only the SCHEDULED workout can answer for the scheduled
+        // reminder. The sweep asks about the weekday's own session id, which an
+        // Extra never occupies, so this cannot currently be reached — it is
+        // stated anyway, because "did the user finish the thing we are about to
+        // remind them about" must never be satisfiable by voluntary extra work.
+        // Suppressing a real reminder is the failure that costs a training day.
+        if (log.occurrence.kind !== 'scheduled') return false
+
         const progress = summariseSets(log.sets)
         // Exactly the accepted rule. `resolved` counts skips, so a workout
         // whose every set was skipped is traversed and was NOT trained, and

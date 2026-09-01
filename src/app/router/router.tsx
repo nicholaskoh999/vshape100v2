@@ -11,6 +11,7 @@ import { ExerciseMediaEditorPage } from '@/features/settings/ExerciseMediaEditor
 import { SettingsPage } from '@/features/settings/SettingsPage'
 import { TodayPage } from '@/features/today/TodayPage'
 import { ExerciseDetailPage } from '@/features/training/ExerciseDetailPage'
+import { ExtraWorkoutPage } from '@/features/training/ExtraWorkoutPage'
 import { TrainingPage } from '@/features/training/TrainingPage'
 import { TrainingSessionPage } from '@/features/training/TrainingSessionPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
@@ -33,6 +34,11 @@ export const routes = [
           { path: '/', element: <Navigate to="/today" replace /> },
           { path: '/today', element: <TodayPage /> },
           { path: '/training', element: <TrainingPage /> },
+          // Static before dynamic. `extra` is the reserved Extra Workout
+          // occurrence, not a Foundation session, so it must never fall
+          // through to the session page — which would look it up in the
+          // training week and correctly report "Session not found".
+          { path: '/training/extra', element: <ExtraWorkoutPage /> },
           { path: '/training/:session', element: <TrainingSessionPage /> },
           { path: '/exercises/:id', element: <ExerciseDetailPage /> },
           { path: '/progress', element: <ProgressPage /> },

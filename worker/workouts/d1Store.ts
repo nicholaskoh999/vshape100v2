@@ -35,6 +35,7 @@ import {
   isLoadUnit,
   isResultKind,
   isSetStatus,
+  isWorkoutKind,
   type WorkoutHistoryEntry,
   type WorkoutHistoryTotals,
   type WorkoutOccurrenceRecord,
@@ -47,6 +48,8 @@ type OccurrenceRow = {
   workout_date: string
   session_id: string
   snapshot_id: string
+  kind: string | null
+  source_session_id: string | null
   session_day_snapshot: string
   session_focus_snapshot: string
   session_intensity_snapshot: string
@@ -81,6 +84,12 @@ function toOccurrence(row: OccurrenceRow): WorkoutOccurrenceRecord {
     workoutDate: row.workout_date,
     sessionId: row.session_id,
     snapshotId: row.snapshot_id,
+    // Re-checked, never cast. ALTER TABLE cannot carry a CHECK constraint, so
+    // the vocabulary is enforced on the way out: anything unrecognised — and
+    // anything written before 0010 existed — reads as the scheduled truth it
+    // has always been, rather than becoming an unknown third kind.
+    kind: isWorkoutKind(row.kind) ? row.kind : 'scheduled',
+    sourceSessionId: row.source_session_id,
     day: row.session_day_snapshot,
     focus: row.session_focus_snapshot,
     intensity: row.session_intensity_snapshot,
@@ -120,6 +129,7 @@ function toSet(row: SetRow): WorkoutSetRecord {
 }
 
 const OCCURRENCE_COLUMNS = `google_sub, workout_date, session_id, snapshot_id,
+  kind, source_session_id,
   session_day_snapshot, session_focus_snapshot, session_intensity_snapshot,
   started_at, updated_at`
 
@@ -164,6 +174,8 @@ const OWNERSHIP_JOIN = `o.google_sub   = s.google_sub
 type HistoryRow = {
   workout_date: string
   session_id: string
+  kind: string | null
+  source_session_id: string | null
   session_day_snapshot: string
   session_focus_snapshot: string
   session_intensity_snapshot: string
@@ -187,6 +199,9 @@ function toHistoryEntry(row: HistoryRow): WorkoutHistoryEntry {
   return {
     date: row.workout_date,
     sessionId: row.session_id,
+    // Same fall-back as the occurrence read: pre-0010 rows are scheduled.
+    kind: isWorkoutKind(row.kind) ? row.kind : 'scheduled',
+    sourceSessionId: row.source_session_id,
     day: row.session_day_snapshot,
     focus: row.session_focus_snapshot,
     intensity: row.session_intensity_snapshot,
@@ -247,7 +262,7 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
         db
           .prepare(
             `INSERT INTO workout_occurrences (${OCCURRENCE_COLUMNS})
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT (google_sub, workout_date, session_id) DO NOTHING`,
           )
           .bind(
@@ -255,6 +270,8 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
             occurrence.workoutDate,
             occurrence.sessionId,
             occurrence.snapshotId,
+            occurrence.kind,
+            occurrence.sourceSessionId,
             occurrence.day,
             occurrence.focus,
             occurrence.intensity,
@@ -361,7 +378,7 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
       // rather than disappearing from history.
       const result = await db
         .prepare(
-          `SELECT o.workout_date, o.session_id,
+          `SELECT o.workout_date, o.session_id, o.kind, o.source_session_id,
                   o.session_day_snapshot, o.session_focus_snapshot,
                   o.session_intensity_snapshot, o.started_at, o.updated_at,
                   COUNT(s.set_index) AS total_sets,
@@ -388,7 +405,7 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
       // range read can only ever see this account's own workouts.
       const result = await db
         .prepare(
-          `SELECT o.workout_date, o.session_id,
+          `SELECT o.workout_date, o.session_id, o.kind, o.source_session_id,
                   o.session_day_snapshot, o.session_focus_snapshot,
                   o.session_intensity_snapshot, o.started_at, o.updated_at,
                   COUNT(s.set_index) AS total_sets,

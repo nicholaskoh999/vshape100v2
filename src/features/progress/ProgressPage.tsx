@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/Card";
 import { IntensityBadge } from "@/components/ui/IntensityBadge";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { listItemVariants, listVariants } from "@/design/motion";
+import { extraSourceLabel } from "@/features/training/extra";
 import type { SessionIntensity } from "@/features/training/sessions";
 import { localWorkoutDate } from "@/features/training/workoutPlan";
 import { cn } from "@/lib/utils";
@@ -326,15 +327,34 @@ function RecentWorkouts({
             >
               <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5">
                 <div className="min-w-0">
-                  <p className="font-bold text-offwhite">
-                    {workout.day || workout.sessionId}
-                    <span className="ml-2 text-[13px] font-semibold text-ink-faint">
+                  <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-bold text-offwhite">
+                    {/*
+                      Provenance first, and read from the persisted `kind`
+                      rather than from the session slug. A history row must
+                      never let an Extra be mistaken for the Monday obligation
+                      it was merely copied from.
+                    */}
+                    {workout.kind === "extra" && (
+                      <span className="rounded-full bg-blue/15 px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.12em] text-blue">
+                        Extra
+                      </span>
+                    )}
+                    <span>
+                      {workout.kind === "extra"
+                        ? extraSourceLabel(workout.sourceSessionId)?.split(" · ")[0] ||
+                          workout.day ||
+                          "Extra workout"
+                        : workout.day || workout.sessionId}
+                    </span>
+                    <span className="text-[13px] font-semibold text-ink-faint">
                       {formatWorkoutDate(workout.date)}
                     </span>
                   </p>
                   {workout.focus && (
                     <p className="mt-0.5 text-[13px] text-ink-faint">
-                      {workout.focus}
+                      {workout.kind === "extra"
+                        ? `${workout.focus} · extra, not the scheduled session`
+                        : workout.focus}
                     </p>
                   )}
                 </div>

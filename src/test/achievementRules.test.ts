@@ -49,10 +49,15 @@ function entry(
   date: string,
   sessionId: string,
   counts: { total: number; completed: number; skipped: number },
+  // Round 17: every pre-existing case is a scheduled workout, which is what
+  // these rules have always been about. Extra is opted into explicitly.
+  provenance: { kind?: 'scheduled' | 'extra'; sourceSessionId?: string | null } = {},
 ): WorkoutHistoryEntry {
   return {
     date,
     sessionId,
+    kind: provenance.kind ?? 'scheduled',
+    sourceSessionId: provenance.sourceSessionId ?? null,
     day: sessionId,
     focus: 'Focus',
     intensity: 'HARD',

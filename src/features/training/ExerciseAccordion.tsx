@@ -70,12 +70,23 @@ export type AccordionGuidance = {
  * session (`exercise_order`), never by canonical slug, so Monday's Lat
  * Pulldown cannot pick up Wednesday's log.
  */
+/**
+ * The minimum this component actually reads.
+ *
+ * Round 17 renders an Extra Workout from its FROZEN stored snapshot rather
+ * than from today's `trainingSessions`, so the list it is given is not always
+ * an accepted Foundation session. Only the id and the exercises are ever used
+ * here, so that is what is asked for — the header (day, focus, intensity) is
+ * the page's business, not the list's.
+ */
+export type AccordionSession = Pick<TrainingSession, 'id' | 'exercises'>
+
 export function ExerciseAccordion({
   session,
   logging,
   guidance,
 }: {
-  session: TrainingSession
+  session: AccordionSession
   logging?: AccordionLogging
   guidance?: AccordionGuidance
 }) {

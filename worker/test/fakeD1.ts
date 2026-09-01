@@ -93,6 +93,9 @@ type OccurrenceRow = {
   workout_date: string
   session_id: string
   snapshot_id: string
+  /** 0010: 'scheduled' | 'extra'. Defaults like the column's DEFAULT does. */
+  kind: string
+  source_session_id: string | null
   session_day_snapshot: string
   session_focus_snapshot: string
   session_intensity_snapshot: string
@@ -211,6 +214,19 @@ export function createFakeD1() {
   let holidayFailure: Error | null = null
   /** Set to hold every Holiday write, so a race can be forced. */
   let holidayGate: Promise<void> | null = null
+
+  /**
+   * The `kind = 'scheduled'` filter 0010 added, in the stand-in.
+   *
+   * Applied only when the statement actually carries it, so a read that is
+   * deliberately kind-agnostic (the workout API, history) still sees Extra
+   * occurrences, while every progression read does not.
+   */
+  function scheduledOnly(sql: string, rows: OccurrenceRow[]) {
+    return sql.includes("kind = 'scheduled'") || sql.includes("kind         = 'scheduled'")
+      ? rows.filter((row) => row.kind === 'scheduled')
+      : rows
+  }
 
   /** Sets that belong to an occurrence — the ownership join, in the stand-in. */
   function ownedSets(row: OccurrenceRow) {
@@ -718,7 +734,7 @@ export function createFakeD1() {
       if (workoutFailure) throw workoutFailure
 
       const [google_sub, session_id, before, limit] = args as [string, string, string, number]
-      return [...occurrences.values()]
+      return scheduledOnly(sql, [...occurrences.values()])
         .filter(
           (row) =>
             row.google_sub === google_sub &&
@@ -738,7 +754,7 @@ export function createFakeD1() {
       const [google_sub, session_id, from, before, limit] = args as [
         string, string, string, string, number,
       ]
-      return [...occurrences.values()]
+      return scheduledOnly(sql, [...occurrences.values()])
         .filter(
           (row) =>
             row.google_sub === google_sub &&
@@ -793,6 +809,8 @@ export function createFakeD1() {
           return {
             workout_date: row.workout_date,
             session_id: row.session_id,
+            kind: row.kind,
+            source_session_id: row.source_session_id,
             session_day_snapshot: row.session_day_snapshot,
             session_focus_snapshot: row.session_focus_snapshot,
             session_intensity_snapshot: row.session_intensity_snapshot,
@@ -953,7 +971,9 @@ export function createFakeD1() {
       if (sql.includes('SELECT')) {
         const [google_sub, workout_date, session_id] = args as [string, string, string]
         // JOIN workout_occurrences ON ... AND o.snapshot_id = s.snapshot_id
-        const owner = occurrences.get(occurrenceId(google_sub, workout_date, session_id))
+        const found = occurrences.get(occurrenceId(google_sub, workout_date, session_id))
+        // Progression's join also carries `AND o.kind = 'scheduled'`.
+        const owner = found ? scheduledOnly(sql, [found])[0] : undefined
         if (!owner) return []
         return [...workoutSets.values()]
           .filter(
@@ -978,7 +998,12 @@ export function createFakeD1() {
 
       if (sql.includes('SELECT')) {
         const [google_sub, workout_date, session_id] = args as [string, string, string]
-        return occurrences.get(occurrenceId(google_sub, workout_date, session_id)) ?? null
+        const row = occurrences.get(occurrenceId(google_sub, workout_date, session_id))
+        if (!row) return null
+        // The progression read carries `AND kind = 'scheduled'`; the workout
+        // API's read does not. Honouring the difference is what lets a test
+        // prove an Extra is invisible to progression but readable as a workout.
+        return scheduledOnly(sql, [row])[0] ?? null
       }
 
       if (sql.includes('INSERT INTO workout_occurrences')) {
@@ -987,13 +1012,16 @@ export function createFakeD1() {
           workout_date,
           session_id,
           snapshot_id,
+          kind,
+          source_session_id,
           session_day_snapshot,
           session_focus_snapshot,
           session_intensity_snapshot,
           started_at,
           updated_at,
         ] = args as [
-          string, string, string, string, string, string, string, number, number,
+          string, string, string, string, string, string | null,
+          string, string, string, number, number,
         ]
         const id = occurrenceId(google_sub, workout_date, session_id)
         // ON CONFLICT DO NOTHING: one occurrence per account + date + session.
@@ -1005,6 +1033,8 @@ export function createFakeD1() {
             workout_date,
             session_id,
             snapshot_id,
+            kind,
+            source_session_id,
             session_day_snapshot,
             session_focus_snapshot,
             session_intensity_snapshot,

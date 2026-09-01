@@ -24,11 +24,12 @@
  * exerciseMedia/media.ts.
  */
 
-import { MAX_HISTORY_RANGE_ROWS } from '../../shared/workoutLog'
+import { kindForSessionId, MAX_HISTORY_RANGE_ROWS } from '../../shared/workoutLog'
 import type {
   HistoryRange,
   WorkoutHistoryEntry,
   WorkoutHistoryTotals,
+  WorkoutKind,
   WorkoutLoadMode,
   WorkoutLoadUnit,
   WorkoutResultKind,
@@ -45,6 +46,13 @@ export type WorkoutOccurrenceRecord = {
   sessionId: string
   /** Ownership token of the Start that created this workout. */
   snapshotId: string
+  /**
+   * Persisted provenance, derived server-side from the routed session id.
+   * Never read from a request body, so a client cannot label its own workout.
+   */
+  kind: WorkoutKind
+  /** The Foundation session an Extra was copied from. Null when scheduled. */
+  sourceSessionId: string | null
   /** Historical copies, frozen when the workout was started. */
   day: string
   focus: string
@@ -187,6 +195,12 @@ export function buildSnapshot(
     workoutDate,
     sessionId,
     snapshotId,
+    // Derived from the occurrence's OWN session id, so provenance can never
+    // disagree with the identity the row is filed under, whatever was sent.
+    kind: kindForSessionId(sessionId),
+    // Carried only where it means something. A scheduled workout is its own
+    // source, so it stores none even if a caller supplied one.
+    sourceSessionId: kindForSessionId(sessionId) === 'extra' ? input.sourceSessionId : null,
     day: input.day,
     focus: input.focus,
     intensity: input.intensity,
