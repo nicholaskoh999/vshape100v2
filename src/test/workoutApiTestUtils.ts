@@ -10,7 +10,9 @@
  * already exist before it can be logged against.
  */
 
+import { kindForSessionId } from '@shared/workoutLog'
 import type {
+  WorkoutKind,
   WorkoutLoadMode,
   WorkoutResultKind,
   WorkoutSetStatus,
@@ -35,6 +37,13 @@ export type ServerSet = {
 export type ServerOccurrence = {
   date: string
   sessionId: string
+  /**
+   * Provenance, mirrored from the server. It is DERIVED from the routed
+   * session id here too, so a test cannot accidentally prove isolation by
+   * labelling a row itself — the stand-in has to earn the label the same way.
+   */
+  kind: WorkoutKind
+  sourceSessionId: string | null
   day: string
   focus: string
   intensity: string
@@ -44,13 +53,29 @@ export type ServerOccurrence = {
 
 type Stored = { occurrence: ServerOccurrence; sets: ServerSet[] }
 
+/**
+ * What a test hands to `seed`.
+ *
+ * Provenance is optional and derived from the session id when it is absent, so
+ * the many existing seeds keep meaning exactly what they meant — a scheduled
+ * workout — and a Round 17 test can seed an Extra just by using the reserved
+ * slug. Deriving it here rather than making every call site restate it keeps
+ * the stand-in honest: a test cannot label a row something the server would
+ * not have.
+ */
+export type SeedStored = {
+  occurrence: Omit<ServerOccurrence, 'kind' | 'sourceSessionId'> &
+    Partial<Pick<ServerOccurrence, 'kind' | 'sourceSessionId'>>
+  sets: ServerSet[]
+}
+
 export type WorkoutServer = {
   /** The "database": one entry per (date, session), exactly like D1. */
   workouts: Map<string, Stored>
   /** Every request the client made, in order. */
   calls: { method: string; url: string }[]
   /** Seed a workout as if it had already been started. */
-  seed: (date: string, sessionId: string, stored: Stored) => void
+  seed: (date: string, sessionId: string, stored: SeedStored) => void
   /** Fail the next `count` reads. */
   failReads: (count?: number) => void
   /** Fail the next `count` writes. */
@@ -136,6 +161,8 @@ export function createWorkoutServer(): WorkoutServer {
       const toRow = (entry: Stored) => ({
         date: entry.occurrence.date,
         sessionId: entry.occurrence.sessionId,
+        kind: entry.occurrence.kind,
+        sourceSessionId: entry.occurrence.sourceSessionId,
         day: entry.occurrence.day,
         focus: entry.occurrence.focus,
         intensity: entry.occurrence.intensity,
@@ -218,6 +245,7 @@ export function createWorkoutServer(): WorkoutServer {
         day: string
         focus: string
         intensity: string
+        sourceSessionId?: string | null
         exercises: {
           exerciseId: string
           name: string
@@ -265,10 +293,14 @@ export function createWorkoutServer(): WorkoutServer {
         }
       })
 
+      const kind = kindForSessionId(sessionId)
       const stored: Stored = {
         occurrence: {
           date,
           sessionId,
+          kind,
+          // Carried only where it means something, exactly as the server does.
+          sourceSessionId: kind === 'extra' ? (body.sourceSessionId ?? null) : null,
           day: body.day,
           focus: body.focus,
           intensity: body.intensity,
@@ -349,7 +381,16 @@ export function createWorkoutServer(): WorkoutServer {
     workouts,
     calls,
     seed: (date, sessionId, stored) => {
-      workouts.set(key(date, sessionId), stored)
+      const kind = stored.occurrence.kind ?? kindForSessionId(sessionId)
+      workouts.set(key(date, sessionId), {
+        ...stored,
+        occurrence: {
+          ...stored.occurrence,
+          kind,
+          sourceSessionId:
+            kind === 'extra' ? (stored.occurrence.sourceSessionId ?? null) : null,
+        },
+      })
     },
     failReads: (count = 1) => {
       readFailures = count
