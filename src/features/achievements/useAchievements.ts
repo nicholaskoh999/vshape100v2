@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 
 import { foundationStatus } from '@/features/progress/foundation'
+import { useFoundationStart } from '@/features/settings/FoundationStartContext'
 import { localWorkoutDate } from '@/features/training/workoutPlan'
 
 import { buildMilestones, type Milestone } from './model/milestones'
@@ -30,6 +31,8 @@ export type AchievementsView = {
   streak: StreakEvaluation
   milestones: Milestone[]
   reload: () => void
+  /** The shared Foundation start contract, so the page can show its states. */
+  foundationStart: ReturnType<typeof useFoundationStart>
 }
 
 export function useAchievements(): AchievementsView {
@@ -37,7 +40,14 @@ export function useAchievements(): AchievementsView {
   // period on every clock tick and refetch behind the user.
   const [today] = useState(() => localWorkoutDate())
 
-  const window = useMemo(() => evaluationWindow(today), [today])
+  // The one shared start date. Achievements no longer decides for itself when
+  // Foundation began.
+  const foundationStart = useFoundationStart()
+
+  const window = useMemo(
+    () => evaluationWindow(today, foundationStart.startDate),
+    [today, foundationStart.startDate],
+  )
   const chunks = useMemo(() => evaluationChunks(window), [window])
 
   const workouts = useWorkoutChunks(chunks)
@@ -69,7 +79,15 @@ export function useAchievements(): AchievementsView {
 
   // Foundation is a pure local-calendar fact, so it stays answerable even when
   // the streak is not — Holiday never pauses it.
-  const foundation = useMemo(() => foundationStatus(today), [today])
+  const foundation = useMemo(
+    // Withheld until the account's start date is known: a day number derived
+    // from a guessed start would look authoritative and be wrong.
+    () =>
+      foundationStart.status === 'ready'
+        ? foundationStatus(today, foundationStart.startDate)
+        : null,
+    [today, foundationStart.status, foundationStart.startDate],
+  )
 
   const milestones = useMemo(
     () => buildMilestones({ streak, foundation }),
@@ -84,5 +102,5 @@ export function useAchievements(): AchievementsView {
     [workouts, holidays],
   )
 
-  return { today, window, chunks, streak, milestones, reload }
+  return { today, window, chunks, streak, milestones, reload, foundationStart }
 }

@@ -12,7 +12,10 @@ import {
   outcomeFor,
   type StreakSources,
 } from '@/features/achievements/model/streak'
-import { foundationStatus } from '@/features/progress/foundation'
+import {
+  DEFAULT_FOUNDATION_START,
+  foundationStatus,
+} from '@/features/progress/foundation'
 import type { HolidayRecord } from '@shared/holiday'
 import type { WorkoutHistoryEntry } from '@shared/workoutLog'
 
@@ -222,7 +225,7 @@ describe('11. an Extra moves no planned-session achievement', () => {
     const streak = evaluateStreaks(sources({ entries: [finishedExtra(MONDAY, 'monday')] }))
     const milestones = buildMilestones({
       streak,
-      foundation: foundationStatus('2026-09-11'),
+      foundation: foundationStatus('2026-09-11', DEFAULT_FOUNDATION_START),
     })
     const first = milestones.find((row) => row.id === 'first-session')
 
@@ -244,11 +247,11 @@ describe('11. an Extra moves no planned-session achievement', () => {
 
     const before = buildMilestones({
       streak: evaluateStreaks(sources({ entries: scheduled })),
-      foundation: foundationStatus('2026-09-11'),
+      foundation: foundationStatus('2026-09-11', DEFAULT_FOUNDATION_START),
     })
     const after = buildMilestones({
       streak: evaluateStreaks(sources({ entries: [...scheduled, ...extras] })),
-      foundation: foundationStatus('2026-09-11'),
+      foundation: foundationStatus('2026-09-11', DEFAULT_FOUNDATION_START),
     })
 
     for (const id of ['first-session', 'full-week', 'consistency'] as const) {

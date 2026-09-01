@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/Card";
 import { IntensityBadge } from "@/components/ui/IntensityBadge";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { listItemVariants, listVariants } from "@/design/motion";
+import { useFoundationStart } from "@/features/settings/FoundationStartContext";
 import type { SessionIntensity } from "@/features/training/sessions";
 import { localWorkoutDate } from "@/features/training/workoutPlan";
 import { cn } from "@/lib/utils";
@@ -37,7 +38,17 @@ import { useWorkoutHistory } from "./useWorkoutHistory";
 export function ProgressPage() {
   // The user's own calendar date, fixed for this mount.
   const [today] = useState(() => localWorkoutDate());
-  const foundation = useMemo(() => foundationStatus(today), [today]);
+  // The one shared Foundation start contract.
+  const foundationStart = useFoundationStart();
+  const foundation = useMemo(
+    // Withheld until the start date is known, so no day number is stated from
+    // a guessed start.
+    () =>
+      foundationStart.status === "ready"
+        ? foundationStatus(today, foundationStart.startDate)
+        : null,
+    [today, foundationStart.status, foundationStart.startDate],
+  );
   const { status, history, reload } = useWorkoutHistory();
   const performance = usePerformance();
 

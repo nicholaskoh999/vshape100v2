@@ -22,6 +22,7 @@ import { handleProgressionRequest } from './progression/routes'
 import { handleProgressRequest } from './progress/routes'
 import { runScheduledDelivery } from './notifications/scheduler'
 import { createD1ScheduleTruth } from './notifications/truth'
+import { handleSettingsRequest } from './settings/routes'
 import { handleTodayRequest } from './today/routes'
 import { handleWorkoutRequest } from './workouts/routes'
 
@@ -53,6 +54,9 @@ export default {
 
     const progressResponse = await handleProgressRequest(request, env)
     if (progressResponse) return progressResponse
+
+    const settingsResponse = await handleSettingsRequest(request, env)
+    if (settingsResponse) return settingsResponse
 
     return env.ASSETS.fetch(request)
   },

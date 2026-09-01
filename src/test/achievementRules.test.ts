@@ -24,7 +24,10 @@ import {
   MAX_CHUNK_DAYS,
   rangeLength,
 } from '@/features/achievements/model/window'
-import { foundationStatus } from '@/features/progress/foundation'
+import {
+  DEFAULT_FOUNDATION_START,
+  foundationStatus,
+} from '@/features/progress/foundation'
 import type { HolidayRecord } from '@shared/holiday'
 import { addLocalDays, daysBetween } from '@shared/localDate'
 import type { WorkoutHistoryEntry } from '@shared/workoutLog'
@@ -400,7 +403,7 @@ describe('5. qualifying session count', () => {
     // The work happened, so it counts as a session finished…
     expect(result.facts.qualifyingSessions).toBe(1)
     // …and First session can unlock from it.
-    const list = buildMilestones({ streak: result, foundation: foundationStatus('2026-09-07') })
+    const list = buildMilestones({ streak: result, foundation: foundationStatus('2026-09-07', DEFAULT_FOUNDATION_START) })
     expect(milestone(list, 'first-session').state.status).toBe('unlocked')
 
     // …but the date stays EXEMPT, so neither streak moves.
@@ -478,18 +481,18 @@ describe('6. incomplete truth', () => {
 
 describe('7. evaluation window', () => {
   it('starts at Foundation Day 1', () => {
-    expect(evaluationWindow('2026-09-11')).toEqual({ from: '2026-08-31', to: '2026-09-11' })
+    expect(evaluationWindow('2026-09-11', DEFAULT_FOUNDATION_START)).toEqual({ from: '2026-08-31', to: '2026-09-11' })
   })
 
   it('collapses to today before Foundation begins, rather than running backwards', () => {
-    expect(evaluationWindow('2026-08-01')).toEqual({ from: '2026-08-01', to: '2026-08-01' })
+    expect(evaluationWindow('2026-08-01', DEFAULT_FOUNDATION_START)).toEqual({ from: '2026-08-01', to: '2026-08-01' })
   })
 
   it('still reaches back to Day 1 years later, never a rolling year', () => {
     // The correction. A rolling window would quietly rewrite history: a run
     // reached in 2026 would stop counting once it aged out, and an
     // achievement already earned would lock itself again.
-    const result = evaluationWindow('2030-01-01')
+    const result = evaluationWindow('2030-01-01', DEFAULT_FOUNDATION_START)
     expect(result).toEqual({ from: '2026-08-31', to: '2030-01-01' })
   })
 })
@@ -506,7 +509,7 @@ describe('7b. evaluation chunks', () => {
   })
 
   it('keeps every chunk inside the per-request bound', () => {
-    const chunks = evaluationChunks(evaluationWindow('2030-01-01'))
+    const chunks = evaluationChunks(evaluationWindow('2030-01-01', DEFAULT_FOUNDATION_START))
     expect(chunks.length).toBeGreaterThan(1)
     for (const chunk of chunks) {
       expect(rangeLength(chunk), `${chunk.from}..${chunk.to}`).toBeLessThanOrEqual(
@@ -516,7 +519,7 @@ describe('7b. evaluation chunks', () => {
   })
 
   it('tiles the whole period exactly — no gap and no overlap', () => {
-    const window = evaluationWindow('2030-01-01')
+    const window = evaluationWindow('2030-01-01', DEFAULT_FOUNDATION_START)
     const chunks = evaluationChunks(window)
 
     expect(chunks[0].from).toBe(window.from)
@@ -530,7 +533,7 @@ describe('7b. evaluation chunks', () => {
   })
 
   it('covers every date in the period', () => {
-    const window = evaluationWindow('2028-03-17')
+    const window = evaluationWindow('2028-03-17', DEFAULT_FOUNDATION_START)
     const chunks = evaluationChunks(window)
     const covered = chunks.reduce((sum, chunk) => sum + rangeLength(chunk), 0)
     expect(covered).toBe(rangeLength(window))
@@ -552,7 +555,7 @@ describe('8. milestones', () => {
   it('unlocks First session on one finished session', () => {
     const list = buildMilestones({
       streak: ready({ entries: [finished('2026-09-11', 'friday')] }),
-      foundation: foundationStatus('2026-09-11'),
+      foundation: foundationStatus('2026-09-11', DEFAULT_FOUNDATION_START),
     })
     expect(milestone(list, 'first-session').state.status).toBe('unlocked')
   })
@@ -565,7 +568,7 @@ describe('8. milestones', () => {
     ]
     const list = buildMilestones({
       streak: ready({ entries, today: '2026-09-11', from: '2026-09-09' }),
-      foundation: foundationStatus('2026-09-11'),
+      foundation: foundationStatus('2026-09-11', DEFAULT_FOUNDATION_START),
     })
     const week = milestone(list, 'full-week')
     expect(week.state).toEqual({ status: 'locked', value: 3, target: 5 })
@@ -591,7 +594,7 @@ describe('8. milestones', () => {
       today: '2026-09-18',
       from: '2026-09-07',
     })
-    const list = buildMilestones({ streak, foundation: foundationStatus('2026-09-18') })
+    const list = buildMilestones({ streak, foundation: foundationStatus('2026-09-18', DEFAULT_FOUNDATION_START) })
 
     expect(milestone(list, 'full-week').state.status).toBe('unlocked')
     expect(milestone(list, 'consistency').state.status).toBe('unlocked')
@@ -601,7 +604,7 @@ describe('8. milestones', () => {
     // Day 10 is 2026-09-09; Day 50 is 2026-10-19; Day 100 is 2026-12-08.
     const atDay10 = buildMilestones({
       streak: ready(),
-      foundation: foundationStatus('2026-09-09'),
+      foundation: foundationStatus('2026-09-09', DEFAULT_FOUNDATION_START),
     })
     expect(milestone(atDay10, 'day-10').state.status).toBe('unlocked')
     expect(milestone(atDay10, 'day-50').state).toEqual({
@@ -612,7 +615,7 @@ describe('8. milestones', () => {
 
     const atDay100 = buildMilestones({
       streak: ready(),
-      foundation: foundationStatus('2026-12-08'),
+      foundation: foundationStatus('2026-12-08', DEFAULT_FOUNDATION_START),
     })
     expect(milestone(atDay100, 'day-50').state.status).toBe('unlocked')
     expect(milestone(atDay100, 'day-100').state.status).toBe('unlocked')
@@ -621,7 +624,7 @@ describe('8. milestones', () => {
   it('needs no workout at all to reach a Foundation day', () => {
     const list = buildMilestones({
       streak: ready({ entries: [] }),
-      foundation: foundationStatus('2026-09-09'),
+      foundation: foundationStatus('2026-09-09', DEFAULT_FOUNDATION_START),
     })
     expect(milestone(list, 'day-10').state.status).toBe('unlocked')
   })
@@ -629,7 +632,7 @@ describe('8. milestones', () => {
   it('invents no Day 0 before Foundation starts', () => {
     const list = buildMilestones({
       streak: ready(),
-      foundation: foundationStatus('2026-08-01'),
+      foundation: foundationStatus('2026-08-01', DEFAULT_FOUNDATION_START),
     })
     const day10 = milestone(list, 'day-10')
     expect(day10.state).toEqual({ status: 'locked', value: null, target: 10 })
@@ -642,7 +645,7 @@ describe('8. milestones', () => {
     const holidays = [holiday('h1', '2026-09-01', '2026-09-09')]
     const list = buildMilestones({
       streak: ready({ holidays, today: '2026-09-09' }),
-      foundation: foundationStatus('2026-09-09'),
+      foundation: foundationStatus('2026-09-09', DEFAULT_FOUNDATION_START),
     })
     expect(milestone(list, 'day-10').state.status).toBe('unlocked')
   })
@@ -650,7 +653,7 @@ describe('8. milestones', () => {
   it('leaves training milestones unresolved when the streak is not known', () => {
     const list = buildMilestones({
       streak: ready({ holidayStatus: 'error' }),
-      foundation: foundationStatus('2026-09-09'),
+      foundation: foundationStatus('2026-09-09', DEFAULT_FOUNDATION_START),
     })
     // Not "locked" — locked would be a claim that they have not been reached.
     expect(milestone(list, 'first-session').state.status).toBe('unresolved')
@@ -663,7 +666,7 @@ describe('8. milestones', () => {
   it('keeps the six accepted slots, in order', () => {
     const list = buildMilestones({
       streak: ready(),
-      foundation: foundationStatus('2026-09-09'),
+      foundation: foundationStatus('2026-09-09', DEFAULT_FOUNDATION_START),
     })
     expect(list.map((row) => row.id)).toEqual([
       'first-session',
@@ -724,14 +727,14 @@ describe('9. an old run still counts, years later', () => {
 
   it('keeps a ten-day run as the best streak and leaves Consistency unlocked', () => {
     const streak = evaluateStreaks(
-      sources({ entries: oldRunEntries(), today: MUCH_LATER, from: evaluationWindow(MUCH_LATER).from }),
+      sources({ entries: oldRunEntries(), today: MUCH_LATER, from: evaluationWindow(MUCH_LATER, DEFAULT_FOUNDATION_START).from }),
     )
     expect(streak.status).toBe('ready')
     if (streak.status !== 'ready') return
 
     expect(streak.facts.best).toBeGreaterThanOrEqual(10)
 
-    const list = buildMilestones({ streak, foundation: foundationStatus(MUCH_LATER) })
+    const list = buildMilestones({ streak, foundation: foundationStatus(MUCH_LATER, DEFAULT_FOUNDATION_START) })
     expect(milestone(list, 'consistency').state.status).toBe('unlocked')
     expect(milestone(list, 'full-week').state.status).toBe('unlocked')
   })
@@ -743,7 +746,7 @@ describe('9. an old run still counts, years later', () => {
       finished('2028-03-16', 'thursday'),
       finished('2028-03-17', 'friday'),
     ]
-    const streak = evaluateStreaks(sources({ entries, today: MUCH_LATER, from: evaluationWindow(MUCH_LATER).from }))
+    const streak = evaluateStreaks(sources({ entries, today: MUCH_LATER, from: evaluationWindow(MUCH_LATER, DEFAULT_FOUNDATION_START).from }))
     if (streak.status !== 'ready') throw new Error('expected ready')
 
     expect(streak.facts.best).toBe(10)
@@ -753,21 +756,21 @@ describe('9. an old run still counts, years later', () => {
 
   it('still represents an old first session', () => {
     const streak = evaluateStreaks(
-      sources({ entries: oldRunEntries(), today: MUCH_LATER, from: evaluationWindow(MUCH_LATER).from }),
+      sources({ entries: oldRunEntries(), today: MUCH_LATER, from: evaluationWindow(MUCH_LATER, DEFAULT_FOUNDATION_START).from }),
     )
     if (streak.status !== 'ready') throw new Error('expected ready')
 
     expect(streak.facts.qualifyingSessions).toBe(10)
 
-    const list = buildMilestones({ streak, foundation: foundationStatus(MUCH_LATER) })
+    const list = buildMilestones({ streak, foundation: foundationStatus(MUCH_LATER, DEFAULT_FOUNDATION_START) })
     expect(milestone(list, 'first-session').state.status).toBe('unlocked')
   })
 
   it('does not relock Full week or Consistency as the history ages', () => {
     const entries = oldRunEntries()
     const unlockedAt = (today: string) => {
-      const streak = evaluateStreaks(sources({ entries, today, from: evaluationWindow(today).from }))
-      const list = buildMilestones({ streak, foundation: foundationStatus(today) })
+      const streak = evaluateStreaks(sources({ entries, today, from: evaluationWindow(today, DEFAULT_FOUNDATION_START).from }))
+      const list = buildMilestones({ streak, foundation: foundationStatus(today, DEFAULT_FOUNDATION_START) })
       return {
         week: milestone(list, 'full-week').state.status,
         consistency: milestone(list, 'consistency').state.status,
@@ -787,7 +790,7 @@ describe('9. an old run still counts, years later', () => {
   it('reports the current streak from the current end, not from the old run', () => {
     // The old run is long over and nothing recent was trained.
     const streak = evaluateStreaks(
-      sources({ entries: oldRunEntries(), today: MUCH_LATER, from: evaluationWindow(MUCH_LATER).from }),
+      sources({ entries: oldRunEntries(), today: MUCH_LATER, from: evaluationWindow(MUCH_LATER, DEFAULT_FOUNDATION_START).from }),
     )
     if (streak.status !== 'ready') throw new Error('expected ready')
 
@@ -811,7 +814,7 @@ describe('9. an old run still counts, years later', () => {
     ]
     const holidays = [holiday('h1', '2026-09-14')]
     const streak = evaluateStreaks(
-      sources({ entries, holidays, today: MUCH_LATER, from: evaluationWindow(MUCH_LATER).from }),
+      sources({ entries, holidays, today: MUCH_LATER, from: evaluationWindow(MUCH_LATER, DEFAULT_FOUNDATION_START).from }),
     )
     if (streak.status !== 'ready') throw new Error('expected ready')
 
@@ -821,12 +824,12 @@ describe('9. an old run still counts, years later', () => {
 
   it('still breaks an old run on a real failure inside it', () => {
     const entries = oldRunEntries().filter((row) => row.date !== '2026-09-09')
-    const streak = evaluateStreaks(sources({ entries, today: MUCH_LATER, from: evaluationWindow(MUCH_LATER).from }))
+    const streak = evaluateStreaks(sources({ entries, today: MUCH_LATER, from: evaluationWindow(MUCH_LATER, DEFAULT_FOUNDATION_START).from }))
     if (streak.status !== 'ready') throw new Error('expected ready')
 
     // Two before the missed Wednesday, seven after it.
     expect(streak.facts.best).toBe(7)
-    const list = buildMilestones({ streak, foundation: foundationStatus(MUCH_LATER) })
+    const list = buildMilestones({ streak, foundation: foundationStatus(MUCH_LATER, DEFAULT_FOUNDATION_START) })
     expect(milestone(list, 'consistency').state.status).toBe('locked')
     expect(milestone(list, 'full-week').state.status).toBe('unlocked')
   })
@@ -997,7 +1000,7 @@ describe('10. Holiday training', () => {
       const streak = evaluateStreaks(
         sources({ holidays, today: '2026-09-09', from: '2026-08-31' }),
       )
-      const list = buildMilestones({ streak, foundation: foundationStatus('2026-09-09') })
+      const list = buildMilestones({ streak, foundation: foundationStatus('2026-09-09', DEFAULT_FOUNDATION_START) })
       // 2026-09-09 is Foundation Day 10 whatever the day is called.
       expect(milestone(list, 'day-10').state.status).toBe('unlocked')
     }

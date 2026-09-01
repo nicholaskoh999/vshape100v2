@@ -8,6 +8,7 @@ import type { SessionState } from '@/features/auth/api'
 import { createMediaServer, type MediaServer } from './exerciseMediaApiTestUtils'
 import { createHolidayServer, type HolidayServer } from './holidayApiTestUtils'
 import { createProgressServer, type ProgressServer } from './progressApiTestUtils'
+import { createSettingsServer, type SettingsServer } from './settingsApiTestUtils'
 import {
   createProgressionServer,
   type ProgressionServer,
@@ -74,6 +75,13 @@ export function mockAuthFetch(options: {
    * guidance without anything having to say so.
    */
   progression?: ProgressionServer
+  /**
+   * Account settings API stand-in. Absent means an account that has never saved
+   * a Foundation start date — exactly what every pre-Round-18 account looks
+   * like, so existing tests keep their original meaning and the legacy fallback
+   * stays under test.
+   */
+  settings?: SettingsServer
 }) {
   const today = options.today ?? createTodayServer()
   const media = options.media ?? createMediaServer()
@@ -81,6 +89,7 @@ export function mockAuthFetch(options: {
   const holidays = options.holidays ?? createHolidayServer()
   const progress = options.progress ?? createProgressServer()
   const progression = options.progression ?? createProgressionServer(workouts)
+  const settings = options.settings ?? createSettingsServer()
 
   const handler: FetchHandler = async (url, init) => {
     if (url.startsWith('/api/auth/session')) {
@@ -110,6 +119,9 @@ export function mockAuthFetch(options: {
     }
     if (url.startsWith('/api/progress/')) {
       return progress.handle(url, init)
+    }
+    if (url.startsWith('/api/settings')) {
+      return settings.handle(url, init)
     }
     if (url.startsWith('/api/notifications')) {
       if (options.notifications) return options.notifications(url, init)

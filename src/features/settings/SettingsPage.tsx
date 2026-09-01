@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/ui/PageHeader'
 import { listItemVariants, listVariants, press } from '@/design/motion'
 import { useAuth } from '@/features/auth/AuthContext'
 import { NotificationSettingsCard } from '@/features/notifications/NotificationSettingsCard'
+import { FoundationStartCard } from './FoundationStartCard'
 
 const rows = [
   {
@@ -74,6 +75,14 @@ export function SettingsPage() {
             than becoming a destination: no route, no nav item, no inbox.
           */}
           <NotificationSettingsCard />
+        </motion.div>
+
+        {/*
+          Foundation Start Date. A setting, not a destination: it renumbers
+          Foundation days and milestones and touches nothing else.
+        */}
+        <motion.div variants={listItemVariants}>
+          <FoundationStartCard />
         </motion.div>
 
         <motion.div variants={listItemVariants}>

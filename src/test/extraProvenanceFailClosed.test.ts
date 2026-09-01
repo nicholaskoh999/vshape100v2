@@ -7,7 +7,10 @@ import {
   isQualifyingWorkout,
   type StreakSources,
 } from '@/features/achievements/model/streak'
-import { foundationStatus } from '@/features/progress/foundation'
+import {
+  DEFAULT_FOUNDATION_START,
+  foundationStatus,
+} from '@/features/progress/foundation'
 import { readProvenance, type WorkoutHistoryEntry } from '@shared/workoutLog'
 
 /**
@@ -133,7 +136,7 @@ describe('1/2. unreadable provenance cannot reach streaks or achievements', () =
     const streak = evaluateStreaks(sources({ entries: [entry({ kind: null })] }))
     const milestones = buildMilestones({
       streak,
-      foundation: foundationStatus('2026-09-11'),
+      foundation: foundationStatus('2026-09-11', DEFAULT_FOUNDATION_START),
     })
 
     for (const id of ['first-session', 'full-week', 'consistency'] as const) {

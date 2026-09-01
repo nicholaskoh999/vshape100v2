@@ -4,6 +4,7 @@ import { Outlet, useLocation } from 'react-router'
 import { BottomNav } from '@/components/navigation/BottomNav'
 import { SideNav } from '@/components/navigation/SideNav'
 import { pageVariants } from '@/design/motion'
+import { FoundationStartProvider } from '@/features/settings/FoundationStartProvider'
 
 /**
  * Responsive application shell.
@@ -14,11 +15,17 @@ import { pageVariants } from '@/design/motion'
  *
  * Route content re-animates via shared motion tokens whenever the
  * pathname changes.
+ *
+ * The Foundation start date is loaded ONCE here and shared with every page, so
+ * Today, Progress, Achievements and Settings can never disagree about which day
+ * of Foundation it is. It sits inside the authenticated shell, so it never runs
+ * for a signed-out visitor.
  */
 export function AppShell() {
   const { pathname } = useLocation()
 
   return (
+    <FoundationStartProvider>
     <div className="min-h-dvh">
       {/* Tablet rail */}
       <div className="hidden md:block xl:hidden">
@@ -48,5 +55,6 @@ export function AppShell() {
       {/* Mobile bottom nav */}
       <BottomNav />
     </div>
+    </FoundationStartProvider>
   )
 }

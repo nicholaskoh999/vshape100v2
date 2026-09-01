@@ -13,7 +13,6 @@
  * the same as bounding the truth.
  */
 
-import { FOUNDATION_START } from '@/features/progress/foundation'
 import { MAX_HOLIDAY_RANGE_DAYS } from '@shared/holiday'
 import { addLocalDays, daysBetween, isLocalDate } from '@shared/localDate'
 import { MAX_HISTORY_RANGE_DAYS } from '@shared/workoutLog'
@@ -44,11 +43,16 @@ export const MAX_EVALUATION_CHUNKS = 512
  * Deliberately NOT clipped to a recent span. Before Foundation begins there is
  * nothing behind today to evaluate, so the period collapses to today alone
  * rather than running backwards.
+ *
+ * Round 18: the start is the ACCOUNT's, passed in rather than imported. This
+ * module used to reach for the source constant itself, which made it a second
+ * authority on when Foundation began; now it has none of its own.
  */
-export function evaluationWindow(today: string): DateRange {
+export function evaluationWindow(today: string, startDate: string): DateRange {
   if (!isLocalDate(today)) return { from: today, to: today }
-  if (FOUNDATION_START > today) return { from: today, to: today }
-  return { from: FOUNDATION_START, to: today }
+  if (!isLocalDate(startDate)) return { from: today, to: today }
+  if (startDate > today) return { from: today, to: today }
+  return { from: startDate, to: today }
 }
 
 /**

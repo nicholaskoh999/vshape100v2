@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  FOUNDATION_END,
-  FOUNDATION_START,
+  DEFAULT_FOUNDATION_START,
   FOUNDATION_TOTAL_DAYS,
   foundationLabel,
   foundationStatus,
@@ -14,15 +13,24 @@ import { localWorkoutDate } from '@/features/training/workoutPlan'
  *
  * Day 1 is 2026-08-31, Day 100 is 2026-12-08, and both are LOCAL calendar
  * dates. Reaching Day 100 ends nothing: the count keeps going.
+ *
+ * Round 18 made the start date an account setting, so these accepted cases now
+ * run against the DEFAULT — which is exactly what an account that has never
+ * chosen a date is still counted from. The end date is derived rather than
+ * declared, so it is computed here too.
  */
 
-const day = (date: string) => foundationStatus(date)
+/** Day 100 under the default start, formerly the FOUNDATION_END constant. */
+const DEFAULT_FOUNDATION_END = '2026-12-08'
+
+const day = (date: string) => foundationStatus(date, DEFAULT_FOUNDATION_START)
 
 describe('the accepted anchors', () => {
   it('starts on 2026-08-31 and runs 100 days', () => {
-    expect(FOUNDATION_START).toBe('2026-08-31')
-    expect(FOUNDATION_END).toBe('2026-12-08')
+    expect(DEFAULT_FOUNDATION_START).toBe('2026-08-31')
     expect(FOUNDATION_TOTAL_DAYS).toBe(100)
+    // Day 100 is now derived from the start rather than declared beside it.
+    expect(day(DEFAULT_FOUNDATION_START)!.endDate).toBe(DEFAULT_FOUNDATION_END)
   })
 
   it('makes the start date Day 1', () => {
@@ -31,6 +39,10 @@ describe('the accepted anchors', () => {
       day: 1,
       total: 100,
       daysUntilStart: null,
+      // Round 18: the status echoes the start it was derived from, and the
+      // derived Day 100, so nothing downstream has to recompute either.
+      startDate: DEFAULT_FOUNDATION_START,
+      endDate: DEFAULT_FOUNDATION_END,
     })
   })
 
@@ -42,7 +54,7 @@ describe('the accepted anchors', () => {
 
   it('agrees that the end date is exactly the last Foundation day', () => {
     // The two accepted anchors have to be consistent with each other.
-    expect(day(FOUNDATION_END)!.day).toBe(FOUNDATION_TOTAL_DAYS)
+    expect(day(DEFAULT_FOUNDATION_END)!.day).toBe(FOUNDATION_TOTAL_DAYS)
   })
 })
 
@@ -53,6 +65,8 @@ describe('before the start', () => {
       day: null,
       total: 100,
       daysUntilStart: 1,
+      startDate: DEFAULT_FOUNDATION_START,
+      endDate: DEFAULT_FOUNDATION_END,
     })
   })
 
@@ -157,7 +171,7 @@ describe('malformed input', () => {
   it.each(['', 'today', '2026-8-31', '31-08-2026', '2026-02-30', '2026-13-01'])(
     'returns null for %s rather than guessing a day',
     (value) => {
-      expect(foundationStatus(value)).toBeNull()
+      expect(foundationStatus(value, DEFAULT_FOUNDATION_START)).toBeNull()
     },
   )
 })

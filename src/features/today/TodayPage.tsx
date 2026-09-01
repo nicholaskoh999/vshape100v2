@@ -6,6 +6,7 @@ import { EmptyShell } from '@/components/ui/EmptyShell'
 import { PageHeader } from '@/components/ui/PageHeader'
 import type { HolidayStatus } from '@/features/calendar/useHolidays'
 import { foundationStatus } from '@/features/progress/foundation'
+import { useFoundationStart } from '@/features/settings/FoundationStartContext'
 import { localDateOf } from '@shared/localDate'
 import type { Route } from './model/types'
 import { TodayHero } from './components/TodayHero'
@@ -37,9 +38,14 @@ function dayModeLabel(status: HolidayStatus, route: Route): string {
  * this page previously divided a millisecond difference, which a daylight-
  * saving transition makes 23 or 25 hours and therefore off by a day. Holiday
  * changes nothing here — the day number follows the real calendar either way.
+ *
+ * Round 18: the start date is the account's, and until it is known this says so
+ * rather than naming a day derived from a guess. `now` is the live clock, so
+ * the day number advances across local midnight without a reload.
  */
-function foundationEyebrow(now: Date): string {
-  const status = foundationStatus(localDateOf(now))
+function foundationEyebrow(now: Date, startDate: string, ready: boolean): string {
+  if (!ready) return 'Foundation'
+  const status = foundationStatus(localDateOf(now), startDate)
   if (!status) return 'Foundation'
   if (status.phase === 'upcoming') {
     const days = status.daysUntilStart ?? 0
@@ -89,6 +95,10 @@ export function TodayPage() {
     retryHolidays,
   } = useToday()
 
+  // The one shared Foundation start contract. Read here rather than derived
+  // locally, so this page cannot disagree with Progress or Achievements.
+  const foundationStart = useFoundationStart()
+
   // Completing something before saved progress has loaded would be acting on
   // state we have not read yet, so the controls wait for hydration.
   const controlsDisabled = hydration !== 'ready'
@@ -115,7 +125,11 @@ export function TodayPage() {
   return (
     <>
       <PageHeader
-        eyebrow={foundationEyebrow(now)}
+        eyebrow={foundationEyebrow(
+          now,
+          foundationStart.startDate,
+          foundationStart.status === 'ready',
+        )}
         title="Today"
         subline={`${dateLabel} · ${dayModeLabel(holidayStatus, agenda.route)}`}
         actions={<ClockChip now={now} />}
