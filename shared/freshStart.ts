@@ -1,4 +1,11 @@
-import { isLocalDate } from './localDate'
+// An explicit `.ts` specifier, unlike everywhere else in this codebase.
+//
+// scripts/fresh-start.mjs imports this module under plain Node, which resolves
+// relative specifiers exactly and will not guess an extension. The bundler and
+// the type checker are both happy either way (`allowImportingTsExtensions` is
+// already on), so this costs nothing and is the difference between the operator
+// script running and failing with ERR_MODULE_NOT_FOUND.
+import { isLocalDate } from './localDate.ts'
 
 /**
  * Fresh Start — the one-off, release-stage reset of pre-cutoff training history.
@@ -71,8 +78,89 @@ export function parseFreshStartTarget(
   if (typeof googleSub !== 'string' || googleSub.trim() === '') {
     return { ok: false, field: 'google_sub' }
   }
+  // The account key has to survive being written as a SQL literal (see
+  // `renderStatement`), so it is restricted to an allowlist here — at the
+  // boundary, before any statement exists. A key that cannot be embedded safely
+  // is rejected outright rather than escaped and hoped for.
+  if (!EMBEDDABLE.test(googleSub.trim())) return { ok: false, field: 'google_sub' }
   if (!isLocalDate(cutoff)) return { ok: false, field: 'cutoff' }
   return { ok: true, value: { googleSub: googleSub.trim(), cutoff } }
+}
+
+/* ------------------------------------------------------------------ */
+/* Rendering to SQL text                                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Characters a value may contain to be embeddable as a SQL literal.
+ *
+ * Deliberately narrow: alphanumerics and a few separators that appear in real
+ * Google subject identifiers and in ISO dates. No quote, backslash, semicolon,
+ * whitespace or comment marker can pass, so a rendered literal cannot terminate
+ * its string, end the statement, or start a comment.
+ */
+const EMBEDDABLE = /^[A-Za-z0-9_.:@-]+$/
+
+/** True when `value` may be embedded as a SQL literal. */
+export function isEmbeddableValue(value: string): boolean {
+  return EMBEDDABLE.test(value)
+}
+
+/**
+ * Render one prepared statement as literal SQL.
+ *
+ * WHY THIS EXISTS AT ALL. Wrangler's `d1 execute` has no parameter binding — it
+ * accepts `--command` or `--file` and nothing else. The previous operator script
+ * passed `--param`, which that CLI does not implement, so it could never have run
+ * a single statement successfully.
+ *
+ * Binding is therefore replaced by something with an equivalent guarantee rather
+ * than by trust: every value is checked against `EMBEDDABLE` at parse time AND
+ * again here, and anything else throws instead of being escaped. Two independent
+ * refusals, and neither depends on the caller remembering to validate.
+ */
+export function renderStatement(statement: FreshStartStatement): string {
+  let index = 0
+  const rendered = statement.sql.replace(/\?/g, () => {
+    const value = statement.params[index++]
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value)) throw new Error('fresh start: non-finite parameter')
+      return String(value)
+    }
+    if (typeof value !== 'string' || !EMBEDDABLE.test(value)) {
+      throw new Error('fresh start: refusing to embed an unsafe value')
+    }
+    return `'${value}'`
+  })
+  if (index !== statement.params.length) {
+    throw new Error('fresh start: parameter count did not match the statement')
+  }
+  return rendered
+}
+
+/**
+ * The whole destructive phase as ONE command.
+ *
+ * THE ATOMIC BOUNDARY.
+ *
+ * Round 18 Correction 1: the deletes used to run as three separate Wrangler
+ * invocations, so a failure between them left an account half-reset — sets and
+ * calibration gone, the occurrences that owned them still present.
+ *
+ * D1 rejects explicit `BEGIN`/`SAVEPOINT` outright ("please use the
+ * state.storage.transaction() API instead"), so the transaction cannot be
+ * written by hand. What D1 does provide is that a MULTI-STATEMENT command is
+ * executed as a single transaction. Measured against a local D1, not assumed:
+ * three inserts where the last statement fails leave zero rows behind, and a
+ * failure in the middle leaves the rows from before the command untouched.
+ *
+ * So the three deletes become one command, in dependency order, and the
+ * all-or-nothing boundary is the command itself.
+ */
+export function freshStartTransaction(target: FreshStartTarget): string {
+  return freshStartStatements(target)
+    .map((statement) => `${renderStatement(statement)};`)
+    .join('\n')
 }
 
 /** One statement, with its bound values kept separate from its text. */
