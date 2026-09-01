@@ -53,11 +53,15 @@ describe('no media', () => {
     expect(screen.getByText('Media coming soon')).toBeInTheDocument()
   })
 
-  it('still holds the aspect-ratio box so the page does not reflow', () => {
+  it('still holds a ratio box so the page does not reflow', () => {
+    // Round 19.1 moved the ratio from a class to a style so the frame can adopt
+    // the media's own shape. With no media there is no shape to adopt, so the
+    // familiar 16:9 reservation stands and the page height is still stable.
     const { container } = render(<ExerciseMedia media={null} />)
     const frame = container.firstElementChild as HTMLElement
-    expect(frame.className).toContain('aspect-video')
+    expect(Number.parseFloat(frame.style.aspectRatio)).toBeCloseTo(16 / 9, 3)
     expect(frame.className).toContain('w-full')
+    expect(frame.className).not.toContain('aspect-video')
   })
 })
 

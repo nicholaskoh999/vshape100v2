@@ -61,7 +61,12 @@ function classesOf(el: Element): string[] {
   return el.className.split(/\s+/).filter(Boolean)
 }
 
-/** The media's 16:9 frame — the element carrying the state marker. */
+/** The frame's applied aspect ratio, which is now a style rather than a class. */
+function ratioOf(el: HTMLElement): number {
+  return Number.parseFloat((el.style.aspectRatio || '0').trim())
+}
+
+/** The media frame — the element carrying the state marker. */
 function mediaFrame(): HTMLElement | null {
   const marker = document.querySelector('[data-media-state]')
   return marker?.parentElement ?? null
@@ -153,9 +158,12 @@ describe('the exercise detail column', () => {
 /* ------------------------------------------------------------------ */
 
 describe('the media box', () => {
-  it('preserves 16:9', async () => {
+  it('reserves the default ratio before any media has loaded', async () => {
+    // Round 19.1: the ratio moved from an `aspect-video` class to a style, so
+    // the frame can adopt the MEDIA's own ratio once the file reports it. Until
+    // then it still reserves 16:9, which is what stops the page reflowing.
     await renderDetail()
-    expect(classesOf(mediaFrame()!)).toContain('aspect-video')
+    expect(ratioOf(mediaFrame()!)).toBeCloseTo(16 / 9, 3)
   })
 
   it('fills the column width', async () => {
@@ -163,28 +171,35 @@ describe('the media box', () => {
     expect(classesOf(mediaFrame()!)).toContain('w-full')
   })
 
-  it('sets no fixed height, so height still follows width', async () => {
+  it('sets no fixed height, so height still follows the ratio', async () => {
     await renderDetail()
     const classes = classesOf(mediaFrame()!)
 
-    // A height utility here would break the ratio the aspect box maintains.
+    // A fixed height would override the ratio and squash the media.
     expect(classes.some((c) => /^h-/.test(c) && c !== 'h-full')).toBe(false)
-    expect(classes.some((c) => /^(min-h-|max-h-)/.test(c))).toBe(false)
+    expect(classes.some((c) => /^min-h-/.test(c))).toBe(false)
+
+    // A CAP is required, though — Round 19.1 lets the box take the media's own
+    // ratio, and a tall portrait clip on a wide column would otherwise run down
+    // the page. `max-h` only ever shortens the box; contain keeps the media
+    // whole inside it.
+    expect(classes.some((c) => /^(sm:)?max-h-/.test(c))).toBe(true)
   })
 
-  it('keeps the ratio in every media state', async () => {
+  it('keeps a ratio box in every media state', async () => {
     // No media set.
     await renderDetail()
     await waitFor(() => expect(document.querySelector('[data-media-state]')).not.toBeNull())
-    expect(classesOf(mediaFrame()!)).toContain('aspect-video')
+    expect(ratioOf(mediaFrame()!)).toBeCloseTo(16 / 9, 3)
     expect(column()).not.toBeNull()
     cleanup()
 
-    // Saved media.
+    // Saved media. jsdom reports no intrinsic size, so the reservation stands;
+    // the adoption of a real file's ratio is covered in exerciseMediaFit.
     server.rows.set(GIF.exerciseId, GIF)
     await renderDetail()
     await waitFor(() => expect(document.querySelector('[data-media-state]')).not.toBeNull())
-    expect(classesOf(mediaFrame()!)).toContain('aspect-video')
+    expect(ratioOf(mediaFrame()!)).toBeGreaterThan(0)
     expect(classesOf(column()!)).toContain('w-full')
     cleanup()
 
@@ -193,7 +208,7 @@ describe('the media box', () => {
     server.failReads(10)
     await renderDetail()
     await waitFor(() => expect(mediaState()).toBe('error'))
-    expect(classesOf(mediaFrame()!)).toContain('aspect-video')
+    expect(ratioOf(mediaFrame()!)).toBeCloseTo(16 / 9, 3)
     expect(document.querySelectorAll('[data-exercise-detail-column]')).toHaveLength(1)
     errors.mockRestore()
   })
