@@ -17,13 +17,30 @@
  *
  * ROUND 17: SCHEDULED EVIDENCE ONLY, STATED IN SQL.
  *
- * `o.kind = 'scheduled'` appears in every read below. An Extra Workout already
- * lives under its own session slug, so a session-scoped read could not reach it
- * by accident — but progression must not depend on that. The recommendation
- * for next Monday is derived from the SCHEDULED Monday history and nothing
- * else, and this is where that is asserted rather than assumed. Voluntary extra
- * work is real training and factual history; it is not evidence about an
- * obligation the user has not yet performed.
+ * Every read below admits an occurrence only when it satisfies the WHOLE
+ * persisted scheduled invariant. An Extra Workout already lives under its own
+ * session slug, so a session-scoped read could not reach it by accident — but
+ * progression must not depend on that. The recommendation for next Monday is
+ * derived from the SCHEDULED Monday history and nothing else, and this is where
+ * that is asserted rather than assumed. Voluntary extra work is real training
+ * and factual history; it is not evidence about an obligation the user has not
+ * yet performed.
+ *
+ * WHY `kind` ALONE IS NOT ENOUGH.
+ *
+ * Correction 1 established that provenance is a PAIR, and that a row whose two
+ * halves contradict each other cannot be read at all: a scheduled workout
+ * carrying a source session is exactly as unreadable as an unknown kind, and
+ * `readProvenance` refuses both. Filtering on `kind = 'scheduled'` alone would
+ * have let one of those contradictions — `kind = 'scheduled'` with
+ * `source_session_id = 'tuesday'` — straight into the lanes, because SQL cannot
+ * call into that reader. So the invariant is restated here in the only
+ * vocabulary this layer has.
+ *
+ * This filter is deliberately at least as strict as `readProvenance`: where the
+ * two could ever diverge, SQL excludes rather than admits. An empty-string
+ * source is the only such case, it is not a value this application writes, and
+ * dropping a corrupt row from progression evidence is the safe direction.
  */
 
 import type { ProgressionSetRow } from '../../shared/progression/engine'
@@ -99,11 +116,22 @@ const SET_COLUMNS = `s.workout_date, s.exercise_order, s.set_index,
   s.result_kind_snapshot, s.load_mode_snapshot, s.per_side_snapshot,
   s.status, s.actual_load_value, s.actual_load_unit, s.actual_result`
 
+/**
+ * The full persisted SCHEDULED provenance invariant, unqualified.
+ *
+ * One definition, used by every read that admits scheduled evidence, so the
+ * rule cannot drift apart between them.
+ */
+const SCHEDULED_PROVENANCE = `kind = 'scheduled' AND source_session_id IS NULL`
+
+/** The same invariant, qualified for the joins that alias the table as `o`. */
+const SCHEDULED_PROVENANCE_O = `o.kind = 'scheduled' AND o.source_session_id IS NULL`
+
 const OWNERSHIP_JOIN = `o.google_sub   = s.google_sub
                AND o.workout_date = s.workout_date
                AND o.session_id   = s.session_id
                AND o.snapshot_id  = s.snapshot_id
-               AND o.kind         = 'scheduled'`
+               AND ${SCHEDULED_PROVENANCE_O}`
 
 const CALIBRATION_COLUMNS = `google_sub, workout_date, session_id, exercise_order,
   lane_fingerprint, feedback, observed_load_value, observed_load_unit,
@@ -117,7 +145,7 @@ export function createD1ProgressionStore(db: D1Database): ProgressionStore {
           `SELECT workout_date, session_id, session_intensity_snapshot, started_at
              FROM workout_occurrences
             WHERE google_sub = ? AND workout_date = ? AND session_id = ?
-              AND kind = 'scheduled'`,
+              AND ${SCHEDULED_PROVENANCE}`,
         )
         .bind(googleSub, workoutDate, sessionId)
         .first<OccurrenceRow>()
@@ -155,7 +183,7 @@ export function createD1ProgressionStore(db: D1Database): ProgressionStore {
           `SELECT workout_date
              FROM workout_occurrences
             WHERE google_sub = ? AND session_id = ? AND workout_date < ?
-              AND kind = 'scheduled'
+              AND ${SCHEDULED_PROVENANCE}
             ORDER BY workout_date DESC
             LIMIT ?`,
         )

@@ -216,16 +216,29 @@ export function createFakeD1() {
   let holidayGate: Promise<void> | null = null
 
   /**
-   * The `kind = 'scheduled'` filter 0010 added, in the stand-in.
+   * The scheduled-provenance filter the progression reads carry, in the
+   * stand-in.
    *
    * Applied only when the statement actually carries it, so a read that is
-   * deliberately kind-agnostic (the workout API, history) still sees Extra
-   * occurrences, while every progression read does not.
+   * deliberately provenance-agnostic (the workout API, history) still sees
+   * Extra and contradictory occurrences, while every progression read does not.
+   *
+   * It mirrors the WHOLE invariant, not just `kind`. Matching on `kind` alone
+   * here would quietly re-open the very gap correction 2 closes: a row with
+   * `kind = 'scheduled'` and a source session would be filtered by the real
+   * SQL but admitted by this stand-in, and the regression proving it stays out
+   * would pass against production code that let it in.
    */
   function scheduledOnly(sql: string, rows: OccurrenceRow[]) {
-    return sql.includes("kind = 'scheduled'") || sql.includes("kind         = 'scheduled'")
-      ? rows.filter((row) => row.kind === 'scheduled')
-      : rows
+    if (!sql.includes("kind = 'scheduled'")) return rows
+    const requiresNullSource = sql.includes('source_session_id IS NULL')
+    return rows.filter(
+      (row) =>
+        row.kind === 'scheduled' &&
+        // `IS NULL` in SQL is exactly null — an empty string does not satisfy
+        // it, and neither does it here.
+        (!requiresNullSource || row.source_session_id === null),
+    )
   }
 
   /** Sets that belong to an occurrence — the ownership join, in the stand-in. */
