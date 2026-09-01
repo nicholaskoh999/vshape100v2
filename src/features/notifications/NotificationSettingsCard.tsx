@@ -91,7 +91,10 @@ export function NotificationSettingsCard() {
 
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-              <p className="text-sm font-bold text-offwhite">Routine reminders</p>
+              {/* A heading, not a bold paragraph: every settings card is a
+                  section, and assistive technology should be able to jump
+                  between them. */}
+              <h2 className="text-sm font-bold text-offwhite">Routine reminders</h2>
               <p className="text-[13px] font-semibold text-ink-dim">{copy.value}</p>
             </div>
             <p className="mt-1 text-[13px] leading-relaxed text-ink-faint">{copy.note}</p>

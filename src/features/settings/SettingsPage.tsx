@@ -19,8 +19,10 @@ const rows = [
   {
     icon: Info,
     label: 'App',
-    value: 'v2 · Round 02',
-    note: 'Foundation shell — vshapev2.nkmwei.de',
+    // Deliberately not a round number: this row said "Round 02" for sixteen
+    // rounds because nothing makes a hard-coded version follow the code.
+    value: 'v2',
+    note: 'Foundation — vshapev2.nkmwei.de',
   },
 ]
 

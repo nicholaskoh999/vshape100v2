@@ -62,7 +62,7 @@ export function FoundationStartCard() {
   const preview = valid ? foundationStatus(localWorkoutDate(), draft) : null
 
   return (
-    <Card className="p-4.5">
+    <Card className="px-5 py-4">
       <div className="flex items-start gap-3.5">
         <span
           aria-hidden="true"
