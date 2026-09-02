@@ -1786,7 +1786,20 @@ export function createFakeD1() {
     // the production store actually sent: split the parent delete back out of
     // the batch and this stops parking it, so the atomicity test fails rather
     // than passing on the stand-in's goodwill.
-    if (cancelGate && statements.some((s) => s.sql?.includes('DELETE FROM workout_occurrences'))) {
+    // Round 21 Correction 1. The gate parks the batch that removes the CHILD
+    // rows, which is the point that discriminates between the two shapes:
+    //
+    //   shipped (one batch)  the parent delete is in this same batch, so
+    //                        parking it parks the whole unit BEFORE anything
+    //                        commits — no intermediate state exists
+    //   split (two boundaries) the parent has already committed by the time
+    //                        this runs, so parking here holds the workout in
+    //                        exactly the state the gap is made of: occurrence
+    //                        gone, set rows still writable
+    //
+    // Keyed off the statement text the production store actually sent, so
+    // restoring the split shape re-opens the window and the test fails.
+    if (cancelGate && statements.some((s) => s.sql?.includes('DELETE FROM workout_sets'))) {
       await cancelGate
     }
 
