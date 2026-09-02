@@ -245,6 +245,38 @@ function workoutSetId(
   return [googleSub, date, sessionId, exerciseOrder, setIndex].join('\u0000')
 }
 
+
+/** Round 22 programme rows, mirroring migration 0015. */
+type ProgrammeRevisionRow = {
+  google_sub: string
+  revision: number
+  write_token: string
+  updated_at: number
+}
+
+type ProgrammeExerciseRow = {
+  google_sub: string
+  exercise_id: string
+  name: string
+  archived: number
+  is_custom: number
+  created_at: number
+  updated_at: number
+}
+
+type ProgrammeSlotRow = {
+  google_sub: string
+  session_id: string
+  exercise_id: string
+  position: number
+  set_count: number
+  result_kind: string
+  target_min: number
+  target_max: number
+  per_side: number
+  equipment: string | null
+}
+
 export function createFakeD1() {
   const sessions = new Map<string, SessionRow>()
   const completions = new Map<string, CompletionRow>()
@@ -268,6 +300,34 @@ export function createFakeD1() {
   /** Round 19.2 training flex, keyed `google_sub\u0000local_date`. */
   const trainingFlex = new Map<string, TrainingFlexRowShape>()
   let trainingFlexFailure: Error | null = null
+  /*
+   * ROUND 22 — the programme tables.
+   *
+   * Modelled as state rather than stubbed, so a test can establish the
+   * AUTHORITATIVE programme it wants and then call Start normally. That is the
+   * only honest way to write a Start test now: the client body no longer
+   * decides content, so a test that wants two particular exercises has to say
+   * so where the server actually reads it.
+   *
+   * An account with no revision row is the fallback case — `resolveProgramme`
+   * answers with the shared Foundation seed and writes nothing.
+   *
+   * Only the READ path is modelled here. The write path's compare-and-swap and
+   * batch atomicity are proved against real SQLite in
+   * src/test/programmeStore.test.ts, where they can actually be observed.
+   */
+  const programmeRevisions = new Map<string, ProgrammeRevisionRow>()
+  /**
+   * A programme every account in this fake has, unless it has its own.
+   *
+   * Suites that start workouts for several accounts, or that vary the plan per
+   * test, would otherwise have to thread a google_sub through every helper just
+   * to say "and they all train this". Per-account seeding still wins where a
+   * test sets one.
+   */
+  let defaultProgramme: SeedProgramme | null = null
+  const programmeExercises = new Map<string, ProgrammeExerciseRow>()
+  const programmeSlots = new Map<string, ProgrammeSlotRow>()
   const occurrences = new Map<string, OccurrenceRow>()
   const workoutSets = new Map<string, WorkoutSetRow>()
   /** Round 21 correction audit, keyed by correction_id. INSERT-ONLY. */
@@ -1698,22 +1758,71 @@ export function createFakeD1() {
     }
 
     /*
-     * ROUND 22. The programme tables.
+     * ROUND 22 — programme reads, answered from the maps above.
      *
-     * These suites exercise accounts that have NEVER edited their programme,
-     * which is the fallback case: no revision row, so `resolveProgramme`
-     * returns the shared Foundation seed and a Start freezes that. Answering
-     * the reads as empty is therefore the truthful model of these accounts,
-     * not a stub that hides anything — and it is what makes these tests assert
-     * the REAL server-authoritative Start rather than a client-supplied plan.
-     *
-     * The programme WRITE path is deliberately not modelled here. It is proved
-     * against real SQLite in src/test/programmeStore.test.ts, where the
-     * compare-and-swap and batch atomicity can actually be observed.
+     * An account with no revision row is the fallback: `resolveProgramme`
+     * returns the shared Foundation seed and a Start freezes THAT. Tests that
+     * want different content seed these maps first.
      */
-    if (sql.includes('FROM programme_revisions')) return null
-    if (sql.includes('FROM programme_exercises')) return []
-    if (sql.includes('FROM programme_slots')) return []
+    if (sql.includes('FROM programme_revisions')) {
+      const own = programmeRevisions.get(args[0] as string)
+      if (own) return own
+      if (!defaultProgramme) return null
+      return {
+        google_sub: args[0] as string,
+        revision: defaultProgramme.revision,
+        write_token: 'seed-default',
+        updated_at: 1,
+      }
+    }
+
+    if (sql.includes('FROM programme_exercises')) {
+      const sub = args[0] as string
+      if (!programmeRevisions.has(sub) && defaultProgramme) {
+        return defaultProgramme.exercises.map((exercise) => ({
+          google_sub: sub,
+          exercise_id: exercise.exerciseId,
+          name: exercise.name,
+          archived: exercise.archived ? 1 : 0,
+          is_custom: exercise.custom ? 1 : 0,
+          created_at: 1,
+          updated_at: 1,
+        }))
+      }
+      return [...programmeExercises.values()]
+        .filter((row) => row.google_sub === sub)
+        .sort(
+          (a, b) =>
+            a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) ||
+            a.exercise_id.localeCompare(b.exercise_id),
+        )
+    }
+
+    if (sql.includes('FROM programme_slots')) {
+      const sub = args[0] as string
+      if (!programmeRevisions.has(sub) && defaultProgramme) {
+        return Object.entries(defaultProgramme.sessions).flatMap(([sessionId, slots]) =>
+          slots.map((slot, index) => ({
+            google_sub: sub,
+            session_id: sessionId,
+            exercise_id: slot.exerciseId,
+            position: index + 1,
+            set_count: slot.setCount,
+            result_kind: slot.resultKind ?? 'reps',
+            target_min: slot.targetMin,
+            target_max: slot.targetMax,
+            per_side: slot.perSide ? 1 : 0,
+            equipment: slot.equipment ?? null,
+          })),
+        )
+      }
+      return [...programmeSlots.values()]
+        .filter((row) => row.google_sub === sub)
+        .sort(
+          (a, b) =>
+            a.session_id.localeCompare(b.session_id) || a.position - b.position,
+        )
+    }
 
     if (sql.includes('SELECT * FROM auth_sessions')) {
       return sessions.get(args[0] as string) ?? null
@@ -1898,6 +2007,56 @@ export function createFakeD1() {
     trainingFlex,
     occurrences,
     workoutSets,
+    programmeRevisions,
+    programmeExercises,
+    programmeSlots,
+    /**
+     * Establish an account's AUTHORITATIVE programme.
+     *
+     * The replacement for a test handing its plan to Start. Seeding here means
+     * the server reads the content the test intended from the place it really
+     * reads it, so the assertion is about the server's authority rather than
+     * about the request body.
+     */
+    /** Give EVERY account in this fake the same programme. */
+    seedProgrammeForAll(programme: SeedProgramme) {
+      defaultProgramme = programme
+    },
+    seedProgramme(googleSub: string, programme: SeedProgramme) {
+      programmeRevisions.set(googleSub, {
+        google_sub: googleSub,
+        revision: programme.revision,
+        write_token: `seed-${googleSub}`,
+        updated_at: 1,
+      })
+      for (const exercise of programme.exercises) {
+        programmeExercises.set(`${googleSub}#${exercise.exerciseId}`, {
+          google_sub: googleSub,
+          exercise_id: exercise.exerciseId,
+          name: exercise.name,
+          archived: exercise.archived ? 1 : 0,
+          is_custom: exercise.custom ? 1 : 0,
+          created_at: 1,
+          updated_at: 1,
+        })
+      }
+      for (const [sessionId, slots] of Object.entries(programme.sessions)) {
+        slots.forEach((slot, index) => {
+          programmeSlots.set(`${googleSub}#${sessionId}#${slot.exerciseId}`, {
+            google_sub: googleSub,
+            session_id: sessionId,
+            exercise_id: slot.exerciseId,
+            position: index + 1,
+            set_count: slot.setCount,
+            result_kind: slot.resultKind ?? 'reps',
+            target_min: slot.targetMin,
+            target_max: slot.targetMax,
+            per_side: slot.perSide ? 1 : 0,
+            equipment: slot.equipment ?? null,
+          })
+        })
+      }
+    },
     workoutSetCorrections,
     calibrations,
     holidays,
@@ -2047,4 +2206,28 @@ export function createFakeD1() {
       }
     },
   }
+}
+
+/**
+ * What `seedProgramme` accepts.
+ *
+ * Deliberately loose about the fields a slot may omit — a test seeding a
+ * two-exercise Monday should not have to restate every default to say what it
+ * means.
+ */
+export type SeedProgramme = {
+  revision: number
+  exercises: { exerciseId: string; name: string; archived?: boolean; custom?: boolean }[]
+  sessions: Record<
+    string,
+    {
+      exerciseId: string
+      setCount: number
+      targetMin: number
+      targetMax: number
+      resultKind?: 'reps' | 'seconds'
+      perSide?: boolean
+      equipment?: string | null
+    }[]
+  >
 }

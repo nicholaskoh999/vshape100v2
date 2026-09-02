@@ -6,6 +6,7 @@ import { createSession } from '../auth/session'
 import { handleTrainingFlexRequest } from '../trainingFlex/routes'
 import { handleWorkoutRequest } from '../workouts/routes'
 import { createFakeD1 } from './fakeD1'
+import { programmeFromLegacyPlan, startBody } from './programmeFixture'
 
 /**
  * Round 19 Correction 1 — the three Today choices are ALTERNATIVES.
@@ -32,7 +33,7 @@ const TODAY = '2026-09-08'
 const SESSION = 'tuesday'
 const NOW = Date.UTC(2026, 8, 8, 12, 0, 0)
 
-const START_BODY = {
+const PLAN = {
   day: 'Tuesday',
   focus: 'Upper Chest + Shoulders + Triceps',
   intensity: 'HARD',
@@ -50,6 +51,17 @@ const START_BODY = {
   ],
 }
 
+/**
+ * ROUND 22 — the same plan, established where the server now reads it.
+ *
+ * The Start body no longer carries programme content, so the plan this suite
+ * has always been about is seeded as the account's authoritative programme.
+ * Nothing about what the suite asserts changes.
+ */
+const PROGRAMME = programmeFromLegacyPlan(SESSION, PLAN)
+
+const START_BODY = startBody(PROGRAMME.revision)
+
 beforeEach(() => {
   vi.useFakeTimers()
   vi.setSystemTime(new Date(NOW))
@@ -63,7 +75,9 @@ function makeEnv(db: D1Database): Env {
   return { DB: db, ASSETS: {} as Fetcher, APP_ORIGIN: ORIGIN }
 }
 
-async function seedToken(db: D1Database) {
+async function seedToken(fake: ReturnType<typeof createFakeD1>) {
+  fake.seedProgramme('sub-1', PROGRAMME)
+  const db = fake.db
   const { token } = await createSession(createD1SessionStore(db), {
     googleSub: 'sub-1',
     email: 'a@example.com',
@@ -126,7 +140,15 @@ async function completeFirstSet(db: D1Database, token: string) {
         Origin: ORIGIN,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ action: 'complete', result: 10, load: { value: 20, unit: 'kg' } }),
+      // ROUND 22. The load mode is derived from the programme now, and
+      // "Incline DB Press" is dumbbell work — so the accepted Round 20 rule
+      // makes this PER DUMBBELL. The old fixture hand-declared `kg` for a DB
+      // exercise, which the server would no longer agree to.
+      body: JSON.stringify({
+        action: 'complete',
+        result: 10,
+        load: { value: 20, unit: 'kg_each' },
+      }),
     }),
     makeEnv(db),
   )
@@ -142,7 +164,7 @@ describe('a flexed day refuses its scheduled workout', () => {
     '%s: a direct start is refused and creates no occurrence',
     async (kind) => {
       const fake = createFakeD1()
-      const token = await seedToken(fake.db)
+      const token = await seedToken(fake)
 
       expect((await putFlex(fake.db, token, kind)).response.status).toBe(200)
 
@@ -162,7 +184,7 @@ describe('a flexed day refuses its scheduled workout', () => {
 
   it('clearing via "Do scheduled workout" lets the start succeed', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db)
+    const token = await seedToken(fake)
 
     await putFlex(fake.db, token, 'recovery')
     expect((await startWorkout(fake.db, token)).response.status).toBe(409)
@@ -180,7 +202,7 @@ describe('a flexed day refuses its scheduled workout', () => {
 
   it('does not block an EXTRA — Round 17 semantics are unchanged', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db)
+    const token = await seedToken(fake)
     await putFlex(fake.db, token, 'recovery')
 
     // An Extra is voluntary and is not the day's obligation, so it is not the
@@ -194,7 +216,7 @@ describe('a flexed day refuses its scheduled workout', () => {
 
   it('fails closed when the stored kind cannot be read', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db)
+    const token = await seedToken(fake)
     // A stored kind this build cannot name — a future schema, or corruption.
     fake.trainingFlex.set('x', {
       google_sub: 'sub-1',
@@ -227,7 +249,7 @@ describe('a started workout refuses a flex choice', () => {
     '%s is refused once the session has started, and is not written',
     async (kind) => {
       const fake = createFakeD1()
-      const token = await seedToken(fake.db)
+      const token = await seedToken(fake)
 
       expect((await startWorkout(fake.db, token)).response.status).toBe(201)
       const occurrencesAfterStart = fake.occurrences.size
@@ -246,7 +268,7 @@ describe('a started workout refuses a flex choice', () => {
 
   it('is refused after the workout is COMPLETED, and deletes nothing', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db)
+    const token = await seedToken(fake)
 
     expect((await startWorkout(fake.db, token)).response.status).toBe(201)
     expect((await completeFirstSet(fake.db, token)).status).toBe(200)
@@ -279,7 +301,7 @@ describe('a started workout refuses a flex choice', () => {
 
   it('still allows CLEARING, so a conflicting day is never a dead end', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db)
+    const token = await seedToken(fake)
     await startWorkout(fake.db, token)
 
     // Nothing to clear here, but the operation must not be refused by the
@@ -291,7 +313,7 @@ describe('a started workout refuses a flex choice', () => {
 
   it('an EXTRA on the same day does not block a flex choice', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db)
+    const token = await seedToken(fake)
 
     const extra = await startWorkout(fake.db, token, 'extra', {
       ...START_BODY,
@@ -311,7 +333,7 @@ describe('a started workout refuses a flex choice', () => {
 describe('neither refusal ever writes', () => {
   it('leaves occurrences, sets and calibration byte-identical', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db)
+    const token = await seedToken(fake)
 
     await startWorkout(fake.db, token)
     await completeFirstSet(fake.db, token)

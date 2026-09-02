@@ -6,6 +6,7 @@ import { createSession } from '../auth/session'
 import { handleExerciseInputTypeRequest } from '../exerciseInput/routes'
 import { handleWorkoutRequest } from '../workouts/routes'
 import { createFakeD1 } from './fakeD1'
+import { programmeFromLegacyPlan, startBody } from './programmeFixture'
 
 /**
  * Round 20 Correction 2 — the whole repair, end to end, through the real APIs.
@@ -29,7 +30,7 @@ const DATE = '2026-09-01'
 const SESSION = 'monday'
 const EXERCISE = 'lat-pulldown'
 
-const START_BODY = {
+const PLAN = {
   day: 'Monday',
   focus: 'Back Width + Biceps',
   intensity: 'HARD',
@@ -49,11 +50,30 @@ const START_BODY = {
   ],
 }
 
+/**
+ * ROUND 22 — the same single exercise, as the account's programme.
+ *
+ * The comment above about the client asking for kilograms is now moot in the
+ * best way: the client asks for nothing at all. The server derives the
+ * requested load mode from the programme and then lets the stored input type
+ * decide, which is exactly what this suite is about.
+ */
+const PROGRAMME = programmeFromLegacyPlan(SESSION, PLAN)
+
+const START_BODY = startBody(PROGRAMME.revision)
+
 function makeEnv(db: D1Database): Env {
   return { DB: db, ASSETS: {} as Fetcher, APP_ORIGIN: ORIGIN }
 }
 
-async function seedToken(db: D1Database, googleSub: string, email: string) {
+/** A session token AND this account's authoritative programme. */
+async function seedToken(
+  fake: ReturnType<typeof createFakeD1>,
+  googleSub: string,
+  email: string,
+) {
+  fake.seedProgramme(googleSub, PROGRAMME)
+  const db = fake.db
   const session = await createSession(createD1SessionStore(db), {
     googleSub,
     email,
@@ -123,7 +143,7 @@ function corrupt(fake: ReturnType<typeof createFakeD1>, googleSub: string, value
 describe('repairing an unreadable setting, end to end', () => {
   it('walks the whole route from refused workout to frozen band snapshot', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db, 'sub-a', 'a@example.com')
+    const token = await seedToken(fake, 'sub-a', 'a@example.com')
     corrupt(fake, 'sub-a', 'elastic_vibes')
 
     // 2. The workout is refused, and nothing at all is written.
@@ -168,7 +188,7 @@ describe('repairing an unreadable setting, end to end', () => {
 
   it('keeps the collection read honest at every step', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db, 'sub-a', 'a@example.com')
+    const token = await seedToken(fake, 'sub-a', 'a@example.com')
     corrupt(fake, 'sub-a', 'elastic_vibes')
 
     async function list() {
@@ -195,7 +215,7 @@ describe('repairing an unreadable setting, end to end', () => {
   it('repairs to any of the three types, not only to bands', async () => {
     for (const chosen of ['weight_kg', 'resistance_band', 'bodyweight']) {
       const fake = createFakeD1()
-      const token = await seedToken(fake.db, 'sub-a', 'a@example.com')
+      const token = await seedToken(fake, 'sub-a', 'a@example.com')
       corrupt(fake, 'sub-a', 'elastic_vibes')
 
       await saveSetting(fake.db, token, chosen)
@@ -211,7 +231,7 @@ describe('repairing an unreadable setting, end to end', () => {
 
   it('does not repair the row merely by reading it', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db, 'sub-a', 'a@example.com')
+    const token = await seedToken(fake, 'sub-a', 'a@example.com')
     corrupt(fake, 'sub-a', 'elastic_vibes')
 
     await readSetting(fake.db, token)
@@ -225,8 +245,8 @@ describe('repairing an unreadable setting, end to end', () => {
 
   it('does not touch another account’s workout or setting', async () => {
     const fake = createFakeD1()
-    const alice = await seedToken(fake.db, 'sub-a', 'a@example.com')
-    const bob = await seedToken(fake.db, 'sub-b', 'b@example.com')
+    const alice = await seedToken(fake, 'sub-a', 'a@example.com')
+    const bob = await seedToken(fake, 'sub-b', 'b@example.com')
     corrupt(fake, 'sub-a', 'elastic_vibes')
     corrupt(fake, 'sub-b', 'weight_kg')
 

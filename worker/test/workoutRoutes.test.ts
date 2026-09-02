@@ -4,7 +4,7 @@ import type { Env } from '../auth/config'
 import { createD1SessionStore } from '../auth/d1Stores'
 import { createSession, TRUSTED_SESSION_MS } from '../auth/session'
 import { handleWorkoutRequest } from '../workouts/routes'
-import { createFakeD1 } from './fakeD1'
+import { createFakeD1, type SeedProgramme } from './fakeD1'
 
 /**
  * Round 08 — the workout logging API.
@@ -18,33 +18,48 @@ const BASE = `${ORIGIN}/api/workouts`
 const DATE = '2026-08-31'
 const SESSION = 'monday'
 
-const START_BODY = {
-  day: 'Monday',
-  focus: 'Back Width + Biceps',
-  intensity: 'HARD',
+/**
+ * ROUND 22 — the account's AUTHORITATIVE programme for these tests.
+ *
+ * Before Round 22 this file sent the whole snapshot in the Start body. The
+ * server no longer trusts a client for programme content, so a test that wants
+ * these two exercises has to say so where the server actually reads it. Seeding
+ * here is what makes the assertions below about the SERVER's authority rather
+ * than about the request body.
+ */
+const PROGRAMME: SeedProgramme = {
+  revision: 1,
   exercises: [
-    {
-      exerciseId: 'lat-pulldown',
-      name: 'Lat Pulldown',
-      prescription: '4 × 10–15',
-      equipment: 'BAND 20kg',
-      resultKind: 'reps',
-      loadMode: 'kg',
-      perSide: false,
-      setCount: 4,
-    },
-    {
-      exerciseId: 'one-arm-db-row',
-      name: 'One-Arm DB Row',
-      prescription: '3 × 8–12',
-      equipment: 'DB + Bench Flat',
-      resultKind: 'reps',
-      loadMode: 'kg_each',
-      perSide: false,
-      setCount: 3,
-    },
+    { exerciseId: 'lat-pulldown', name: 'Lat Pulldown' },
+    { exerciseId: 'one-arm-db-row', name: 'One-Arm DB Row' },
   ],
+  sessions: {
+    monday: [
+      {
+        exerciseId: 'lat-pulldown',
+        setCount: 4,
+        targetMin: 10,
+        targetMax: 15,
+        equipment: 'BAND 20kg',
+      },
+      {
+        exerciseId: 'one-arm-db-row',
+        setCount: 3,
+        targetMin: 8,
+        targetMax: 12,
+        equipment: 'DB + Bench Flat',
+      },
+    ],
+    tuesday: [{ exerciseId: 'lat-pulldown', setCount: 2, targetMin: 10, targetMax: 15 }],
+    wednesday: [{ exerciseId: 'lat-pulldown', setCount: 2, targetMin: 10, targetMax: 15 }],
+    thursday: [{ exerciseId: 'lat-pulldown', setCount: 2, targetMin: 10, targetMax: 15 }],
+    friday: [{ exerciseId: 'lat-pulldown', setCount: 2, targetMin: 10, targetMax: 15 }],
+  },
 }
+
+/** The whole Start body a client may now send. */
+const START_BODY = { expectedRevision: PROGRAMME.revision }
+
 
 function makeEnv(db: D1Database): Env {
   return { DB: db, ASSETS: {} as Fetcher, APP_ORIGIN: ORIGIN }
@@ -63,8 +78,20 @@ async function seedSession(
   )
 }
 
-async function seedToken(db: D1Database, googleSub: string, email: string) {
-  return (await seedSession(db, googleSub, email)).token
+/**
+ * A session token AND the account's authoritative programme.
+ *
+ * Both, because after Round 22 an account with no programme resolves the whole
+ * Foundation seed, and every Start in this file would freeze five exercises
+ * instead of the two these tests are written about.
+ */
+async function seedToken(
+  fake: ReturnType<typeof createFakeD1>,
+  googleSub: string,
+  email: string,
+) {
+  fake.seedProgramme(googleSub, PROGRAMME)
+  return (await seedSession(fake.db, googleSub, email)).token
 }
 
 type ReqOptions = {
@@ -120,7 +147,8 @@ function setPath(exerciseOrder: number, setIndex: number, date = DATE, session =
 
 describe('routing', () => {
   it('ignores requests that are not workout requests', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const response = await handleWorkoutRequest(
       new Request(`${ORIGIN}/api/today/completions`),
       makeEnv(db),
@@ -129,14 +157,16 @@ describe('routing', () => {
   })
 
   it('rejects an unknown nested route', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const { response, body } = await call(db, { path: `${DATE}/${SESSION}/history` })
     expect(response.status).toBe(404)
     expect(body.error).toBe('not_found')
   })
 
   it('rejects a deeper unknown route', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const { response } = await call(db, {
       path: `${DATE}/${SESSION}/sets/0/0/extra`,
     })
@@ -146,7 +176,8 @@ describe('routing', () => {
   it('rejects the wrong method on the occurrence route', async () => {
     // Round 21 gave DELETE a meaning here — it cancels an accidental Start —
     // so the unsupported methods are the ones asserted now.
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     for (const method of ['POST', 'PUT', 'PATCH']) {
       const { response, body } = await call(db, { method })
       expect(response.status, method).toBe(405)
@@ -155,13 +186,15 @@ describe('routing', () => {
   })
 
   it('rejects the wrong method on start', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const { response } = await call(db, { method: 'GET', path: `${DATE}/${SESSION}/start` })
     expect(response.status).toBe(405)
   })
 
   it('rejects the wrong method on a set', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const { response } = await call(db, { method: 'POST', path: setPath(0, 0) })
     expect(response.status).toBe(405)
   })
@@ -173,14 +206,16 @@ describe('routing', () => {
 
 describe('authentication', () => {
   it('rejects an unauthenticated read', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const { response, body } = await call(db, {})
     expect(response.status).toBe(401)
     expect(body.error).toBe('unauthenticated')
   })
 
   it('rejects an unauthenticated start', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const { response } = await call(db, {
       method: 'POST',
       origin: ORIGIN,
@@ -191,7 +226,8 @@ describe('authentication', () => {
   })
 
   it('rejects an unauthenticated set write', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const { response } = await call(db, {
       method: 'PUT',
       origin: ORIGIN,
@@ -202,7 +238,8 @@ describe('authentication', () => {
   })
 
   it('rejects an unauthenticated undo', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const { response } = await call(db, {
       method: 'DELETE',
       origin: ORIGIN,
@@ -212,8 +249,9 @@ describe('authentication', () => {
   })
 
   it('marks every response no-store', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'google-sub-a', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'google-sub-a', 'a@example.com')
     await start(db, token)
 
     for (const options of [
@@ -240,15 +278,17 @@ describe('authentication', () => {
 
 describe('same-origin guard', () => {
   it('allows a same-origin start', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'google-sub-a', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'google-sub-a', 'a@example.com')
     const { response } = await start(db, token)
     expect(response.status).toBe(201)
   })
 
   it('blocks a cross-origin start', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'google-sub-a', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'google-sub-a', 'a@example.com')
     const { response, body } = await call(db, {
       token,
       method: 'POST',
@@ -261,8 +301,9 @@ describe('same-origin guard', () => {
   })
 
   it('blocks a cross-origin set write', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'google-sub-a', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'google-sub-a', 'a@example.com')
     await start(db, token)
 
     const { response } = await call(db, {
@@ -276,8 +317,9 @@ describe('same-origin guard', () => {
   })
 
   it('blocks a cross-origin undo', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'google-sub-a', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'google-sub-a', 'a@example.com')
     await start(db, token)
 
     const { response } = await call(db, {
@@ -290,8 +332,9 @@ describe('same-origin guard', () => {
   })
 
   it('leaves a cross-origin blocked workout unchanged', async () => {
-    const { db, workoutSets } = createFakeD1()
-    const token = await seedToken(db, 'google-sub-a', 'a@example.com')
+    const fake = createFakeD1()
+    const { db, workoutSets } = fake
+    const token = await seedToken(fake, 'google-sub-a', 'a@example.com')
     await start(db, token)
 
     await call(db, {
@@ -306,8 +349,9 @@ describe('same-origin guard', () => {
   })
 
   it('allows a read with no Origin header', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'google-sub-a', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'google-sub-a', 'a@example.com')
     const { response } = await call(db, { token })
     expect(response.status).toBe(200)
   })
@@ -319,8 +363,9 @@ describe('same-origin guard', () => {
 
 describe('reading and starting', () => {
   it('reports a not-started workout as an honest null', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'google-sub-a', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'google-sub-a', 'a@example.com')
 
     const { response, body } = await call(db, { token })
     expect(response.status).toBe(200)
@@ -330,8 +375,9 @@ describe('reading and starting', () => {
   })
 
   it('creates the workout and returns 201 with every expected set', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'google-sub-a', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'google-sub-a', 'a@example.com')
 
     const { response, body } = await start(db, token)
     expect(response.status).toBe(201)
@@ -341,8 +387,9 @@ describe('reading and starting', () => {
   })
 
   it('resumes with 200 and does not duplicate the workout', async () => {
-    const { db, occurrences, workoutSets } = createFakeD1()
-    const token = await seedToken(db, 'google-sub-a', 'a@example.com')
+    const fake = createFakeD1()
+    const { db, occurrences, workoutSets } = fake
+    const token = await seedToken(fake, 'google-sub-a', 'a@example.com')
 
     await start(db, token)
     const { response, body } = await start(db, token)
@@ -354,16 +401,18 @@ describe('reading and starting', () => {
   })
 
   it('never echoes the account identity', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'google-sub-a', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'google-sub-a', 'a@example.com')
     const { body } = await start(db, token)
     expect(JSON.stringify(body)).not.toContain('google-sub-a')
     expect(JSON.stringify(body)).not.toContain('googleSub')
   })
 
   it('ignores a client-supplied account identity', async () => {
-    const { db, occurrences } = createFakeD1()
-    const token = await seedToken(db, 'google-sub-a', 'a@example.com')
+    const fake = createFakeD1()
+    const { db, occurrences } = fake
+    const token = await seedToken(fake, 'google-sub-a', 'a@example.com')
 
     await start(db, token, {
       ...START_BODY,
@@ -375,12 +424,17 @@ describe('reading and starting', () => {
     expect([...occurrences.values()][0].google_sub).toBe('google-sub-a')
   })
 
-  it('keeps the first snapshot when a changed payload starts again', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'google-sub-a', 'a@example.com')
+  it('keeps the first snapshot when a later Start sends a different payload', async () => {
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'google-sub-a', 'a@example.com')
 
     await start(db, token)
+    // A second Start carrying a wholly different plan. Two things protect the
+    // first snapshot now: the workout already exists, so this resumes it; and
+    // the body's plan carries no authority in the first place.
     const { body } = await start(db, token, {
+      expectedRevision: PROGRAMME.revision,
       day: 'Monday',
       focus: 'Rebuilt Back Focus',
       intensity: 'PUMP',
@@ -412,9 +466,10 @@ describe('reading and starting', () => {
 
 describe('account isolation', () => {
   it('does not expose another account’s workout on the same date and session', async () => {
-    const { db } = createFakeD1()
-    const tokenA = await seedToken(db, 'google-sub-a', 'a@example.com')
-    const tokenB = await seedToken(db, 'google-sub-b', 'b@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const tokenA = await seedToken(fake, 'google-sub-a', 'a@example.com')
+    const tokenB = await seedToken(fake, 'google-sub-b', 'b@example.com')
 
     await start(db, tokenA)
     await call(db, {
@@ -431,9 +486,10 @@ describe('account isolation', () => {
   })
 
   it('does not let one account mutate another’s set', async () => {
-    const { db } = createFakeD1()
-    const tokenA = await seedToken(db, 'google-sub-a', 'a@example.com')
-    const tokenB = await seedToken(db, 'google-sub-b', 'b@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const tokenA = await seedToken(fake, 'google-sub-a', 'a@example.com')
+    const tokenB = await seedToken(fake, 'google-sub-b', 'b@example.com')
 
     await start(db, tokenA)
     const { response } = await call(db, {
@@ -458,7 +514,7 @@ describe('account isolation', () => {
 describe('validation', () => {
   async function authed() {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db, 'google-sub-a', 'a@example.com')
+    const token = await seedToken(fake, 'google-sub-a', 'a@example.com')
     return { ...fake, token }
   }
 
@@ -555,82 +611,152 @@ describe('validation', () => {
     }
   })
 
-  it('rejects a start payload with no exercises', async () => {
-    const { db, token } = await authed()
-    const { response, body } = await call(db, {
-      token,
-      method: 'POST',
-      origin: ORIGIN,
-      path: `${DATE}/${SESSION}/start`,
-      body: { ...START_BODY, exercises: [] },
-    })
-    expect(response.status).toBe(400)
-    expect(body.field).toBe('exercises')
-  })
+  /*
+   * ROUND 22 — WHERE THESE BOUNDS LIVE NOW.
+   *
+   * Five tests used to sit here checking a Start body's exercises, set counts,
+   * text lengths, result kinds and load modes. The Start route no longer reads
+   * any of those from the client, so testing them against a request body would
+   * assert a contract the app deliberately abandoned.
+   *
+   * The bounds themselves did not go away — they moved to the boundary that
+   * now owns them, `validateProgramme`, and are exercised directly in
+   * src/test/programmeFoundation.test.ts (empty weekday, duplicate exercise,
+   * gapped positions, set counts outside the accepted limits, descending or
+   * non-positive targets, over-long equipment and names) and against real
+   * SQLite in src/test/programmeStore.test.ts.
+   *
+   * What belongs HERE is what the route itself must still refuse, and that the
+   * client's abandoned authority is genuinely gone. That is what follows.
+   */
 
-  it('refuses to create thousands of sets from one payload', async () => {
-    const { db, token, workoutSets } = await authed()
+  it('refuses to Start a weekday the programme has left empty, creating nothing', async () => {
+    const fake = createFakeD1()
+    const { db, workoutSets, occurrences } = fake
+    const token = await seedSession(db, 'google-sub-a', 'a@example.com').then((s) => s.token)
+    fake.seedProgramme('google-sub-a', { ...PROGRAMME, sessions: { ...PROGRAMME.sessions, monday: [] } })
 
-    const huge = {
-      ...START_BODY,
-      exercises: Array.from({ length: 40 }, () => START_BODY.exercises[0]),
-    }
-    const { response, body } = await call(db, {
-      token,
-      method: 'POST',
-      origin: ORIGIN,
-      path: `${DATE}/${SESSION}/start`,
-      body: huge,
-    })
+    const { response, body } = await start(db, token)
 
-    expect(response.status).toBe(400)
-    expect(body.field).toBe('exercises')
+    expect(response.status).toBe(409)
+    expect(body.error).toBe('programme_session_empty')
+    expect(occurrences.size).toBe(0)
     expect(workoutSets.size).toBe(0)
   })
 
-  it('rejects an absurd set count', async () => {
-    const { db, token, workoutSets } = await authed()
-    const { response, body } = await call(db, {
+  it('IGNORES a hostile body claiming its own exercises, names, order and set counts', async () => {
+    const { db, token, workoutSets, occurrences } = await authed()
+
+    // Everything a pre-Round-22 client could dictate, all of it wrong.
+    const { response } = await call(db, {
       token,
       method: 'POST',
       origin: ORIGIN,
       path: `${DATE}/${SESSION}/start`,
       body: {
-        ...START_BODY,
-        exercises: [{ ...START_BODY.exercises[0], setCount: 100_000 }],
+        expectedRevision: PROGRAMME.revision,
+        day: 'Someday',
+        focus: 'Rebuilt Back Focus',
+        intensity: 'PUMP',
+        exercises: [
+          {
+            exerciseId: 'not-in-the-programme',
+            name: 'Invented Exercise',
+            prescription: '99 × 1',
+            equipment: 'FAKE',
+            resultKind: 'reps',
+            loadMode: 'kg_each',
+            perSide: true,
+            setCount: 19,
+          },
+        ],
       },
     })
-    expect(response.status).toBe(400)
-    expect(body.field).toBe('setCount')
-    expect(workoutSets.size).toBe(0)
+    expect(response.status).toBe(201)
+
+    // The stored workout is the SERVER's programme, not the body's.
+    const stored = [...workoutSets.values()]
+    expect(stored).toHaveLength(7)
+    expect(new Set(stored.map((row) => row.exercise_id_snapshot))).toEqual(
+      new Set(['lat-pulldown', 'one-arm-db-row']),
+    )
+    expect(stored.some((row) => row.exercise_name_snapshot === 'Invented Exercise')).toBe(false)
+    expect(stored.some((row) => row.prescription_snapshot === '99 × 1')).toBe(false)
+    expect(stored.some((row) => row.equipment_snapshot === 'FAKE')).toBe(false)
+    expect(stored.every((row) => row.per_side_snapshot === 0)).toBe(true)
+
+    // And the occurrence's own facts come from the fixed Foundation metadata,
+    // not from the body's day / focus / intensity.
+    const occurrence = [...occurrences.values()][0]
+    expect(occurrence.session_day_snapshot).toBe('Monday')
+    expect(occurrence.session_focus_snapshot).toBe('Back Width + Biceps')
+    expect(occurrence.session_intensity_snapshot).toBe('HARD')
   })
 
-  it('rejects an oversized snapshot string', async () => {
-    const { db, token } = await authed()
+  it('refuses a Start whose stated revision has moved, creating nothing', async () => {
+    const { db, token, workoutSets, occurrences } = await authed()
+
     const { response, body } = await call(db, {
       token,
       method: 'POST',
       origin: ORIGIN,
       path: `${DATE}/${SESSION}/start`,
-      body: { ...START_BODY, focus: 'x'.repeat(500) },
+      body: { expectedRevision: PROGRAMME.revision - 1 },
     })
-    expect(response.status).toBe(400)
-    expect(body.field).toBe('focus')
+
+    expect(response.status).toBe(409)
+    expect(body.error).toBe('programme_conflict')
+    expect(body.revision).toBe(PROGRAMME.revision)
+    expect(occurrences.size).toBe(0)
+    expect(workoutSets.size).toBe(0)
   })
 
-  it('rejects an unknown result kind or load mode', async () => {
-    const { db, token } = await authed()
-    for (const patch of [{ resultKind: 'metres' }, { loadMode: 'stones' }]) {
-      const { response, body } = await call(db, {
-        token,
-        method: 'POST',
-        origin: ORIGIN,
-        path: `${DATE}/${SESSION}/start`,
-        body: { ...START_BODY, exercises: [{ ...START_BODY.exercises[0], ...patch }] },
-      })
-      expect(response.status).toBe(400)
-      expect(body.field).toBe('exercise')
-    }
+  it('refuses a Start whose revision is absent once the account HAS edited', async () => {
+    // The compatibility rule, from the other side: an old client that never
+    // learned about revisions reads as revision 0, which is stale here.
+    const { db, token, workoutSets } = await authed()
+    const { response, body } = await call(db, {
+      token,
+      method: 'POST',
+      origin: ORIGIN,
+      path: `${DATE}/${SESSION}/start`,
+      body: { day: 'Monday', focus: 'Back Width + Biceps', intensity: 'HARD', exercises: [] },
+    })
+    expect(response.status).toBe(409)
+    expect(body.error).toBe('programme_conflict')
+    expect(workoutSets.size).toBe(0)
+  })
+
+  it('lets an old client with NO revision Start an account still on the fallback', async () => {
+    // The other half: nothing has been edited, so nothing can be stale, and the
+    // server builds the Foundation seed it was already showing.
+    const fake = createFakeD1()
+    const { db, workoutSets } = fake
+    const token = await seedSession(db, 'google-sub-a', 'a@example.com').then((s) => s.token)
+    // deliberately NO seedProgramme: this account is on the fallback
+
+    const { response } = await call(db, {
+      token,
+      method: 'POST',
+      origin: ORIGIN,
+      path: `${DATE}/${SESSION}/start`,
+      body: { day: 'Monday', focus: 'whatever', intensity: 'PUMP', exercises: [] },
+    })
+
+    expect(response.status).toBe(201)
+    // Foundation Monday: 4 + 3 + 3 + 3 + 2 sets across five exercises.
+    expect(workoutSets.size).toBe(15)
+    expect(
+      new Set([...workoutSets.values()].map((row) => row.exercise_id_snapshot)),
+    ).toEqual(
+      new Set([
+        'lat-pulldown',
+        'one-arm-db-row',
+        'face-pull',
+        'preacher-curl',
+        'hammer-curl',
+      ]),
+    )
   })
 
   it('rejects an invalid set action', async () => {
@@ -734,7 +860,7 @@ describe('validation', () => {
 describe('logging through the API', () => {
   async function started() {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db, 'google-sub-a', 'a@example.com')
+    const token = await seedToken(fake, 'google-sub-a', 'a@example.com')
     await start(fake.db, token)
     return { ...fake, token }
   }
@@ -842,8 +968,9 @@ describe('logging through the API', () => {
 
 describe('storage failure', () => {
   it('reports a controlled 500 without leaking anything internal', async () => {
-    const { db, breakWorkouts } = createFakeD1()
-    const token = await seedToken(db, 'google-sub-a', 'a@example.com')
+    const fake = createFakeD1()
+    const { db, breakWorkouts } = fake
+    const token = await seedToken(fake, 'google-sub-a', 'a@example.com')
     breakWorkouts(new Error('D1 exploded: SELECT * FROM workout_sets'))
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
 
@@ -887,7 +1014,8 @@ async function seedAtAge(db: D1Database, days: number) {
 
 describe('trusted session rolling cookie', () => {
   it('issues no cookie outside the refresh window', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const { token } = await seedAtAge(db, 10)
 
     const response = await handleWorkoutRequest(request({ token }), makeEnv(db))
@@ -902,7 +1030,9 @@ describe('trusted session rolling cookie', () => {
       { method: 'PUT', origin: ORIGIN, path: setPath(0, 0), body: { action: 'skip' } },
       { method: 'DELETE', origin: ORIGIN, path: setPath(0, 0) },
     ]) {
-      const { db } = createFakeD1()
+      const fake = createFakeD1()
+      const { db } = fake
+      fake.seedProgramme('google-sub-a', PROGRAMME)
       vi.useFakeTimers()
       vi.setSystemTime(START_AT)
       const { token } = await seedSession(db, 'google-sub-a', 'a@example.com', {
@@ -933,7 +1063,8 @@ describe('trusted session rolling cookie', () => {
   })
 
   it('re-issues the cookie even when the request itself is rejected', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const { token } = await seedAtAge(db, 26)
 
     const response = await handleWorkoutRequest(
@@ -946,7 +1077,8 @@ describe('trusted session rolling cookie', () => {
   })
 
   it('re-issues the cookie even when a cross-origin write is blocked', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const { token } = await seedAtAge(db, 26)
 
     const response = await handleWorkoutRequest(
@@ -965,7 +1097,8 @@ describe('trusted session rolling cookie', () => {
   })
 
   it('clears a dead cookie on an unauthenticated request', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const response = await handleWorkoutRequest(
       request({ token: 'not-a-real-token' }),
       makeEnv(db),
@@ -1005,7 +1138,7 @@ describe('Round 20 — a stored input type that cannot be read', () => {
 
   it('refuses the Start, writing no occurrence and no sets', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db, 'google-sub-a', 'a@example.com')
+    const token = await seedToken(fake, 'google-sub-a', 'a@example.com')
     seedInputType(fake, 'google-sub-a', 'elastic_vibes')
 
     const { response, body } = await start(fake.db, token)
@@ -1018,7 +1151,7 @@ describe('Round 20 — a stored input type that cannot be read', () => {
 
   it('leaves the workout genuinely unstarted, so a later read says so', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db, 'google-sub-a', 'a@example.com')
+    const token = await seedToken(fake, 'google-sub-a', 'a@example.com')
     seedInputType(fake, 'google-sub-a', 'elastic_vibes')
     await start(fake.db, token)
 
@@ -1031,7 +1164,7 @@ describe('Round 20 — a stored input type that cannot be read', () => {
     // NON-VACUITY. Identical request, identical account, identical row —
     // only the stored VALUE differs, and the production reader decides.
     const fake = createFakeD1()
-    const token = await seedToken(fake.db, 'google-sub-a', 'a@example.com')
+    const token = await seedToken(fake, 'google-sub-a', 'a@example.com')
     seedInputType(fake, 'google-sub-a', 'resistance_band')
 
     const { response } = await start(fake.db, token)
@@ -1051,7 +1184,7 @@ describe('Round 20 — a stored input type that cannot be read', () => {
   it('starts normally when no setting exists at all', async () => {
     // The other NON-VACUITY control: absence is not unreadability.
     const fake = createFakeD1()
-    const token = await seedToken(fake.db, 'google-sub-a', 'a@example.com')
+    const token = await seedToken(fake, 'google-sub-a', 'a@example.com')
 
     const { response } = await start(fake.db, token)
     expect(response.status).toBe(201)
@@ -1060,8 +1193,8 @@ describe('Round 20 — a stored input type that cannot be read', () => {
 
   it('refuses only the account whose setting is corrupt', async () => {
     const fake = createFakeD1()
-    const corrupt = await seedToken(fake.db, 'google-sub-a', 'a@example.com')
-    const fine = await seedToken(fake.db, 'google-sub-b', 'b@example.com')
+    const corrupt = await seedToken(fake, 'google-sub-a', 'a@example.com')
+    const fine = await seedToken(fake, 'google-sub-b', 'b@example.com')
     seedInputType(fake, 'google-sub-a', 'elastic_vibes')
 
     expect((await start(fake.db, corrupt)).response.status).toBe(500)

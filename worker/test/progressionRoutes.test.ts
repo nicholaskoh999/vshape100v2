@@ -5,108 +5,104 @@ import { createD1SessionStore } from '../auth/d1Stores'
 import { createSession } from '../auth/session'
 import { handleProgressionRequest } from '../progression/routes'
 import { handleWorkoutRequest } from '../workouts/routes'
-import { createFakeD1 } from './fakeD1'
+import { createFakeD1 , type SeedProgramme } from './fakeD1'
+import { startBody } from './programmeFixture'
+
+
 
 /**
- * Round 16 — the training progression API.
+ * ROUND 22 — both weekday templates, as the account's one programme.
  *
- * The real handler, the real D1 mapping layer, the real read model and the real
- * engine run together against the in-memory D1 stand-in. Every workout used as
- * evidence is written through the REAL workout API, so nothing here can prove a
- * recommendation from history the app could not actually have stored.
+ * Progression is judged against the prescription a Start FROZE, so these
+ * suites still need Monday and Wednesday to differ. They differ in the
+ * programme now instead of in two request bodies.
  */
-
 const ORIGIN = 'https://vshapev2.nkmwei.de'
 const BASE = `${ORIGIN}/api/progression`
 const WORKOUTS = `${ORIGIN}/api/workouts`
 
-const MONDAY_BODY = {
-  day: 'Monday',
-  focus: 'Back Width + Biceps',
-  intensity: 'HARD',
+const PROGRAMME = {
+  revision: 1,
   exercises: [
-    {
-      exerciseId: 'lat-pulldown',
-      name: 'Lat Pulldown',
-      prescription: '4 × 10–15',
-      equipment: 'BAND 20kg',
-      resultKind: 'reps',
-      loadMode: 'kg',
-      perSide: false,
-      setCount: 4,
-    },
+    { exerciseId: 'lat-pulldown', name: 'Lat Pulldown' },
+    { exerciseId: 'lateral-raise', name: 'Lateral Raise' },
   ],
-}
+  sessions: {
+    monday: [
+      {
+        exerciseId: 'lat-pulldown',
+        setCount: 4,
+        targetMin: 10,
+        targetMax: 15,
+        equipment: 'BAND 20kg',
+      },
+    ],
+    tuesday: [{ exerciseId: 'lat-pulldown', setCount: 4, targetMin: 10, targetMax: 15 }],
+    wednesday: [{ exerciseId: 'lat-pulldown', setCount: 2, targetMin: 15, targetMax: 20 }],
+    thursday: [{ exerciseId: 'lat-pulldown', setCount: 4, targetMin: 10, targetMax: 15 }],
+    friday: [{ exerciseId: 'lateral-raise', setCount: 3, targetMin: 15, targetMax: 20 }],
+  },
+} satisfies SeedProgramme
 
-const WEDNESDAY_BODY = {
-  day: 'Wednesday',
-  focus: 'Light Back + Rear Delts + Core',
-  intensity: 'LIGHT',
-  exercises: [
-    {
-      exerciseId: 'lat-pulldown',
-      name: 'Lat Pulldown',
-      prescription: '2 × 15–20',
-      equipment: null,
-      resultKind: 'reps',
-      loadMode: 'kg',
-      perSide: false,
-      setCount: 2,
-    },
-  ],
-}
+const MONDAY_BODY = startBody(PROGRAMME.revision)
+const WEDNESDAY_BODY = startBody(PROGRAMME.revision)
 
-const FRIDAY_BODY = {
-  day: 'Friday',
-  focus: 'Upper Chest + Shoulders + Arms',
-  intensity: 'PUMP',
-  exercises: [
-    {
-      exerciseId: 'lateral-raise',
-      name: 'Lateral Raise',
-      prescription: '3 × 15–20',
-      equipment: null,
-      resultKind: 'reps',
-      loadMode: 'kg',
-      perSide: false,
-      setCount: 3,
-    },
-  ],
-}
+
+const FRIDAY_BODY = startBody(PROGRAMME.revision)
 
 /**
- * A session that lists ONE canonical exercise twice with the SAME prescription.
+ * THE AMBIGUOUS SHAPE, AS STORED DATA.
  *
- * Not part of the accepted Foundation week, and deliberately so: this is the
- * shape that cannot be resolved, and the server has to refuse it rather than
- * pick a slot.
+ * A weekday listing one canonical exercise twice cannot be a PROGRAMME any
+ * more: migration 0015 makes (account, weekday, exercise) the primary key and
+ * `validateProgramme` refuses a duplicate outright. That is a real improvement
+ * — the shape was never resolvable — but the server must still refuse to guess
+ * when it MEETS one, because workouts started before Round 22 can hold it.
+ *
+ * So it is modelled where it can now exist: in the stored workout. Start a
+ * two-exercise Monday, then rewrite the second exercise's rows into a duplicate
+ * of the first, which is exactly what such a legacy occurrence looks like.
  */
-const AMBIGUOUS_BODY = {
-  day: 'Monday',
-  focus: 'Back Width + Biceps',
-  intensity: 'HARD',
-  exercises: [
-    {
-      exerciseId: 'lat-pulldown',
-      name: 'Lat Pulldown',
-      prescription: '4 × 10–15',
-      equipment: 'BAND 20kg',
-      resultKind: 'reps',
-      loadMode: 'kg',
-      perSide: false,
-      setCount: 4,
-    },
-    {
-      exerciseId: 'lat-pulldown',
-      name: 'Lat Pulldown',
-      prescription: '4 × 10–15',
-      equipment: 'BAND 20kg',
-      resultKind: 'reps',
-      loadMode: 'kg',
-      perSide: false,
-      setCount: 4,
-    },
-  ],
+const AMBIGUOUS_PROGRAMME = {
+  ...PROGRAMME,
+  sessions: {
+    ...PROGRAMME.sessions,
+    monday: [
+      {
+        exerciseId: 'lat-pulldown',
+        setCount: 4,
+        targetMin: 10,
+        targetMax: 15,
+        equipment: 'BAND 20kg',
+      },
+      {
+        exerciseId: 'lateral-raise',
+        setCount: 4,
+        targetMin: 10,
+        targetMax: 15,
+        equipment: 'BAND 20kg',
+      },
+    ],
+  },
+} satisfies SeedProgramme
+
+const AMBIGUOUS_BODY = startBody(PROGRAMME.revision)
+
+/** Make the second exercise of a stored workout a duplicate of the first. */
+function makeStoredWorkoutAmbiguous(
+  fake: ReturnType<typeof createFakeD1>,
+  workoutDate: string,
+) {
+  for (const [id, row] of fake.workoutSets) {
+    if (row.workout_date === workoutDate && row.exercise_order === 1) {
+      fake.workoutSets.set(id, {
+        ...row,
+        exercise_id_snapshot: 'lat-pulldown',
+        exercise_name_snapshot: 'Lat Pulldown',
+        prescription_snapshot: '4 × 10–15',
+      })
+    }
+  }
 }
 
 function makeEnv(db: D1Database): Env {
@@ -240,7 +236,9 @@ function lanes(body: Record<string, never>): Lane[] {
 
 describe('routing and identity', () => {
   it('ignores requests that are not progression requests', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     for (const url of [
       `${ORIGIN}/api/progress/performance`,
       `${ORIGIN}/api/progress/weight`,
@@ -251,14 +249,18 @@ describe('routing and identity', () => {
   })
 
   it('refuses an unauthenticated read', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const { response, body } = await call(db, { path: '2026-08-31/monday' })
     expect(response.status).toBe(401)
     expect(body.error).toBe('unauthenticated')
   })
 
   it('refuses an unauthenticated calibration write', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const { response } = await call(db, {
       method: 'PUT',
       origin: ORIGIN,
@@ -269,7 +271,9 @@ describe('routing and identity', () => {
   })
 
   it('rejects a cross-origin write', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const token = await seedToken(db, 'sub-1', 'a@example.com')
     const { response } = await call(db, {
       token,
@@ -282,7 +286,9 @@ describe('routing and identity', () => {
   })
 
   it('rejects an unknown method and an unknown shape', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const token = await seedToken(db, 'sub-1', 'a@example.com')
 
     expect(
@@ -295,7 +301,9 @@ describe('routing and identity', () => {
   })
 
   it('rejects a malformed date, session or exercise order', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const token = await seedToken(db, 'sub-1', 'a@example.com')
 
     expect((await call(db, { token, path: '2026-02-30/monday' })).body.error).toBe(
@@ -318,7 +326,9 @@ describe('routing and identity', () => {
   })
 
   it('answers honestly when the workout has not been started', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const token = await seedToken(db, 'sub-1', 'a@example.com')
     const { response, body } = await call(db, { token, path: '2026-08-31/monday' })
 
@@ -328,7 +338,9 @@ describe('routing and identity', () => {
   })
 
   it('never lets a payload choose the account', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const mine = await seedToken(db, 'sub-mine', 'mine@example.com')
     const theirs = await seedToken(db, 'sub-theirs', 'theirs@example.com')
 
@@ -355,7 +367,9 @@ describe('routing and identity', () => {
 
 describe('29. account isolation', () => {
   it('one account never derives guidance from another account’s history', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const mine = await seedToken(db, 'sub-mine', 'mine@example.com')
     const theirs = await seedToken(db, 'sub-theirs', 'theirs@example.com')
 
@@ -374,7 +388,9 @@ describe('29. account isolation', () => {
   })
 
   it('one account cannot read or clear another account’s calibration', async () => {
-    const { db, calibrations } = createFakeD1()
+    const fake = createFakeD1()
+    const { db, calibrations } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const mine = await seedToken(db, 'sub-mine', 'mine@example.com')
     const theirs = await seedToken(db, 'sub-theirs', 'theirs@example.com')
 
@@ -417,7 +433,9 @@ describe('29. account isolation', () => {
 
 describe('18. session lanes stay separate', () => {
   it('Monday Lat Pulldown never draws on Wednesday Lat Pulldown', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const token = await seedToken(db, 'sub-1', 'a@example.com')
 
     // Wednesday's Lat Pulldown cleared its own range at a light load.
@@ -440,7 +458,9 @@ describe('18. session lanes stay separate', () => {
   })
 
   it('Wednesday reads its own history, as LIGHT quality work', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const token = await seedToken(db, 'sub-1', 'a@example.com')
 
     await start(db, token, '2026-08-26', 'wednesday', WEDNESDAY_BODY)
@@ -469,7 +489,9 @@ describe('18. session lanes stay separate', () => {
 
 describe('derivation from recorded history', () => {
   it('today’s own occurrence is never its own evidence', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const token = await seedToken(db, 'sub-1', 'a@example.com')
 
     // A perfect session logged TODAY must not tell today to add load.
@@ -486,7 +508,9 @@ describe('derivation from recorded history', () => {
   })
 
   it('28. undoing a completed set recomputes the recommendation from truth', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const token = await seedToken(db, 'sub-1', 'a@example.com')
 
     await record(db, token, '2026-08-31', 20, [15, 15, 15, 15])
@@ -509,7 +533,9 @@ describe('derivation from recorded history', () => {
   })
 
   it('28b. correcting a set downwards recomputes it too', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const token = await seedToken(db, 'sub-1', 'a@example.com')
 
     await record(db, token, '2026-08-31', 20, [15, 15, 15, 15])
@@ -526,7 +552,9 @@ describe('derivation from recorded history', () => {
   })
 
   it('a skipped set in the last session holds rather than progressing', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const token = await seedToken(db, 'sub-1', 'a@example.com')
 
     await start(db, token, '2026-08-31', 'monday', MONDAY_BODY)
@@ -550,7 +578,9 @@ describe('derivation from recorded history', () => {
   })
 
   it('11. reduces only after two consecutive weak sessions at the same load', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const token = await seedToken(db, 'sub-1', 'a@example.com')
 
     await record(db, token, '2026-08-24', 20, [8, 8, 9, 8])
@@ -574,7 +604,9 @@ describe('derivation from recorded history', () => {
 
 describe('6, 7. calibration persists across reload and resume', () => {
   async function calibrating() {
-    const { db, calibrations } = createFakeD1()
+    const fake = createFakeD1()
+    const { db, calibrations } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const token = await seedToken(db, 'sub-1', 'a@example.com')
     await start(db, token, '2026-08-31', 'monday', MONDAY_BODY)
     await complete(db, token, '2026-08-31', 'monday', 0, {
@@ -585,7 +617,9 @@ describe('6, 7. calibration persists across reload and resume', () => {
   }
 
   it('refuses a judgement before a first working set is completed', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const token = await seedToken(db, 'sub-1', 'a@example.com')
     await start(db, token, '2026-08-31', 'monday', MONDAY_BODY)
 
@@ -775,7 +809,9 @@ describe('6, 7. calibration persists across reload and resume', () => {
   })
 
   it('refuses a judgement on a lane that has comparable history', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const token = await seedToken(db, 'sub-1', 'a@example.com')
 
     await record(db, token, '2026-08-24', 20, [12, 12, 11, 10])
@@ -851,13 +887,17 @@ describe('6, 7. calibration persists across reload and resume', () => {
 
 describe('20, 23. refusing to guess, and never chasing load', () => {
   it('20. two identical slots in one stored workout fail closed', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const token = await seedToken(db, 'sub-1', 'a@example.com')
 
     // A clean, unambiguous history first, so the refusal is about the
     // ambiguity and not about a lack of evidence.
     await record(db, token, '2026-08-24', 20, [15, 15, 15, 15])
+    fake.seedProgrammeForAll(AMBIGUOUS_PROGRAMME)
     await start(db, token, '2026-08-31', 'monday', AMBIGUOUS_BODY)
+    makeStoredWorkoutAmbiguous(fake, '2026-08-31')
 
     const both = lanes((await call(db, { token, path: '2026-08-31/monday' })).body)
     expect(both).toHaveLength(2)
@@ -870,10 +910,14 @@ describe('20, 23. refusing to guess, and never chasing load', () => {
   })
 
   it('20b. an ambiguous stored HISTORY fails closed rather than picking a slot', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const token = await seedToken(db, 'sub-1', 'a@example.com')
 
+    fake.seedProgrammeForAll(AMBIGUOUS_PROGRAMME)
     await start(db, token, '2026-08-24', 'monday', AMBIGUOUS_BODY)
+    makeStoredWorkoutAmbiguous(fake, '2026-08-24')
     for (const exerciseOrder of [0, 1]) {
       for (const setIndex of [0, 1, 2, 3]) {
         await complete(
@@ -896,15 +940,24 @@ describe('20, 23. refusing to guess, and never chasing load', () => {
   })
 
   it('3. a stored intensity with no ruleset fails closed, end to end', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const token = await seedToken(db, 'sub-1', 'a@example.com')
 
     // A clean, unambiguous history, so the refusal is about the intensity and
     // nothing else.
     await record(db, token, '2026-08-24', 20, [15, 15, 15, 15])
-    // The Start payload accepts any bounded intensity string and stores it as
-    // the snapshot. This one names no ruleset.
-    await start(db, token, '2026-08-31', 'monday', { ...MONDAY_BODY, intensity: 'DELOAD' })
+    // ROUND 22. Intensity is no longer something a Start body can state — it
+    // comes from the fixed Foundation metadata — so a snapshot naming no
+    // ruleset can only be STORED data, written before that was true. Modelled
+    // exactly that way: Start normally, then age the stored row.
+    await start(db, token, '2026-08-31', 'monday', MONDAY_BODY)
+    for (const [id, row] of fake.occurrences) {
+      if (row.workout_date === '2026-08-31') {
+        fake.occurrences.set(id, { ...row, session_intensity_snapshot: 'DELOAD' })
+      }
+    }
 
     const { body } = await call(db, { token, path: '2026-08-31/monday' })
     expect(body.intensity).toBe('DELOAD')
@@ -920,10 +973,18 @@ describe('20, 23. refusing to guess, and never chasing load', () => {
   })
 
   it('3b. no calibration can be recorded against a session with no ruleset', async () => {
-    const { db, calibrations } = createFakeD1()
+    const fake = createFakeD1()
+    const { db, calibrations } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const token = await seedToken(db, 'sub-1', 'a@example.com')
 
-    await start(db, token, '2026-08-31', 'monday', { ...MONDAY_BODY, intensity: 'DELOAD' })
+    // As above: a no-ruleset intensity can only be stored data now.
+    await start(db, token, '2026-08-31', 'monday', MONDAY_BODY)
+    for (const [id, row] of fake.occurrences) {
+      if (row.workout_date === '2026-08-31') {
+        fake.occurrences.set(id, { ...row, session_intensity_snapshot: 'DELOAD' })
+      }
+    }
     await complete(db, token, '2026-08-31', 'monday', 0, {
       result: 12,
       load: { value: 20, unit: 'kg' },
@@ -942,7 +1003,9 @@ describe('20, 23. refusing to guess, and never chasing load', () => {
   })
 
   it('23. a PUMP session never increases, however perfect the last one was', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const token = await seedToken(db, 'sub-1', 'a@example.com')
 
     await start(db, token, '2026-08-28', 'friday', FRIDAY_BODY)
@@ -968,7 +1031,9 @@ describe('20, 23. refusing to guess, and never chasing load', () => {
 
 describe('31, 32. Holiday interaction', () => {
   it('31. Training-On on a Holiday uses the underlying weekday lane', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const token = await seedToken(db, 'sub-1', 'a@example.com')
 
     // An ordinary Monday, then a Monday that happens to fall in a Holiday the
@@ -985,7 +1050,9 @@ describe('31, 32. Holiday interaction', () => {
   })
 
   it('32. Training-Off generates no progression evidence at all', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const token = await seedToken(db, 'sub-1', 'a@example.com')
 
     // Training Off means no workout is started on that date, so there is no
@@ -1010,7 +1077,9 @@ describe('31, 32. Holiday interaction', () => {
 
 describe('storage failure', () => {
   it('reports a controlled error and never invents guidance', async () => {
-    const { db, breakWorkouts } = createFakeD1()
+    const fake = createFakeD1()
+    const { db, breakWorkouts } = fake
+    fake.seedProgrammeForAll(PROGRAMME)
     const token = await seedToken(db, 'sub-1', 'a@example.com')
     await start(db, token, '2026-08-31', 'monday', MONDAY_BODY)
     breakWorkouts()

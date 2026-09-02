@@ -8,6 +8,7 @@ import { handleProgressionRequest } from '../progression/routes'
 import { handleProgressRequest } from '../progress/routes'
 import { handleWorkoutRequest } from '../workouts/routes'
 import { createFakeD1 } from './fakeD1'
+import { programmeFromLegacyPlan, startBody } from './programmeFixture'
 
 /**
  * Round 17 — Extra Workout, server side.
@@ -32,7 +33,7 @@ const DATE = '2026-09-02'
 const SATURDAY = '2026-09-05'
 const SUNDAY = '2026-09-06'
 
-const MONDAY_BODY = {
+const MONDAY_PLAN = {
   day: 'Monday',
   focus: 'Back Width + Biceps',
   intensity: 'HARD',
@@ -60,14 +61,33 @@ const MONDAY_BODY = {
   ],
 }
 
+/**
+ * ROUND 22 — the Monday template, established where the server reads it.
+ *
+ * This suite is about Extra PROVENANCE, not about who authors the plan. The
+ * plan it has always used is now the account's programme, and the two Start
+ * bodies below carry only a revision and (for the Extra) the weekday copied.
+ */
+const PROGRAMME = programmeFromLegacyPlan('monday', MONDAY_PLAN)
+
+/** A scheduled Start. */
+const MONDAY_BODY = startBody(PROGRAMME.revision)
+
 /** The same template, addressed as an Extra: identical snapshot, plus source. */
-const EXTRA_FROM_MONDAY = { ...MONDAY_BODY, sourceSessionId: 'monday' }
+const EXTRA_FROM_MONDAY = startBody(PROGRAMME.revision, 'monday')
 
 function makeEnv(db: D1Database): Env {
   return { DB: db, ASSETS: {} as Fetcher, APP_ORIGIN: ORIGIN }
 }
 
-async function seedToken(db: D1Database, googleSub: string, email: string) {
+/** A session token AND this account's authoritative programme. */
+async function seedToken(
+  fake: ReturnType<typeof createFakeD1>,
+  googleSub: string,
+  email: string,
+) {
+  fake.seedProgramme(googleSub, PROGRAMME)
+  const db = fake.db
   const { token } = await createSession(createD1SessionStore(db), {
     googleSub,
     email,
@@ -163,8 +183,9 @@ async function performance(db: D1Database, token: string) {
 
 describe('1. previewing an Extra creates nothing', () => {
   it('reads as not started, and leaves no occurrence behind', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     // Reading the Extra slug is exactly what the page does while the user is
     // still choosing a template. It must not bring a workout into existence.
@@ -184,8 +205,9 @@ describe('1. previewing an Extra creates nothing', () => {
 
 describe('2. Start clones the selected Foundation session', () => {
   it('stores the template as it stands, with extra provenance', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     const { response, body } = await start(db, token, 'extra', EXTRA_FROM_MONDAY)
     expect(response.status).toBe(201)
@@ -202,12 +224,15 @@ describe('2. Start clones the selected Foundation session', () => {
     const sets = body.sets as { exerciseName: string; prescription: string }[]
     expect(sets).toHaveLength(4)
     expect(sets[0].exerciseName).toBe('Lat Pulldown')
-    expect(sets[0].prescription).toBe('4 × 10–15')
+    // Derived from the programme's structured slot, so the prescription and the
+    // set count can no longer disagree the way the old free-text plan let them.
+    expect(sets[0].prescription).toBe('2 × 10–15')
   })
 
   it('refuses an Extra that does not say what it was copied from', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     const { response, body } = await start(db, token, 'extra', MONDAY_BODY)
     expect(response.status).toBe(400)
@@ -215,8 +240,9 @@ describe('2. Start clones the selected Foundation session', () => {
   })
 
   it('refuses a scheduled workout that claims a source', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     // A client must not be able to attach Extra-shaped provenance to a real
     // scheduled obligation.
@@ -229,8 +255,9 @@ describe('2. Start clones the selected Foundation session', () => {
   })
 
   it('refuses an Extra sourced from another Extra', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     const { response } = await start(db, token, 'extra', {
       ...MONDAY_BODY,
@@ -240,8 +267,9 @@ describe('2. Start clones the selected Foundation session', () => {
   })
 
   it('never lets a client declare its own kind', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     // `kind` is not part of any accepted payload. Sending one changes nothing:
     // the stored value is derived from the routed session id.
@@ -259,8 +287,9 @@ describe('2. Start clones the selected Foundation session', () => {
 
 describe('3. a scheduled session and an Extra share a date without colliding', () => {
   it('keeps two separate occurrences, each with its own sets', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     const scheduled = await start(db, token, 'monday', MONDAY_BODY)
     const extra = await start(db, token, 'extra', EXTRA_FROM_MONDAY)
@@ -293,32 +322,16 @@ describe('3. a scheduled session and an Extra share a date without colliding', (
 
 describe('4. a second Extra on the same date resumes the first', () => {
   it('never creates extra-2, even from a different template', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     const first = await start(db, token, 'extra', EXTRA_FROM_MONDAY)
     expect(first.response.status).toBe(201)
 
     // A second entry, this time asking for Tuesday. The stored snapshot wins:
     // once started, the source template cannot be changed.
-    const second = await start(db, token, 'extra', {
-      day: 'Tuesday',
-      focus: 'Upper Chest + Shoulders + Triceps',
-      intensity: 'HARD',
-      sourceSessionId: 'tuesday',
-      exercises: [
-        {
-          exerciseId: 'incline-db-press',
-          name: 'Incline DB Press',
-          prescription: '4 × 8–12',
-          equipment: null,
-          resultKind: 'reps',
-          loadMode: 'kg_each',
-          perSide: false,
-          setCount: 4,
-        },
-      ],
-    })
+    const second = await start(db, token, 'extra', startBody(PROGRAMME.revision, 'tuesday'))
 
     // 200, not 201: this resumed.
     expect(second.response.status).toBe(200)
@@ -340,8 +353,9 @@ describe('4. a second Extra on the same date resumes the first', () => {
 
 describe('5. an Extra may be performed at the weekend', () => {
   it('records Saturday and Sunday Extras without inventing a scheduled one', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     const saturday = await start(db, token, 'extra', EXTRA_FROM_MONDAY, SATURDAY)
     const sunday = await start(db, token, 'extra', EXTRA_FROM_MONDAY, SUNDAY)
@@ -364,8 +378,9 @@ describe('5. an Extra may be performed at the weekend', () => {
 
 describe('7. a real scheduled workout and an Extra stay separate', () => {
   it('keeps them distinct even when both are built from Monday', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     await start(db, token, 'monday', MONDAY_BODY)
     await start(db, token, 'extra', EXTRA_FROM_MONDAY)
@@ -386,8 +401,9 @@ describe('7. a real scheduled workout and an Extra stay separate', () => {
 
 describe('9. completing an Extra does not suppress the scheduled reminder', () => {
   it('leaves the scheduled session reported as unfinished', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
     const truth = createD1ScheduleTruth(db)
 
     // Only the Extra exists, and it is finished end to end.
@@ -406,8 +422,9 @@ describe('9. completing an Extra does not suppress the scheduled reminder', () =
   })
 
   it('still suppresses the reminder for a genuinely finished scheduled workout', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
     const truth = createD1ScheduleTruth(db)
 
     await start(db, token, 'monday', MONDAY_BODY)
@@ -427,8 +444,9 @@ describe('9. completing an Extra does not suppress the scheduled reminder', () =
 
 describe('12. history reports an Extra as an Extra', () => {
   it('carries kind and source on every history row', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     await start(db, token, 'monday', MONDAY_BODY)
     await start(db, token, 'extra', EXTRA_FROM_MONDAY)
@@ -450,8 +468,9 @@ describe('12. history reports an Extra as an Extra', () => {
   })
 
   it('reports the same provenance on a range read', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     await start(db, token, 'extra', EXTRA_FROM_MONDAY)
 
@@ -468,8 +487,9 @@ describe('12. history reports an Extra as an Extra', () => {
 
 describe('13/14. a completed Extra set is factual performance history', () => {
   it('can become the personal best, keeping kg_each as per dumbbell', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     await start(db, token, 'extra', EXTRA_FROM_MONDAY)
     // One-Arm DB Row is exercise_order 1 and is kg_each.
@@ -499,8 +519,9 @@ describe('13/14. a completed Extra set is factual performance history', () => {
   })
 
   it('contributes performance points alongside scheduled work', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     await start(db, token, 'monday', MONDAY_BODY)
     await completeSet(db, token, 'monday', 0, 0, { result: 12, load: { value: 30, unit: 'kg' } })
@@ -536,8 +557,9 @@ describe('15. Extra history never enters the scheduled progression lanes', () =>
 
     /** Build an account, optionally with an Extra that mimics Monday exactly. */
     async function recommendation(withExtra: boolean) {
-      const { db } = createFakeD1()
-      const token = await seedToken(db, 'sub-1', 'a@example.com')
+      const fake = createFakeD1()
+      const { db } = fake
+      const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
       // A real, finished scheduled Monday — the legitimate evidence.
       await start(db, token, 'monday', MONDAY_BODY, earlier)
@@ -574,8 +596,9 @@ describe('15. Extra history never enters the scheduled progression lanes', () =>
   })
 
   it('does not let an Extra become the lane’s earlier occurrence', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     // ONLY an Extra exists before the guided Monday.
     await start(db, token, 'extra', EXTRA_FROM_MONDAY, '2026-09-02')
@@ -601,8 +624,9 @@ describe('15. Extra history never enters the scheduled progression lanes', () =>
 
 describe('16. the progression surface is unavailable for an Extra', () => {
   it('refuses the read rather than answering with an empty lane set', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     await start(db, token, 'extra', EXTRA_FROM_MONDAY)
 
@@ -614,8 +638,9 @@ describe('16. the progression surface is unavailable for an Extra', () => {
   })
 
   it('refuses a calibration write against an Extra', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
     await start(db, token, 'extra', EXTRA_FROM_MONDAY)
 
     const response = await handleProgressionRequest(
@@ -640,24 +665,36 @@ describe('16. the progression surface is unavailable for an Extra', () => {
 
 describe('17. a started Extra keeps the truth it was started with', () => {
   it('ignores a newer template on resume', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     await start(db, token, 'extra', EXTRA_FROM_MONDAY)
 
-    // The Foundation source changes: new prescription, new equipment, new name.
-    await start(db, token, 'extra', {
-      ...EXTRA_FROM_MONDAY,
+    // The Foundation source changes — as a PROGRAMME edit, which is the only way
+    // it can change now: new name, new prescription, new equipment, and a new
+    // revision to go with them.
+    fake.seedProgramme('sub-1', {
+      revision: PROGRAMME.revision + 1,
       exercises: [
-        {
-          ...EXTRA_FROM_MONDAY.exercises[0],
-          name: 'Lat Pulldown (wide)',
-          prescription: '9 × 1',
-          equipment: 'BAND 99kg',
-          setCount: 9,
-        },
+        { exerciseId: 'lat-pulldown', name: 'Lat Pulldown (wide)' },
+        { exerciseId: 'one-arm-db-row', name: 'One-Arm DB Row' },
       ],
+      sessions: {
+        ...PROGRAMME.sessions,
+        monday: [
+          {
+            exerciseId: 'lat-pulldown',
+            setCount: 9,
+            targetMin: 1,
+            targetMax: 1,
+            equipment: 'BAND 99kg',
+          },
+        ],
+      },
     })
+
+    await start(db, token, 'extra', startBody(PROGRAMME.revision + 1, 'monday'))
 
     const read = await workouts(db, `${DATE}/extra`, { token })
     const sets = read.body.sets as {
@@ -669,7 +706,9 @@ describe('17. a started Extra keeps the truth it was started with', () => {
     // What was performed is what is returned.
     expect(sets).toHaveLength(4)
     expect(sets[0].exerciseName).toBe('Lat Pulldown')
-    expect(sets[0].prescription).toBe('4 × 10–15')
+    // Derived from the programme's structured slot, so the prescription and the
+    // set count can no longer disagree the way the old free-text plan let them.
+    expect(sets[0].prescription).toBe('2 × 10–15')
     expect(sets[0].equipment).toBe('BAND 20kg')
   })
 })
@@ -680,8 +719,9 @@ describe('17. a started Extra keeps the truth it was started with', () => {
 
 describe('18/19. Complete, Skip and Undo behave exactly as they do elsewhere', () => {
   it('completes, skips and undoes, keeping kg_each per dumbbell', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
     await start(db, token, 'extra', EXTRA_FROM_MONDAY)
 
     const completed = await completeSet(db, token, 'extra', 1, 0, {
@@ -714,8 +754,9 @@ describe('18/19. Complete, Skip and Undo behave exactly as they do elsewhere', (
   })
 
   it('refuses a kg load against a kg_each set inside an Extra', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
     await start(db, token, 'extra', EXTRA_FROM_MONDAY)
 
     const { response, body } = await completeSet(db, token, 'extra', 1, 0, {
@@ -733,9 +774,10 @@ describe('18/19. Complete, Skip and Undo behave exactly as they do elsewhere', (
 
 describe('20/21. an Extra is account-scoped and write-guarded', () => {
   it('gives two accounts their own Extra on the same date', async () => {
-    const { db } = createFakeD1()
-    const alice = await seedToken(db, 'sub-alice', 'alice@example.com')
-    const bob = await seedToken(db, 'sub-bob', 'bob@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const alice = await seedToken(fake, 'sub-alice', 'alice@example.com')
+    const bob = await seedToken(fake, 'sub-bob', 'bob@example.com')
 
     const hers = await start(db, alice, 'extra', EXTRA_FROM_MONDAY)
     const his = await start(db, bob, 'extra', {
@@ -761,7 +803,8 @@ describe('20/21. an Extra is account-scoped and write-guarded', () => {
   })
 
   it('refuses an unauthenticated Extra start', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const { response } = await workouts(db, `${DATE}/extra/start`, {
       method: 'POST',
       origin: ORIGIN,
@@ -771,8 +814,9 @@ describe('20/21. an Extra is account-scoped and write-guarded', () => {
   })
 
   it('refuses a cross-origin Extra start', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     const { response } = await workouts(db, `${DATE}/extra/start`, {
       token,
@@ -784,15 +828,16 @@ describe('20/21. an Extra is account-scoped and write-guarded', () => {
   })
 
   it('ignores an identity supplied in the body', async () => {
-    const { db } = createFakeD1()
-    const alice = await seedToken(db, 'sub-alice', 'alice@example.com')
-    await seedToken(db, 'sub-bob', 'bob@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const alice = await seedToken(fake, 'sub-alice', 'alice@example.com')
+    await seedToken(fake, 'sub-bob', 'bob@example.com')
 
     // A googleSub in the payload is not part of any accepted shape.
     await start(db, alice, 'extra', { ...EXTRA_FROM_MONDAY, googleSub: 'sub-bob' })
 
     const bobsHistory = await workouts(db, 'history', {
-      token: await seedToken(db, 'sub-bob', 'bob@example.com'),
+      token: await seedToken(fake, 'sub-bob', 'bob@example.com'),
     })
     expect(bobsHistory.body.workouts).toHaveLength(0)
   })

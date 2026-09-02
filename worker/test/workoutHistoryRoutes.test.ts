@@ -5,6 +5,7 @@ import { createD1SessionStore } from '../auth/d1Stores'
 import { createSession } from '../auth/session'
 import { handleWorkoutRequest } from '../workouts/routes'
 import { createFakeD1 } from './fakeD1'
+import { programmeFromLegacyPlan, startBody } from './programmeFixture'
 
 /**
  * Round 10 — the read-only workout history surface.
@@ -65,22 +66,27 @@ function plan(setCount: number, exerciseId = 'lat-pulldown') {
   ]
 }
 
+/**
+ * ROUND 22. Establish the programme this Start should freeze, then Start.
+ *
+ * The set count these suites vary is a PROGRAMME fact now, not a request fact,
+ * so it is stated where the server reads it. The Start body carries only the
+ * revision.
+ */
 async function startWorkout(
-  db: D1Database,
+  fake: ReturnType<typeof createFakeD1>,
   token: string,
   date: string,
   sessionId: string,
   options: { setCount?: number; day?: string; focus?: string; intensity?: string } = {},
 ) {
-  return call(db, `${date}/${sessionId}/start`, {
+  fake.seedProgrammeForAll(
+    programmeFromLegacyPlan(sessionId, { exercises: plan(options.setCount ?? 4) }),
+  )
+  return call(fake.db, `${date}/${sessionId}/start`, {
     token,
     method: 'POST',
-    body: {
-      day: options.day ?? 'Monday',
-      focus: options.focus ?? 'Back Width + Biceps',
-      intensity: options.intensity ?? 'HARD',
-      exercises: plan(options.setCount ?? 4),
-    },
+    body: startBody(),
   })
 }
 
@@ -102,21 +108,24 @@ async function skipSet(db: D1Database, token: string, date: string, s: string, i
 
 describe('history authentication', () => {
   it('rejects an unauthenticated read', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const { response, body } = await call(db, 'history')
     expect(response.status).toBe(401)
     expect(body.error).toBe('unauthenticated')
   })
 
   it('marks the response no-store', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const token = await seedToken(db, 'sub-a', 'a@example.com')
     const { response } = await call(db, 'history', { token })
     expect(response.headers.get('Cache-Control')).toBe('no-store')
   })
 
   it('rejects a write method on history', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const token = await seedToken(db, 'sub-a', 'a@example.com')
     for (const method of ['POST', 'PUT', 'DELETE']) {
       const { response, body } = await call(db, 'history', { token, method, body: {} })
@@ -126,9 +135,10 @@ describe('history authentication', () => {
   })
 
   it('never echoes the account identity', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const token = await seedToken(db, 'sub-a', 'a@example.com')
-    await startWorkout(db, token, '2026-08-31', 'monday')
+    await startWorkout(fake, token, '2026-08-31', 'monday')
 
     const { body } = await call(db, 'history', { token })
     expect(JSON.stringify(body)).not.toContain('sub-a')
@@ -139,11 +149,12 @@ describe('history authentication', () => {
 
 describe('account isolation', () => {
   it('shows an account only its own recorded workouts', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const tokenA = await seedToken(db, 'sub-a', 'a@example.com')
     const tokenB = await seedToken(db, 'sub-b', 'b@example.com')
 
-    await startWorkout(db, tokenA, '2026-08-31', 'monday')
+    await startWorkout(fake, tokenA, '2026-08-31', 'monday')
     await completeSet(db, tokenA, '2026-08-31', 'monday', 0)
 
     const b = await call(db, 'history', { token: tokenB })
@@ -162,12 +173,13 @@ describe('account isolation', () => {
   })
 
   it('does not let one account’s totals include another’s sets', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const tokenA = await seedToken(db, 'sub-a', 'a@example.com')
     const tokenB = await seedToken(db, 'sub-b', 'b@example.com')
 
-    await startWorkout(db, tokenA, '2026-08-31', 'monday', { setCount: 4 })
-    await startWorkout(db, tokenB, '2026-08-31', 'monday', { setCount: 2 })
+    await startWorkout(fake, tokenA, '2026-08-31', 'monday', { setCount: 4 })
+    await startWorkout(fake, tokenB, '2026-08-31', 'monday', { setCount: 2 })
 
     const a = await call(db, 'history', { token: tokenA })
     const b = await call(db, 'history', { token: tokenB })
@@ -182,7 +194,8 @@ describe('account isolation', () => {
 
 describe('recorded history', () => {
   it('reports an empty history honestly', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const token = await seedToken(db, 'sub-a', 'a@example.com')
 
     const { response, body } = await call(db, 'history', { token })
@@ -198,9 +211,10 @@ describe('recorded history', () => {
   })
 
   it('returns the snapshot fields Progress needs', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const token = await seedToken(db, 'sub-a', 'a@example.com')
-    await startWorkout(db, token, '2026-08-31', 'monday')
+    await startWorkout(fake, token, '2026-08-31', 'monday')
 
     const { body } = await call(db, 'history', { token })
     const entry = (body.workouts as unknown as Record<string, unknown>[])[0]
@@ -216,9 +230,10 @@ describe('recorded history', () => {
   })
 
   it('counts completed and skipped separately, and never merges them', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const token = await seedToken(db, 'sub-a', 'a@example.com')
-    await startWorkout(db, token, '2026-08-31', 'monday', { setCount: 4 })
+    await startWorkout(fake, token, '2026-08-31', 'monday', { setCount: 4 })
     await completeSet(db, token, '2026-08-31', 'monday', 0)
     await skipSet(db, token, '2026-08-31', 'monday', 1)
 
@@ -236,9 +251,10 @@ describe('recorded history', () => {
   })
 
   it('a fully skipped workout reports zero completed', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const token = await seedToken(db, 'sub-a', 'a@example.com')
-    await startWorkout(db, token, '2026-08-31', 'monday', { setCount: 2 })
+    await startWorkout(fake, token, '2026-08-31', 'monday', { setCount: 2 })
     await skipSet(db, token, '2026-08-31', 'monday', 0)
     await skipSet(db, token, '2026-08-31', 'monday', 1)
 
@@ -253,9 +269,10 @@ describe('recorded history', () => {
   })
 
   it('reports a partially pending workout as pending, not complete', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const token = await seedToken(db, 'sub-a', 'a@example.com')
-    await startWorkout(db, token, '2026-08-31', 'monday', { setCount: 4 })
+    await startWorkout(fake, token, '2026-08-31', 'monday', { setCount: 4 })
     await completeSet(db, token, '2026-08-31', 'monday', 0)
 
     const { body } = await call(db, 'history', { token })
@@ -266,9 +283,10 @@ describe('recorded history', () => {
   })
 
   it('includes a started workout with nothing logged, without calling it trained', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const token = await seedToken(db, 'sub-a', 'a@example.com')
-    await startWorkout(db, token, '2026-08-31', 'monday', { setCount: 3 })
+    await startWorkout(fake, token, '2026-08-31', 'monday', { setCount: 3 })
 
     const { body } = await call(db, 'history', { token })
     const progress = (body.workouts as unknown as { progress: Record<string, number> }[])[0]
@@ -277,10 +295,11 @@ describe('recorded history', () => {
   })
 
   it('totals cover all history, not just the returned page', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const token = await seedToken(db, 'sub-a', 'a@example.com')
     for (const day of ['2026-08-31', '2026-09-01', '2026-09-02']) {
-      await startWorkout(db, token, day, 'monday', { setCount: 2 })
+      await startWorkout(fake, token, day, 'monday', { setCount: 2 })
     }
 
     const { body } = await call(db, 'history?limit=1', { token })
@@ -295,10 +314,11 @@ describe('recorded history', () => {
 
 describe('ordering', () => {
   it('returns newest workout date first', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const token = await seedToken(db, 'sub-a', 'a@example.com')
     for (const day of ['2026-08-31', '2026-09-03', '2026-09-01']) {
-      await startWorkout(db, token, day, 'monday')
+      await startWorkout(fake, token, day, 'monday')
     }
 
     const { body } = await call(db, 'history', { token })
@@ -310,11 +330,12 @@ describe('ordering', () => {
   })
 
   it('breaks a same-date tie deterministically', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const token = await seedToken(db, 'sub-a', 'a@example.com')
     // Two sessions recorded on one day.
-    await startWorkout(db, token, '2026-09-01', 'monday')
-    await startWorkout(db, token, '2026-09-01', 'wednesday')
+    await startWorkout(fake, token, '2026-09-01', 'monday')
+    await startWorkout(fake, token, '2026-09-01', 'wednesday')
 
     const first = await call(db, 'history', { token })
     const second = await call(db, 'history', { token })
@@ -337,7 +358,7 @@ describe('limit', () => {
     const token = await seedToken(fake.db, 'sub-a', 'a@example.com')
     for (let i = 0; i < count; i += 1) {
       const day = `2026-09-${String(i + 1).padStart(2, '0')}`
-      await startWorkout(fake.db, token, day, 'monday', { setCount: 1 })
+      await startWorkout(fake, token, day, 'monday', { setCount: 1 })
     }
     return { ...fake, token }
   }
@@ -378,13 +399,14 @@ describe('limit', () => {
 
 describe('existing workout API still behaves exactly as before', () => {
   it('start, read, complete, skip and undo all still work', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const token = await seedToken(db, 'sub-a', 'a@example.com')
 
-    const started = await startWorkout(db, token, '2026-08-31', 'monday', { setCount: 4 })
+    const started = await startWorkout(fake, token, '2026-08-31', 'monday', { setCount: 4 })
     expect(started.response.status).toBe(201)
 
-    const resumed = await startWorkout(db, token, '2026-08-31', 'monday', { setCount: 4 })
+    const resumed = await startWorkout(fake, token, '2026-08-31', 'monday', { setCount: 4 })
     expect(resumed.response.status).toBe(200)
     expect(resumed.body.created).toBe(false)
 
@@ -400,21 +422,24 @@ describe('existing workout API still behaves exactly as before', () => {
   })
 
   it('still reports a not-started workout as null', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const token = await seedToken(db, 'sub-a', 'a@example.com')
     const { body } = await call(db, '2026-08-31/monday', { token })
     expect(body.occurrence).toBeNull()
   })
 
   it('still 404s an unknown nested route', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const token = await seedToken(db, 'sub-a', 'a@example.com')
     const { response } = await call(db, '2026-08-31/monday/summary', { token })
     expect(response.status).toBe(404)
   })
 
   it('does not treat a bare date segment as history', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const token = await seedToken(db, 'sub-a', 'a@example.com')
     const { response } = await call(db, '2026-08-31', { token })
     expect(response.status).toBe(404)
@@ -427,7 +452,8 @@ describe('existing workout API still behaves exactly as before', () => {
 
 describe('storage failure', () => {
   it('reports a controlled 500 without leaking internals', async () => {
-    const { db, breakWorkouts } = createFakeD1()
+    const fake = createFakeD1()
+    const { db, breakWorkouts } = fake
     const token = await seedToken(db, 'sub-a', 'a@example.com')
     breakWorkouts(new Error('D1 exploded: SELECT FROM workout_occurrences'))
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {})

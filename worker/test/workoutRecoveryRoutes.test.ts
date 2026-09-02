@@ -4,7 +4,7 @@ import type { Env } from '../auth/config'
 import { createD1SessionStore } from '../auth/d1Stores'
 import { createSession } from '../auth/session'
 import { handleWorkoutRequest } from '../workouts/routes'
-import { createFakeD1 } from './fakeD1'
+import { createFakeD1 , type SeedProgramme } from './fakeD1'
 
 /**
  * Round 21 — the Cancel Start and History Correction HTTP surface.
@@ -21,29 +21,39 @@ const BASE = `${ORIGIN}/api/workouts`
 const DATE = '2026-09-07'
 const SESSION = 'monday'
 
-const START_BODY = {
-  day: 'Monday',
-  focus: 'Back Width + Biceps',
-  intensity: 'HARD',
-  exercises: [
-    {
-      exerciseId: 'lat-pulldown',
-      name: 'Lat Pulldown',
-      prescription: '4 x 10-15',
-      equipment: null,
-      resultKind: 'reps',
-      loadMode: 'kg',
-      perSide: false,
-      setCount: 2,
-    },
-  ],
+/**
+ * ROUND 22 — the account's authoritative programme for these tests.
+ *
+ * This file used to send its plan in the Start body. The server no longer
+ * accepts one, so the same single two-set exercise is established where the
+ * server reads it. Every cancel/correction assertion below is unchanged.
+ */
+const PROGRAMME: SeedProgramme = {
+  revision: 1,
+  exercises: [{ exerciseId: 'lat-pulldown', name: 'Lat Pulldown' }],
+  sessions: {
+    monday: [{ exerciseId: 'lat-pulldown', setCount: 2, targetMin: 10, targetMax: 15 }],
+    tuesday: [{ exerciseId: 'lat-pulldown', setCount: 2, targetMin: 10, targetMax: 15 }],
+    wednesday: [{ exerciseId: 'lat-pulldown', setCount: 2, targetMin: 10, targetMax: 15 }],
+    thursday: [{ exerciseId: 'lat-pulldown', setCount: 2, targetMin: 10, targetMax: 15 }],
+    friday: [{ exerciseId: 'lat-pulldown', setCount: 2, targetMin: 10, targetMax: 15 }],
+  },
 }
+
+const START_BODY = { expectedRevision: PROGRAMME.revision }
 
 function makeEnv(db: D1Database): Env {
   return { DB: db, ASSETS: {} as Fetcher, APP_ORIGIN: ORIGIN }
 }
 
-async function seedToken(db: D1Database, googleSub: string, email: string) {
+/** A session token AND this account's authoritative programme. */
+async function seedToken(
+  fake: ReturnType<typeof createFakeD1>,
+  googleSub: string,
+  email: string,
+) {
+  fake.seedProgramme(googleSub, PROGRAMME)
+  const db = fake.db
   const session = await createSession(createD1SessionStore(db), {
     googleSub,
     email,
@@ -98,7 +108,7 @@ const complete = (db: D1Database, token: string, order = 0, index = 0) =>
 describe('DELETE /api/workouts/:date/:session — cancel an accidental Start', () => {
   it('cancels an untouched workout and answers as not started', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db, 'sub-a', 'a@example.com')
+    const token = await seedToken(fake, 'sub-a', 'a@example.com')
     await start(fake.db, token)
 
     const { response, body } = await cancel(fake.db, token)
@@ -115,7 +125,7 @@ describe('DELETE /api/workouts/:date/:session — cancel an accidental Start', (
 
   it('refuses a workout that has been worked in, changing nothing', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db, 'sub-a', 'a@example.com')
+    const token = await seedToken(fake, 'sub-a', 'a@example.com')
     await start(fake.db, token)
     await complete(fake.db, token)
 
@@ -128,7 +138,7 @@ describe('DELETE /api/workouts/:date/:session — cancel an accidental Start', (
 
   it('answers 404 when there is nothing to cancel, including a second cancel', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db, 'sub-a', 'a@example.com')
+    const token = await seedToken(fake, 'sub-a', 'a@example.com')
 
     expect((await cancel(fake.db, token)).response.status).toBe(404)
 
@@ -141,7 +151,7 @@ describe('DELETE /api/workouts/:date/:session — cancel an accidental Start', (
 
   it('requires authentication', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db, 'sub-a', 'a@example.com')
+    const token = await seedToken(fake, 'sub-a', 'a@example.com')
     await start(fake.db, token)
 
     const { response } = await call(fake.db, { method: 'DELETE', origin: ORIGIN })
@@ -151,7 +161,7 @@ describe('DELETE /api/workouts/:date/:session — cancel an accidental Start', (
 
   it('refuses a cross-origin cancel', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db, 'sub-a', 'a@example.com')
+    const token = await seedToken(fake, 'sub-a', 'a@example.com')
     await start(fake.db, token)
 
     const { response, body } = await cancel(fake.db, token, 'https://evil.example')
@@ -162,8 +172,8 @@ describe('DELETE /api/workouts/:date/:session — cancel an accidental Start', (
 
   it('cannot cancel another account’s workout', async () => {
     const fake = createFakeD1()
-    const alice = await seedToken(fake.db, 'sub-a', 'a@example.com')
-    const bob = await seedToken(fake.db, 'sub-b', 'b@example.com')
+    const alice = await seedToken(fake, 'sub-a', 'a@example.com')
+    const bob = await seedToken(fake, 'sub-b', 'b@example.com')
     await start(fake.db, bob)
 
     const { response } = await cancel(fake.db, alice)
@@ -174,7 +184,7 @@ describe('DELETE /api/workouts/:date/:session — cancel an accidental Start', (
 
   it('reports whether the workout is cancelable on the read', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db, 'sub-a', 'a@example.com')
+    const token = await seedToken(fake, 'sub-a', 'a@example.com')
     await start(fake.db, token)
 
     expect((await call(fake.db, { token })).body.cancelable).toBe(true)
@@ -190,7 +200,7 @@ describe('DELETE /api/workouts/:date/:session — cancel an accidental Start', (
 describe('PUT .../sets/:order/:index/correction — correct a recorded set', () => {
   async function completedWorkout() {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db, 'sub-a', 'a@example.com')
+    const token = await seedToken(fake, 'sub-a', 'a@example.com')
     await start(fake.db, token)
     await complete(fake.db, token)
     const read = await call(fake.db, { token })
@@ -330,7 +340,7 @@ describe('PUT .../sets/:order/:index/correction — correct a recorded set', () 
 
   it('cannot correct another account’s set', async () => {
     const { fake, updatedAt } = await completedWorkout()
-    const bob = await seedToken(fake.db, 'sub-b', 'b@example.com')
+    const bob = await seedToken(fake, 'sub-b', 'b@example.com')
 
     const { response } = await correct(fake.db, bob, {
       inputType: 'resistance_band', band: { label: 'Black', count: 3 },
@@ -373,7 +383,7 @@ describe('a successful correction carries its audit timestamp', () => {
 
   async function completedWorkout() {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db, 'sub-a', 'a@example.com')
+    const token = await seedToken(fake, 'sub-a', 'a@example.com')
     await start(fake.db, token)
     await complete(fake.db, token)
     const read = await call(fake.db, { token })

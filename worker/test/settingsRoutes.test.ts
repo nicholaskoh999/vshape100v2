@@ -6,6 +6,7 @@ import { createSession } from '../auth/session'
 import { handleSettingsRequest } from '../settings/routes'
 import { handleWorkoutRequest } from '../workouts/routes'
 import { createFakeD1 } from './fakeD1'
+import { programmeFromLegacyPlan, startBody } from './programmeFixture'
 
 /**
  * Round 18.1 — the account settings API.
@@ -20,7 +21,7 @@ import { createFakeD1 } from './fakeD1'
 const ORIGIN = 'https://vshapev2.nkmwei.de'
 const CUTOVER = '2026-09-01'
 
-const MONDAY_BODY = {
+const PLAN = {
   day: 'Monday',
   focus: 'Back Width + Biceps',
   intensity: 'HARD',
@@ -38,11 +39,28 @@ const MONDAY_BODY = {
   ],
 }
 
+/**
+ * ROUND 22 — the same plan, established where the server now reads it.
+ *
+ * The Start body no longer carries programme content, so the plan this suite
+ * has always been about is seeded as the account's authoritative programme.
+ * Nothing about what the suite asserts changes.
+ */
+const PROGRAMME = programmeFromLegacyPlan('monday', PLAN)
+
+const MONDAY_BODY = startBody(PROGRAMME.revision)
+
 function makeEnv(db: D1Database): Env {
   return { DB: db, ASSETS: {} as Fetcher, APP_ORIGIN: ORIGIN }
 }
 
-async function seedToken(db: D1Database, googleSub: string, email: string) {
+async function seedToken(
+  fake: ReturnType<typeof createFakeD1>,
+  googleSub: string,
+  email: string,
+) {
+  fake.seedProgramme(googleSub, PROGRAMME)
+  const db = fake.db
   const { token } = await createSession(createD1SessionStore(db), {
     googleSub,
     email,
@@ -79,7 +97,8 @@ async function settings(
 
 describe('routing', () => {
   it('ignores requests that are not settings requests', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     expect(
       await handleSettingsRequest(new Request(`${ORIGIN}/api/today/completions`), makeEnv(db)),
     ).toBeNull()
@@ -90,7 +109,8 @@ describe('routing', () => {
   })
 
   it('refuses an unsupported method', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     const { response } = await settings(db, { method: 'DELETE' })
     expect(response.status).toBe(405)
   })
@@ -98,8 +118,9 @@ describe('routing', () => {
 
 describe('1. an account that has never saved reads as no preference', () => {
   it('returns null rather than substituting the default', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     const { response, body } = await settings(db, { token })
     expect(response.status).toBe(200)
@@ -115,8 +136,9 @@ describe('1. an account that has never saved reads as no preference', () => {
 
 describe('11. a saved date persists and is read back', () => {
   it('stores it and returns what was stored', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     const saved = await settings(db, {
       token,
@@ -133,8 +155,9 @@ describe('11. a saved date persists and is read back', () => {
   })
 
   it('replaces a previous choice rather than accumulating rows', async () => {
-    const { db, accountSettings } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db, accountSettings } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     await settings(db, { token, method: 'PUT', origin: ORIGIN, body: { foundationStartDate: CUTOVER } })
     await settings(db, { token, method: 'PUT', origin: ORIGIN, body: { foundationStartDate: '2026-10-01' } })
@@ -144,8 +167,9 @@ describe('11. a saved date persists and is read back', () => {
   })
 
   it('clears the preference on an explicit null', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     await settings(db, { token, method: 'PUT', origin: ORIGIN, body: { foundationStartDate: CUTOVER } })
     const cleared = await settings(db, {
@@ -165,8 +189,9 @@ describe('11. a saved date persists and is read back', () => {
 
 describe('4. the server refuses impossible dates', () => {
   it('rejects a date that is not a real calendar day', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     for (const value of ['2026-02-30', '2026-13-01', '2026-9-1', '', 'today', 42]) {
       const { response, body } = await settings(db, {
@@ -184,8 +209,9 @@ describe('4. the server refuses impossible dates', () => {
   })
 
   it('rejects a malformed body', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     const bad = await settings(db, { token, method: 'PUT', origin: ORIGIN, rawBody: '{oops' })
     expect(bad.response.status).toBe(400)
@@ -202,9 +228,10 @@ describe('4. the server refuses impossible dates', () => {
 
 describe('5/26. account isolation and HTTP safety', () => {
   it('never lets one account read or write another account’s setting', async () => {
-    const { db } = createFakeD1()
-    const alice = await seedToken(db, 'sub-alice', 'alice@example.com')
-    const bob = await seedToken(db, 'sub-bob', 'bob@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const alice = await seedToken(fake, 'sub-alice', 'alice@example.com')
+    const bob = await seedToken(fake, 'sub-bob', 'bob@example.com')
 
     await settings(db, { token: alice, method: 'PUT', origin: ORIGIN, body: { foundationStartDate: CUTOVER } })
 
@@ -224,9 +251,10 @@ describe('5/26. account isolation and HTTP safety', () => {
   })
 
   it('ignores an identity supplied in the body', async () => {
-    const { db } = createFakeD1()
-    const alice = await seedToken(db, 'sub-alice', 'alice@example.com')
-    const bob = await seedToken(db, 'sub-bob', 'bob@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const alice = await seedToken(fake, 'sub-alice', 'alice@example.com')
+    const bob = await seedToken(fake, 'sub-bob', 'bob@example.com')
 
     // `googleSub` is not part of any accepted payload, so sending one changes
     // nothing: the account is the one on the session.
@@ -242,7 +270,8 @@ describe('5/26. account isolation and HTTP safety', () => {
   })
 
   it('refuses an unauthenticated read and write', async () => {
-    const { db } = createFakeD1()
+    const fake = createFakeD1()
+    const { db } = fake
     expect((await settings(db, {})).response.status).toBe(401)
     expect(
       (await settings(db, { method: 'PUT', origin: ORIGIN, body: { foundationStartDate: CUTOVER } }))
@@ -251,8 +280,9 @@ describe('5/26. account isolation and HTTP safety', () => {
   })
 
   it('refuses a cross-origin write', async () => {
-    const { db } = createFakeD1()
-    const token = await seedToken(db, 'sub-1', 'a@example.com')
+    const fake = createFakeD1()
+    const { db } = fake
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     const { response } = await settings(db, {
       token,
@@ -266,7 +296,7 @@ describe('5/26. account isolation and HTTP safety', () => {
 
   it('reports a storage failure as a controlled error', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db, 'sub-1', 'a@example.com')
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
     fake.breakSettings(new Error('d1 down'))
 
     const { response, body } = await settings(fake.db, { token })
@@ -282,7 +312,7 @@ describe('5/26. account isolation and HTTP safety', () => {
 describe('6. saving a start date changes no history', () => {
   it('leaves every recorded workout row exactly as it was', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db, 'sub-1', 'a@example.com')
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     // Real recorded history, written through the real workout API.
     const start = await handleWorkoutRequest(
@@ -347,7 +377,7 @@ describe('Correction 1 — a stored value we cannot trust is never a default', (
 
   it('A. no row at all reads as no preference', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db, 'sub-1', 'a@example.com')
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
 
     expect(fake.accountSettings.size).toBe(0)
     const { response, body } = await settings(fake.db, { token })
@@ -357,7 +387,7 @@ describe('Correction 1 — a stored value we cannot trust is never a default', (
 
   it('A. a stored NULL reads as no preference', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db, 'sub-1', 'a@example.com')
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
     seedRow(fake, 'sub-1', null)
 
     const { response, body } = await settings(fake.db, { token })
@@ -367,7 +397,7 @@ describe('Correction 1 — a stored value we cannot trust is never a default', (
 
   it('B. a valid stored date is used', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db, 'sub-1', 'a@example.com')
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
     seedRow(fake, 'sub-1', CUTOVER)
 
     const { response, body } = await settings(fake.db, { token })
@@ -385,7 +415,7 @@ describe('Correction 1 — a stored value we cannot trust is never a default', (
     { why: 'a shape a future schema might introduce', stored: { date: '2026-09-01' } },
   ])('C. $why is a controlled error, never the legacy default', async ({ stored }) => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db, 'sub-1', 'a@example.com')
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
     seedRow(fake, 'sub-1', stored)
 
     const { response, body } = await settings(fake.db, { token })
@@ -403,7 +433,7 @@ describe('Correction 1 — a stored value we cannot trust is never a default', (
     // schedule, the session and its recorded sets are not settings-derived and
     // must keep working exactly as before.
     const fake = createFakeD1()
-    const token = await seedToken(fake.db, 'sub-1', 'a@example.com')
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
     seedRow(fake, 'sub-1', '2026-02-30')
 
     const start = await handleWorkoutRequest(
@@ -438,7 +468,7 @@ describe('Correction 1 — a stored value we cannot trust is never a default', (
 
   it('recovers the moment a valid date is saved over the corrupt one', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db, 'sub-1', 'a@example.com')
+    const token = await seedToken(fake, 'sub-1', 'a@example.com')
     seedRow(fake, 'sub-1', '2026-02-30')
 
     expect((await settings(fake.db, { token })).response.status).toBe(500)

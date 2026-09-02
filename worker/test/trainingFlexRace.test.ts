@@ -6,6 +6,7 @@ import { createSession } from '../auth/session'
 import { handleTrainingFlexRequest } from '../trainingFlex/routes'
 import { handleWorkoutRequest } from '../workouts/routes'
 import { createFakeD1 } from './fakeD1'
+import { programmeFromLegacyPlan, startBody } from './programmeFixture'
 
 /**
  * Round 19 Correction 2 — the exclusion holds under CONCURRENCY.
@@ -34,7 +35,7 @@ const TODAY = '2026-09-08'
 const SESSION = 'tuesday'
 const NOW = Date.UTC(2026, 8, 8, 12, 0, 0)
 
-const START_BODY = {
+const PLAN = {
   day: 'Tuesday',
   focus: 'Upper Chest + Shoulders + Triceps',
   intensity: 'HARD',
@@ -52,6 +53,17 @@ const START_BODY = {
   ],
 }
 
+/**
+ * ROUND 22 — the same plan, established where the server now reads it.
+ *
+ * The Start body no longer carries programme content, so the plan this suite
+ * has always been about is seeded as the account's authoritative programme.
+ * Nothing about what the suite asserts changes.
+ */
+const PROGRAMME = programmeFromLegacyPlan(SESSION, PLAN)
+
+const START_BODY = startBody(PROGRAMME.revision)
+
 beforeEach(() => {
   vi.useFakeTimers()
   vi.setSystemTime(new Date(NOW))
@@ -65,7 +77,9 @@ function makeEnv(db: D1Database): Env {
   return { DB: db, ASSETS: {} as Fetcher, APP_ORIGIN: ORIGIN }
 }
 
-async function seedToken(db: D1Database) {
+async function seedToken(fake: ReturnType<typeof createFakeD1>) {
+  fake.seedProgramme('sub-1', PROGRAMME)
+  const db = fake.db
   const { token } = await createSession(createD1SessionStore(db), {
     googleSub: 'sub-1',
     email: 'a@example.com',
@@ -126,7 +140,7 @@ function track<T>(promise: Promise<T>) {
 describe('A. the scheduled workout commits first', () => {
   it('the later flex write is refused, and nothing of the workout changes', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db)
+    const token = await seedToken(fake)
 
     // 1. Park every flex write. The request will get past its pre-read — which
     //    correctly sees no workout, because none exists yet — and stop at the
@@ -178,7 +192,7 @@ describe('A. the scheduled workout commits first', () => {
 describe('B. the flex choice commits first', () => {
   it('the later scheduled Start is refused, and writes no occurrence or sets', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db)
+    const token = await seedToken(fake)
 
     // 1. Park the occurrence claim. The Start gets past its pre-read — which
     //    correctly sees no flex — and stops at persistence.
@@ -216,7 +230,7 @@ describe('B. the flex choice commits first', () => {
   it('leaves the Extra path open even mid-race', async () => {
     // Extra was never the day's obligation, so the exclusion does not touch it.
     const fake = createFakeD1()
-    const token = await seedToken(fake.db)
+    const token = await seedToken(fake)
     await flexRequest(fake.db, token, 'recovery')
 
     const extra = await handleWorkoutRequest(
@@ -243,7 +257,7 @@ describe('B. the flex choice commits first', () => {
 describe('controls: no conflict, no refusal', () => {
   it('a flex write succeeds when no workout exists', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db)
+    const token = await seedToken(fake)
     const response = await flexRequest(fake.db, token, 'fitness_boxing_2')
     expect(response!.status).toBe(200)
     expect(fake.trainingFlex.size).toBe(1)
@@ -251,7 +265,7 @@ describe('controls: no conflict, no refusal', () => {
 
   it('a scheduled Start succeeds when no choice exists', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db)
+    const token = await seedToken(fake)
     const response = await startRequest(fake.db, token)
     expect(response!.status).toBe(201)
     expect(fake.occurrences.size).toBe(1)
@@ -260,7 +274,7 @@ describe('controls: no conflict, no refusal', () => {
 
   it('clearing the choice reopens the scheduled Start', async () => {
     const fake = createFakeD1()
-    const token = await seedToken(fake.db)
+    const token = await seedToken(fake)
 
     await flexRequest(fake.db, token, 'recovery')
     expect((await startRequest(fake.db, token))!.status).toBe(409)
@@ -288,7 +302,7 @@ describe('controls: no conflict, no refusal', () => {
     // Resuming an existing workout has no exclusion left to enforce, and
     // refusing would strand a session the user is in the middle of.
     const fake = createFakeD1()
-    const token = await seedToken(fake.db)
+    const token = await seedToken(fake)
 
     expect((await startRequest(fake.db, token))!.status).toBe(201)
     // Force the impossible state directly, bypassing the guards.
