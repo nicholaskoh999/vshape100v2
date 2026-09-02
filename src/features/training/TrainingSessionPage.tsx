@@ -1,5 +1,5 @@
 import { ArrowLeft, Loader2, Play, RefreshCw, Trash2 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router'
 
 import { Card } from '@/components/ui/Card'
@@ -7,6 +7,14 @@ import { IntensityBadge } from '@/components/ui/IntensityBadge'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { useLocalToday } from '@/features/progress/useLocalToday'
 import { ExerciseAccordion } from './ExerciseAccordion'
+import { useExerciseInputTypeLibrary } from '@/features/settings/useExerciseInputTypeLibrary'
+import { modalityMismatchAt } from './inputTypeMismatch'
+import { workoutSessionFromSnapshot } from './extra'
+
+/** Does this stored intensity have a chip in this build? */
+function isSessionIntensity(value: string): value is 'HARD' | 'LIGHT' | 'PUMP' {
+  return value === 'HARD' || value === 'LIGHT' || value === 'PUMP'
+}
 import { useProgramme } from '@/features/programme/programmeContext'
 import { toTrainingSession, type TrainingSessionView } from '@/features/programme/programmeApi'
 import { useProgression } from './useProgression'
@@ -110,14 +118,68 @@ function SessionView({
   // Start rather than logging a workout it cannot describe honestly.
   const plan = useMemo(() => buildWorkoutPlan(session), [session])
 
+  /*
+   * WHAT THE LIST RENDERS, BEFORE AND AFTER START.
+   *
+   * Before Start: the account's CURRENT programme, which is the whole point of
+   * Round 22 — the user edits it and sees the edit.
+   *
+   * After Start: the STORED SNAPSHOT, and nothing else. The accordion renders
+   * each row from `exercises[index]` while the logging controls for that row
+   * are matched by `exerciseOrder === index`, so rendering the current
+   * programme against frozen set positions would pair a renamed or reordered
+   * exercise with somebody else's sets — and the user would log against the
+   * wrong exercise without any sign of it.
+   *
+   * The same rebuild an Extra has always used, under this session's own id.
+   */
+  const rendered = useMemo(
+    () =>
+      workout.started && workout.sets.length > 0
+        ? workoutSessionFromSnapshot(session.id, workout.sets)
+        : session,
+    [workout.started, workout.sets, session],
+  )
+
+  /*
+   * The header follows the FROZEN occurrence once one exists. Day, focus and
+   * intensity are historical facts of the workout that was begun; replacing
+   * them with today's programme metadata would relabel it.
+   */
+  /*
+   * ROUND 22 CORRECTION 1 (C3). The account's CURRENT input types, so a
+   * started workout can say when its frozen modality no longer matches.
+   */
+  const inputTypes = useExerciseInputTypeLibrary()
+  const mismatchAt = useCallback(
+    (exerciseOrder: number) =>
+      modalityMismatchAt(workout.sets, exerciseOrder, inputTypes.byExercise),
+    [workout.sets, inputTypes.byExercise],
+  )
+
+  const header = workout.occurrence
+    ? {
+        day: workout.occurrence.day,
+        focus: workout.occurrence.focus,
+        // A stored snapshot may carry an intensity this build has no chip for
+        // — a workout begun under an older vocabulary. Rather than force it
+        // into a style it does not have, the badge is simply not drawn.
+        intensity: isSessionIntensity(workout.occurrence.intensity)
+          ? workout.occurrence.intensity
+          : null,
+      }
+    : { day: session.day, focus: session.focus, intensity: session.intensity }
+
   return (
     <>
       <BackToTraining />
       <PageHeader
-        eyebrow={session.day}
-        title={session.focus}
+        eyebrow={header.day}
+        title={header.focus}
         subline="Tap an exercise for its prescription."
-        actions={<IntensityBadge intensity={session.intensity} />}
+        actions={
+          header.intensity ? <IntensityBadge intensity={header.intensity} /> : undefined
+        }
       />
 
       <WorkoutBar
@@ -132,7 +194,7 @@ function SessionView({
       />
 
       <ExerciseAccordion
-        session={session}
+        session={rendered}
         logging={
           workout.started
             ? {
@@ -144,6 +206,7 @@ function SessionView({
               }
             : undefined
         }
+        mismatchAt={mismatchAt}
         guidance={
           workout.started && guidance.status === 'ready'
             ? {

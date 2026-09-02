@@ -105,6 +105,8 @@ export type SeedStored = {
 }
 
 export type WorkoutServer = {
+  /** Replace the programme this stand-in builds Start snapshots from. */
+  setProgramme: (programme: Programme) => void
   /** The "database": one entry per (date, session), exactly like D1. */
   workouts: Map<string, Stored>
   /** Every request the client made, in order. */
@@ -176,7 +178,7 @@ function summarise(sets: ServerSet[]) {
  */
 export function createWorkoutServer(): WorkoutServer {
   const workouts = new Map<string, Stored>()
-  const programme: Programme = foundationProgramme()
+  let programme: Programme = foundationProgramme()
   const readProgramme = () => programme
   /** The account's saved input types, which a Start resolves against. */
   const inputTypes = new Map<string, WorkoutInputType>()
@@ -592,6 +594,15 @@ export function createWorkoutServer(): WorkoutServer {
 
   return {
     workouts,
+    /**
+     * Replace the programme this stand-in builds Start snapshots from.
+     *
+     * The server's programme, not the client's — moving it is how a test says
+     * "the user edited their programme after starting this workout".
+     */
+    setProgramme(next: Programme) {
+      programme = next
+    },
     calls,
     /**
      * Configure an exercise's input type, as the Exercise Library would.

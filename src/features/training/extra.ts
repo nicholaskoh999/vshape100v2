@@ -100,17 +100,27 @@ export function buildExtraPlan(session: TrainingSession): PlannedExercise[] | nu
 /**
  * Rebuild the exercise list from the STORED snapshot.
  *
- * This is what makes a started Extra immutable in practice. Once Start has
- * frozen the snapshot, the page stops reading `trainingSessions` altogether:
- * if Monday's prescription, equipment or exercise name changes tomorrow, the
- * Extra performed today still reads exactly as it was performed. A resume
- * returns the stored truth, never a fresh copy of the template.
+ * ROUND 22 CORRECTION 1 GENERALISED THIS. It was written for Extra, where the
+ * point was obvious: an Extra is a copy of a weekday, so reading the weekday
+ * again on resume would show a copy that had moved. A SCHEDULED workout has
+ * exactly the same problem and it had been missed — the accordion renders
+ * name, prescription and equipment from `session.exercises[index]` while the
+ * logging controls are matched by `exerciseOrder === index`, so a programme
+ * rename or reorder after Start would pair CURRENT rows with OLD frozen set
+ * positions. The user would log against the wrong exercise.
  *
- * One row per `exercise_order`, in order. The first set of each position
+ * So this is now the one rebuild for both, and the rule is the same either
+ * way: once Start has frozen the snapshot, the page stops reading the
+ * programme altogether. A resume returns the stored truth, never a fresh copy.
+ *
+ * One row per `exerciseOrder`, in order. The first set of each position
  * carries the snapshot columns — every set of one exercise shares them — so
  * the first is taken and the rest are only counted.
  */
-export function extraSessionFromSnapshot(sets: readonly WorkoutSet[]): AccordionSession {
+export function workoutSessionFromSnapshot(
+  sessionId: string,
+  sets: readonly WorkoutSet[],
+): AccordionSession {
   const byOrder = new Map<number, SessionExercise>()
 
   for (const set of sets) {
@@ -126,11 +136,16 @@ export function extraSessionFromSnapshot(sets: readonly WorkoutSet[]): Accordion
   }
 
   return {
-    id: EXTRA_SESSION_ID,
+    id: sessionId,
     exercises: [...byOrder.entries()]
       .sort(([a], [b]) => a - b)
       .map(([, exercise]) => exercise),
   }
+}
+
+/** The Extra's own rebuild, which is the generic one under its own id. */
+export function extraSessionFromSnapshot(sets: readonly WorkoutSet[]): AccordionSession {
+  return workoutSessionFromSnapshot(EXTRA_SESSION_ID, sets)
 }
 
 /**

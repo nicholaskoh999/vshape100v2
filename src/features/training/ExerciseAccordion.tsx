@@ -14,6 +14,8 @@ import type { SessionExercise, TrainingSession } from './sessions'
 import type { WorkoutSet } from './workoutApi'
 import { WorkoutSetList, type WorkoutSetListProps } from './WorkoutSetList'
 import type { CalibrationFeedback } from '@shared/progression/lane'
+import { WORKOUT_INPUT_TYPE_LABELS, type WorkoutInputType } from '@shared/workoutInput'
+import type { ModalityMismatch } from './inputTypeMismatch'
 
 /**
  * Everything the expanded panel needs to log sets. Absent until the workout
@@ -41,6 +43,14 @@ export type AccordionLogging = Pick<
  * action it offers is withheld until the answer describes the workout as it
  * now stands.
  */
+/**
+ * Per-position modality disagreement, when there is one.
+ *
+ * Supplied by the page because it is the page that knows both halves: the
+ * stored snapshot and the account's current settings.
+ */
+export type AccordionMismatch = (exerciseOrder: number) => ModalityMismatch | null
+
 export type AccordionGuidance = {
   laneFor: (exerciseOrder: number) => LaneRecommendation | null
   confirmed: boolean
@@ -85,10 +95,12 @@ export function ExerciseAccordion({
   session,
   logging,
   guidance,
+  mismatchAt,
 }: {
   session: AccordionSession
   logging?: AccordionLogging
   guidance?: AccordionGuidance
+  mismatchAt?: AccordionMismatch
 }) {
   // Local, deliberately ephemeral: nothing here needs to survive a refresh,
   // so there is no URL state and no storage.
@@ -113,6 +125,7 @@ export function ExerciseAccordion({
           }
           logging={logging}
           guidance={guidance}
+          mismatchAt={mismatchAt}
         />
       ))}
     </motion.ol>
@@ -127,6 +140,7 @@ function ExerciseRow({
   onToggle,
   logging,
   guidance,
+  mismatchAt,
 }: {
   exercise: SessionExercise
   index: number
@@ -135,6 +149,7 @@ function ExerciseRow({
   onToggle: () => void
   logging?: AccordionLogging
   guidance?: AccordionGuidance
+  mismatchAt?: AccordionMismatch
 }) {
   const reduceMotion = useReducedMotion()
   // Unique per row: only one session renders at a time and `index` is unique
@@ -152,6 +167,16 @@ function ExerciseRow({
   // Matched on the same position, so a repeated canonical exercise cannot pick
   // up the other slot's guidance any more than it can its sets.
   const lane = guidance?.laneFor(index) ?? null
+
+  /*
+   * Does this exercise's CURRENT setting disagree with what the workout froze?
+   *
+   * When it does, the frozen controls stay — they are what the logged sets
+   * mean — but the actionable guidance is withdrawn. Confirming a kilogram
+   * load on an exercise the user has just declared to be band work writes
+   * evidence they will have to undo.
+   */
+  const mismatch = logging ? (mismatchAt?.(index) ?? null) : null
 
   return (
     <motion.li variants={listItemVariants}>
@@ -223,7 +248,38 @@ function ExerciseRow({
                   )}
                 </dl>
 
-                {logging && lane && guidance && (
+                {mismatch && (
+                  <div
+                    role="status"
+                    data-modality-mismatch
+                    className="mt-4 rounded-control border border-coral/50 bg-coral/10 p-3"
+                  >
+                    <p className="text-[12px] font-bold text-offwhite">
+                      This workout was started before this exercise&rsquo;s input
+                      type changed.
+                    </p>
+                    <p className="mt-1 text-[12px] text-ink-dim">
+                      It is frozen as{' '}
+                      <strong className="text-offwhite">
+                        {WORKOUT_INPUT_TYPE_LABELS[mismatch.frozen as WorkoutInputType]}
+                      </strong>
+                      ; your current setting is{' '}
+                      <strong className="text-offwhite">
+                        {WORKOUT_INPUT_TYPE_LABELS[mismatch.current as WorkoutInputType]}
+                      </strong>
+                      . Nothing has been converted, and what you already recorded
+                      is unchanged.
+                    </p>
+                    <p className="mt-1 text-[12px] text-ink-faint">
+                      Load guidance is paused for this exercise while the two
+                      disagree. You can correct anything you recorded here
+                      afterwards from Progress → Recorded sets → Edit recorded
+                      set.
+                    </p>
+                  </div>
+                )}
+
+                {logging && lane && guidance && !mismatch && (
                   <ExerciseGuidance
                     lane={lane}
                     confirmed={guidance.confirmed}
@@ -245,7 +301,7 @@ function ExerciseRow({
                     sets={sets}
                     busySet={logging.busySet}
                     // Offered to the draft field only; nothing is pre-filled.
-                    suggestedLoad={lane?.suggestedLoad ?? null}
+                    suggestedLoad={mismatch ? null : (lane?.suggestedLoad ?? null)}
                     // Unconfirmed guidance may be READ but not acted on: the
                     // set it was derived from may already have changed.
                     suggestionLocked={guidance ? !guidance.confirmed : false}

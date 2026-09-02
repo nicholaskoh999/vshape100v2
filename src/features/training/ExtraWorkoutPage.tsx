@@ -1,5 +1,5 @@
 import { ArrowLeft, Check, Loader2, Play, RefreshCw } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Link } from 'react-router'
 
 import { Card } from '@/components/ui/Card'
@@ -19,6 +19,8 @@ import {
   isExtraOccurrence,
   toExtraStartPayload,
 } from './extra'
+import { useExerciseInputTypeLibrary } from '@/features/settings/useExerciseInputTypeLibrary'
+import { modalityMismatchAt } from './inputTypeMismatch'
 import { useProgramme } from '@/features/programme/programmeContext'
 import { toTrainingSessions, type TrainingSessionView } from '@/features/programme/programmeApi'
 import { useWorkoutLog } from './useWorkoutLog'
@@ -76,6 +78,15 @@ export function ExtraWorkoutPage() {
   )
 
   const { status, occurrence, sets } = workout
+
+  // The account's CURRENT input types, so a started Extra can say when its
+  // frozen modality no longer matches the setting.
+  const inputTypes = useExerciseInputTypeLibrary()
+  const mismatchAt = useCallback(
+    (exerciseOrder: number) =>
+      modalityMismatchAt(workout.sets, exerciseOrder, inputTypes.byExercise),
+    [workout.sets, inputTypes.byExercise],
+  )
 
   // Read from PERSISTED provenance, not from the route that got us here. If a
   // workout is somehow filed under this slug without being an Extra, this page
@@ -182,7 +193,14 @@ export function ExtraWorkoutPage() {
             onSkip: workout.skip,
             onUndo: workout.undo,
           }}
-          // No `guidance` prop, ever. See the note at the top of this file.
+          /*
+           * ROUND 22 CORRECTION 1 (C3). An Extra freezes a modality at Start
+           * exactly as a scheduled workout does, so it needs the same warning
+           * when the setting moves underneath it. There is still no `guidance`
+           * prop, ever — see the note at the top of this file — so there is no
+           * calibration action here to suppress.
+           */
+          mismatchAt={mismatchAt}
         />
       )}
     </>

@@ -124,6 +124,23 @@ async function handleSave(
     )
   }
 
+  if (outcome.reason === 'identity_changed') {
+    /*
+     * The save tried to change WHICH exercises exist. Adding an identity is
+     * the create endpoint's job — it mints the id and lands the required input
+     * type in the same transaction — and removing one is not a thing Round 22
+     * does at all; archive is the lifecycle. Nothing was written.
+     */
+    return json(
+      {
+        error: 'exercise_identity_changed',
+        added: outcome.added,
+        removed: outcome.removed,
+      },
+      { status: 400 },
+    )
+  }
+
   return json({ error: 'invalid_programme', issues: outcome.issues }, { status: 400 })
 }
 

@@ -139,6 +139,12 @@ export type SaveOutcome =
   | { ok: true; programme: Programme }
   | { ok: false; reason: 'invalid'; issues: ProgrammeIssue[] }
   | { ok: false; reason: 'conflict'; programme: Programme }
+  /**
+   * The save tried to change WHICH exercises exist, which this route may not
+   * do. `added` and `removed` name the identities, so the client can say what
+   * happened without the server echoing anything it was not already told.
+   */
+  | { ok: false; reason: 'identity_changed'; added: string[]; removed: string[] }
 
 /**
  * Apply a whole desired programme on top of `expectedRevision`.
@@ -157,6 +163,8 @@ export async function saveProgramme(
   now: number,
   writeToken: string,
   inputType?: { exerciseId: string; inputType: WorkoutInputType },
+  /** Only createCustomExercise may set this. See the membership check below. */
+  skipMembershipCheck = false,
 ): Promise<SaveOutcome> {
   // ARRAY ORDER IS THE ORDER, and `position` on the wire is ignored entirely.
   //
@@ -179,6 +187,39 @@ export async function saveProgramme(
 
   const issues = validateProgramme(candidate)
   if (issues.length > 0) return { ok: false, reason: 'invalid', issues }
+
+  /*
+   * MEMBERSHIP IS SERVER-AUTHORITATIVE.
+   *
+   * This route may change what an exercise IS CALLED, whether it is archived,
+   * and where it sits in the week. It may not change WHICH exercises exist.
+   *
+   * Without this a modified client could, through an ordinary save: invent an
+   * exercise id — including a `custom-` one — bypassing the create endpoint and
+   * the required input type that lands atomically with it; or omit an existing
+   * id, which would be a destructive delete of an identity that keys media,
+   * input type, personal bests and every historical workout row. Round 22 has
+   * no physical identity deletion; archive is the lifecycle.
+   *
+   * Compared as SETS: the order of exercise master rows carries no meaning.
+   *
+   * `skipMembershipCheck` is set only by createCustomExercise, which is the one
+   * path allowed to add an identity — and it adds a server-minted one to the
+   * programme it has just resolved itself.
+   */
+  if (!skipMembershipCheck) {
+    const current = await resolveProgramme(store, googleSub)
+    const currentIds = new Set(current.exercises.map((e) => e.exerciseId))
+    const desiredIds = new Set(candidate.exercises.map((e) => e.exerciseId))
+
+    const added = [...desiredIds].filter((id) => !currentIds.has(id))
+    const removed = [...currentIds].filter((id) => !desiredIds.has(id))
+    if (added.length > 0 || removed.length > 0) {
+      // Refused BEFORE the write, so "zero write" is a property of the control
+      // flow rather than of a rollback path.
+      return { ok: false, reason: 'identity_changed', added, removed }
+    }
+  }
 
   const wrote = await store.write(googleSub, {
     expectedRevision,
@@ -294,11 +335,19 @@ export async function createCustomExercise(
     // Atomic with the exercise itself: no orphan custom exercise without the
     // input type it is required to have.
     { exerciseId, inputType: input.inputType },
+    // The one path allowed to add an identity — and the id it adds was minted
+    // here, from the programme it resolved itself.
+    true,
   )
 
   if (outcome.ok) return { ok: true, exerciseId, programme: outcome.programme }
   if (outcome.reason === 'conflict') {
     return { ok: false, reason: 'conflict', programme: outcome.programme }
+  }
+  if (outcome.reason === 'identity_changed') {
+    // Unreachable: this call skips the membership check. Reported rather than
+    // silently mapped to something else if it ever became reachable.
+    throw new Error('createCustomExercise was refused by the membership check')
   }
   return { ok: false, reason: 'programme_invalid', issues: outcome.issues }
 }

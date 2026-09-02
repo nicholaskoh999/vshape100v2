@@ -29,6 +29,7 @@ import { foundationProgramme } from '@shared/programme/foundation'
 import {
   FALLBACK_REVISION,
   formatPrescription,
+  PROGRAMME_SESSION_IDS,
   isCustomExerciseId,
   type Programme,
 } from '@shared/programme/programme'
@@ -728,5 +729,193 @@ describe('D-G. editing semantics', () => {
       )
       .get(A) as { n: number }
     expect(dupes.n).toBe(0)
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* C2. Exercise master membership is server-authoritative              */
+/* ------------------------------------------------------------------ */
+
+describe('C2. an ordinary save may not change WHICH exercises exist', () => {
+  /** A save built from the current programme, then tampered with. */
+  async function tamper(
+    googleSub: string,
+    mutate: (p: Programme) => void,
+    expectedRevision?: number,
+  ) {
+    const current = await resolveProgramme(store, googleSub)
+    mutate(current)
+    return saveProgramme(
+      store,
+      googleSub,
+      { exercises: current.exercises, sessions: current.sessions },
+      expectedRevision ?? current.revision,
+      9000,
+      `tok-${Math.random()}`,
+    )
+  }
+
+  it('A. refuses a save that INVENTS an ordinary exercise id, writing nothing', async () => {
+    await edit(A, FALLBACK_REVISION, (p) => {
+      p.exercises[0].name = 'Baseline'
+    })
+    const before = await resolveProgramme(store, A)
+    const beforeRows = count('programme_exercises', A)
+
+    const outcome = await tamper(A, (p) => {
+      p.exercises.push({
+        exerciseId: 'invented-exercise',
+        name: 'Invented Exercise',
+        archived: false,
+        custom: false,
+      })
+    })
+
+    expect(outcome.ok).toBe(false)
+    expect(!outcome.ok && outcome.reason).toBe('identity_changed')
+    if (!outcome.ok && outcome.reason === 'identity_changed') {
+      expect(outcome.added).toEqual(['invented-exercise'])
+      expect(outcome.removed).toEqual([])
+    }
+
+    // Nothing moved, and the revision did not advance.
+    expect(count('programme_exercises', A)).toBe(beforeRows)
+    const after = await resolveProgramme(store, A)
+    expect(after.revision).toBe(before.revision)
+    expect(after.exercises.some((e) => e.exerciseId === 'invented-exercise')).toBe(false)
+  })
+
+  it('B. refuses a save that INVENTS a custom-* id, leaving no input-type orphan', async () => {
+    await edit(A, FALLBACK_REVISION, (p) => {
+      p.exercises[0].name = 'Baseline'
+    })
+
+    const outcome = await tamper(A, (p) => {
+      p.exercises.push({
+        exerciseId: 'custom-deadbeefdeadbeef',
+        name: 'Smuggled In',
+        archived: false,
+        custom: true,
+      })
+    })
+
+    expect(outcome.ok).toBe(false)
+    expect(!outcome.ok && outcome.reason).toBe('identity_changed')
+
+    const after = await resolveProgramme(store, A)
+    expect(after.exercises.some((e) => e.exerciseId === 'custom-deadbeefdeadbeef')).toBe(
+      false,
+    )
+    // And no input type was written for an exercise that does not exist — the
+    // required-modality contract cannot be bypassed this way.
+    const orphans = sqlite.raw
+      .prepare('SELECT COUNT(*) AS n FROM exercise_input_types WHERE exercise_id = ?')
+      .get('custom-deadbeefdeadbeef') as { n: number }
+    expect(orphans.n).toBe(0)
+  })
+
+  it('C. refuses a save that OMITS an existing exercise, with no slot drift', async () => {
+    await edit(A, FALLBACK_REVISION, (p) => {
+      p.exercises[0].name = 'Baseline'
+    })
+    const before = await resolveProgramme(store, A)
+    const beforeSlots = count('programme_slots', A)
+
+    const outcome = await tamper(A, (p) => {
+      // Drop the identity AND its slots, which is what a destructive delete
+      // through this route would look like.
+      p.exercises = p.exercises.filter((e) => e.exerciseId !== 'plank')
+      for (const sessionId of PROGRAMME_SESSION_IDS) {
+        p.sessions[sessionId] = p.sessions[sessionId].filter(
+          (slot) => slot.exerciseId !== 'plank',
+        )
+      }
+    })
+
+    expect(outcome.ok).toBe(false)
+    expect(!outcome.ok && outcome.reason).toBe('identity_changed')
+    if (!outcome.ok && outcome.reason === 'identity_changed') {
+      expect(outcome.removed).toEqual(['plank'])
+      expect(outcome.added).toEqual([])
+    }
+
+    const after = await resolveProgramme(store, A)
+    expect(after.exercises.some((e) => e.exerciseId === 'plank')).toBe(true)
+    expect(after.revision).toBe(before.revision)
+    expect(count('programme_slots', A)).toBe(beforeSlots)
+  })
+
+  it('D. allows a rename, an archive and a restore on the SAME identity set', async () => {
+    await edit(A, FALLBACK_REVISION, (p) => {
+      p.exercises[0].name = 'Baseline'
+    })
+
+    const renamed = await tamper(A, (p) => {
+      p.exercises.find((e) => e.exerciseId === 'lat-pulldown')!.name = 'Band Lat Pulldown'
+    })
+    expect(renamed.ok).toBe(true)
+
+    const archived = await tamper(A, (p) => {
+      p.exercises.find((e) => e.exerciseId === 'plank')!.archived = true
+      p.sessions.wednesday = p.sessions.wednesday.filter((s) => s.exerciseId !== 'plank')
+    })
+    expect(archived.ok).toBe(true)
+
+    const restored = await tamper(A, (p) => {
+      p.exercises.find((e) => e.exerciseId === 'plank')!.archived = false
+    })
+    expect(restored.ok).toBe(true)
+
+    const stored = await resolveProgramme(store, A)
+    // The identity set never moved through any of it.
+    expect(new Set(stored.exercises.map((e) => e.exerciseId))).toEqual(
+      new Set(foundationProgramme().exercises.map((e) => e.exerciseId)),
+    )
+    expect(stored.exercises.find((e) => e.exerciseId === 'lat-pulldown')?.name).toBe(
+      'Band Lat Pulldown',
+    )
+  })
+
+  it('E. holds the same rule on the FIRST edit, against the fallback seed', async () => {
+    const outcome = await tamper(
+      A,
+      (p) => {
+        p.exercises.push({
+          exerciseId: 'smuggled-on-first-edit',
+          name: 'Smuggled',
+          archived: false,
+          custom: false,
+        })
+      },
+      FALLBACK_REVISION,
+    )
+
+    expect(outcome.ok).toBe(false)
+    expect(!outcome.ok && outcome.reason).toBe('identity_changed')
+    // And the account was not materialised on the way to being refused.
+    expect(count('programme_revisions', A)).toBe(0)
+    expect(count('programme_exercises', A)).toBe(0)
+  })
+
+  it('the create endpoint remains the ONE path that may add an identity', async () => {
+    const created = await createCustomExercise(
+      store,
+      A,
+      { name: 'Cable Crossover', inputType: 'resistance_band' },
+      FALLBACK_REVISION,
+      9500,
+      'tok-create',
+    )
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+
+    const stored = await resolveProgramme(store, A)
+    expect(stored.exercises.some((e) => e.exerciseId === created.exerciseId)).toBe(true)
+    // And an ordinary save on top of that now accepts the LARGER identity set,
+    // because that is what "current" means after a legitimate creation.
+    const ok = await tamper(A, (p) => {
+      p.exercises.find((e) => e.exerciseId === created.exerciseId)!.name = 'Renamed Custom'
+    })
+    expect(ok.ok).toBe(true)
   })
 })
