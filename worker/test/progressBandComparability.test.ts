@@ -126,6 +126,32 @@ describe('E. a band set and a kilogram set are never one series', () => {
     expect(variants[0].points).toHaveLength(2)
   })
 
+  it('separates band work from BODYWEIGHT work, which shares its load mode', () => {
+    // The case where the input type is the ONLY thing keeping two variants
+    // apart. Both freeze a load mode of 'none', so the pre-Round-15 key
+    // components cannot tell them apart at all: doing an exercise with a band
+    // and doing it with nothing are different work, and only the modality says
+    // so.
+    const variants = derivePerformance([
+      eligible(bandRow()),
+      eligible(
+        bandRow({
+          inputTypeSnapshot: 'bodyweight',
+          bandLabel: null,
+          bandCount: null,
+          workoutDate: '2026-09-15',
+          startedAt: 300,
+        }),
+      ),
+    ])
+
+    expect(variants).toHaveLength(2)
+    expect(variants.map((variant) => variant.inputType).sort()).toEqual([
+      'bodyweight',
+      'resistance_band',
+    ])
+  })
+
   it('never lets a kilogram number out of a band variant', () => {
     const [variant] = derivePerformance([eligible(bandRow())])
     expect(variant.loadMode).toBe('none')
