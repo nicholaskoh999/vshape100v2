@@ -19,6 +19,10 @@
  * Worker.
  */
 
+import { planFromProgramme, parseProgrammeStart } from '../../shared/programme/plan'
+import type { ProgrammeSessionId } from '../../shared/programme/programme'
+import { resolveProgramme, type ProgrammeStore as ProgrammeStoreLike } from '../programme/programme'
+import { createD1ProgrammeStore, type ProgrammeD1 } from '../programme/d1Store'
 import type { Env } from '../auth/config'
 import {
   isCrossOrigin,
@@ -36,6 +40,7 @@ import {
   correctSet,
   isCancelable,
   isValidStartProvenance,
+  kindForSessionId,
   parseExerciseOrder,
   parseHistoryLimit,
   parseHistoryRange,
@@ -44,7 +49,6 @@ import {
   parseSessionId,
   parseSetIndex,
   parseSetUpdate,
-  parseStartInput,
   parseWorkoutDate,
   readWorkout,
   startWorkout,
@@ -193,6 +197,7 @@ async function handleStart(
   request: Request,
   store: WorkoutStore,
   inputTypeStore: ExerciseInputTypeStore,
+  programmeStore: ProgrammeStoreLike,
   googleSub: string,
   date: string,
   sessionId: string,
@@ -204,17 +209,56 @@ async function handleStart(
     return json({ error: 'invalid_json' }, { status: 400 })
   }
 
-  const parsed = parseStartInput(body)
+  // ROUND 22. THE CLIENT NO LONGER SUPPLIES THE PROGRAMME.
+  //
+  // A Start body may state two things: the programme revision the client was
+  // looking at, and — for an Extra — which Foundation weekday it chose. The
+  // snapshot fields an older client still sends are ignored outright, so a
+  // stale or modified client cannot establish a workout containing an old
+  // name, an old order, a deleted exercise, an arbitrary set count or an
+  // obsolete prescription.
+  const parsed = parseProgrammeStart(body, sessionId)
   if (!parsed.ok) {
     return json({ error: 'invalid_start', field: parsed.field }, { status: 400 })
   }
 
-  // Provenance has to match the identity being addressed. An Extra must name
-  // the Foundation session it was copied from; a scheduled workout must not
-  // name one at all. Refusing both directions is what stops a client from
-  // attaching Extra-shaped provenance to a real scheduled obligation, or from
-  // creating an Extra whose source is unknowable.
-  if (!isValidStartProvenance(sessionId, parsed.value)) {
+  // The account's CURRENT programme, read here and not accepted from anywhere.
+  const programme = await resolveProgramme(programmeStore, googleSub)
+
+  // A Start built on a revision that has moved is refused, and NOTHING is
+  // created. Silently starting the newer programme would be worse than
+  // refusing: the user would be training a session they never saw.
+  if (parsed.value.expectedRevision !== programme.revision) {
+    return json(
+      { error: 'programme_conflict', revision: programme.revision },
+      { status: 409 },
+    )
+  }
+
+  // Which weekday's content this freezes. A scheduled workout is its own
+  // source; an Extra names the Foundation weekday it copies.
+  const kind = kindForSessionId(sessionId)
+  const sourceSessionId =
+    kind === 'extra' ? parsed.value.sourceSessionId : (sessionId as ProgrammeSessionId)
+  if (!sourceSessionId) {
+    return json({ error: 'invalid_start', field: 'source_session_id' }, { status: 400 })
+  }
+
+  // Built server-side from the resolved programme, into the SAME plan shape the
+  // accepted snapshot builder already takes — so Round 19 provenance, Round 20
+  // modality freezing and per-set expansion are all unchanged.
+  const plan = planFromProgramme(programme, sourceSessionId, kind)
+
+  // A weekday cannot legitimately be empty; validation refuses to store one.
+  // Reaching here with none means the programme is unstartable, and saying so
+  // is better than writing an occurrence with no sets in it.
+  if (plan.exercises.length === 0) {
+    return json({ error: 'programme_session_empty' }, { status: 409 })
+  }
+
+  // Provenance still has to match the identity being addressed, and is still
+  // checked against the accepted rule rather than assumed from the branch above.
+  if (!isValidStartProvenance(sessionId, plan)) {
     return json({ error: 'invalid_start', field: 'source_session_id' }, { status: 400 })
   }
 
@@ -247,7 +291,7 @@ async function handleStart(
     googleSub,
     date,
     sessionId,
-    parsed.value,
+    plan,
     Date.now(),
     // Let the rules mint the ownership token; only the caller's clock and the
     // account's settings are supplied here.
@@ -577,6 +621,7 @@ export async function handleWorkoutRequest(
           request,
           store,
           createD1ExerciseInputTypeStore(env.DB),
+          createD1ProgrammeStore(env.DB as unknown as ProgrammeD1),
           account.googleSub,
           date,
           sessionId,

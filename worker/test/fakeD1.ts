@@ -1697,6 +1697,24 @@ export function createFakeD1() {
       return null
     }
 
+    /*
+     * ROUND 22. The programme tables.
+     *
+     * These suites exercise accounts that have NEVER edited their programme,
+     * which is the fallback case: no revision row, so `resolveProgramme`
+     * returns the shared Foundation seed and a Start freezes that. Answering
+     * the reads as empty is therefore the truthful model of these accounts,
+     * not a stub that hides anything — and it is what makes these tests assert
+     * the REAL server-authoritative Start rather than a client-supplied plan.
+     *
+     * The programme WRITE path is deliberately not modelled here. It is proved
+     * against real SQLite in src/test/programmeStore.test.ts, where the
+     * compare-and-swap and batch atomicity can actually be observed.
+     */
+    if (sql.includes('FROM programme_revisions')) return null
+    if (sql.includes('FROM programme_exercises')) return []
+    if (sql.includes('FROM programme_slots')) return []
+
     if (sql.includes('SELECT * FROM auth_sessions')) {
       return sessions.get(args[0] as string) ?? null
     }
