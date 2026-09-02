@@ -108,7 +108,12 @@ describe('1. start and resume', () => {
   it('never flashes "Start workout" before the resume check resolves', async () => {
     const release = server.holdReads()
     renderApp(`/training/monday`)
-    await screen.findByRole('heading', { level: 1 })
+    // ROUND 22. The programme resolves independently of the workout read being
+    // held here, so wait past the programme's own loading header first.
+    await waitFor(() => {
+      const heading = screen.getByRole('heading', { level: 1 })
+      expect(heading.textContent).not.toBe('Loading')
+    })
 
     // The read is still open: the page must not claim the workout is unstarted.
     expect(screen.getByText('Checking your workout…')).toBeInTheDocument()

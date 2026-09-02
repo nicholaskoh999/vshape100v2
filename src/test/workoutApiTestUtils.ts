@@ -10,6 +10,13 @@
  * already exist before it can be logged against.
  */
 
+import { foundationProgramme } from '@shared/programme/foundation'
+import { planFromProgramme } from '@shared/programme/plan'
+import {
+  FALLBACK_REVISION,
+  isProgrammeSessionId,
+  type Programme,
+} from '@shared/programme/programme'
 import { isNoOpCorrection, parseSetCorrection } from '@shared/workoutCorrection'
 import type { WorkoutInputType } from '@shared/workoutInput'
 import {
@@ -161,8 +168,16 @@ function summarise(sets: ServerSet[]) {
   return { total: sets.length, completed, skipped, resolved: completed + skipped }
 }
 
+/**
+ * The programme this stand-in builds Start snapshots from.
+ *
+ * Defaults to the Foundation seed at revision 0 — an account that has never
+ * edited — which is what every suite written before Round 22 was about.
+ */
 export function createWorkoutServer(): WorkoutServer {
   const workouts = new Map<string, Stored>()
+  const programme: Programme = foundationProgramme()
+  const readProgramme = () => programme
   /** The account's saved input types, which a Start resolves against. */
   const inputTypes = new Map<string, WorkoutInputType>()
   const calls: WorkoutServer['calls'] = []
@@ -304,21 +319,39 @@ export function createWorkoutServer(): WorkoutServer {
     }
 
     if (segments[2] === 'start') {
+      /*
+       * ROUND 22. The body states the programme revision the client was
+       * looking at and, for an Extra, which weekday it chose. It carries no
+       * programme content, and this stand-in reads none — the plan is built
+       * from the PROGRAMME, exactly as the Worker builds it.
+       */
       const body = JSON.parse(String(init?.body ?? '{}')) as {
-        day: string
-        focus: string
-        intensity: string
+        expectedRevision?: number
         sourceSessionId?: string | null
-        exercises: {
-          exerciseId: string
-          name: string
-          prescription: string
-          equipment: string | null
-          resultKind: WorkoutResultKind
-          loadMode: WorkoutLoadMode
-          perSide: boolean
-          setCount: number
-        }[]
+      }
+
+      const programme = readProgramme()
+      const expected = body.expectedRevision ?? FALLBACK_REVISION
+      if (expected !== programme.revision) {
+        return jsonResponse(
+          { error: 'programme_conflict', revision: programme.revision },
+          409,
+        )
+      }
+
+      const sourceSessionId = isProgrammeSessionId(sessionId)
+        ? sessionId
+        : body.sourceSessionId
+      if (!sourceSessionId || !isProgrammeSessionId(sourceSessionId)) {
+        return jsonResponse({ error: 'invalid_start', field: 'source_session_id' }, 400)
+      }
+      const plan = planFromProgramme(
+        programme,
+        sourceSessionId,
+        kindForSessionId(sessionId),
+      )
+      if (plan.exercises.length === 0) {
+        return jsonResponse({ error: 'programme_session_empty' }, 409)
       }
 
       const existing = workouts.get(id)
@@ -337,7 +370,7 @@ export function createWorkoutServer(): WorkoutServer {
 
       const startedAt = clock++
       const sets: ServerSet[] = []
-      body.exercises.forEach((exercise, exerciseOrder) => {
+      plan.exercises.forEach((exercise, exerciseOrder) => {
         // Resolved server-side from the account's saved setting, never from the
         // request. An exercise nobody has configured keeps its previous
         // behaviour, read from the load mode the plan asked for.
@@ -375,9 +408,9 @@ export function createWorkoutServer(): WorkoutServer {
           kind,
           // Carried only where it means something, exactly as the server does.
           sourceSessionId: kind === 'extra' ? (body.sourceSessionId ?? null) : null,
-          day: body.day,
-          focus: body.focus,
-          intensity: body.intensity,
+          day: plan.day,
+          focus: plan.focus,
+          intensity: plan.intensity,
           startedAt,
           updatedAt: startedAt,
         },

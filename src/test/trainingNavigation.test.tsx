@@ -55,7 +55,12 @@ async function openDetailsLink() {
 async function openExerciseFrom(sessionId: string, exerciseName: string) {
   const user = userEvent.setup()
   const router = renderApp(`/training/${sessionId}`)
-  await screen.findByRole('heading', { level: 1 })
+  // ROUND 22. The session comes from the account's programme, so the page
+  // starts on a loading header. Wait past it rather than measuring it.
+  await waitFor(() => {
+    const heading = screen.getByRole('heading', { level: 1 })
+    expect(heading.textContent).not.toBe('Loading')
+  })
   await user.click(exerciseTrigger(exerciseName))
   await user.click(await openDetailsLink())
   return { router, user }

@@ -16,11 +16,11 @@ import {
   buildExtraPlan,
   extraSessionFromSnapshot,
   extraSnapshotLabel,
-  extraTemplates,
   isExtraOccurrence,
   toExtraStartPayload,
 } from './extra'
-import type { TrainingSession } from './sessions'
+import { useProgramme } from '@/features/programme/programmeContext'
+import { toTrainingSessions, type TrainingSessionView } from '@/features/programme/programmeApi'
 import { useWorkoutLog } from './useWorkoutLog'
 
 /**
@@ -57,12 +57,22 @@ export function ExtraWorkoutPage() {
 
   const workout = useWorkoutLog(date, EXTRA_SESSION_ID)
 
+  // ROUND 22. The chooser offers the account's CURRENT weekday templates.
+  const programmeState = useProgramme()
+  const extraTemplates = useMemo(
+    () => (programmeState.programme ? toTrainingSessions(programmeState.programme) : []),
+    [programmeState.programme],
+  )
+
   // Which template the picker is offering. Only ever used BEFORE Start — once
   // a workout exists the stored snapshot is the truth and this is ignored.
-  const [selectedId, setSelectedId] = useState<string>(extraTemplates[0]?.id ?? '')
+  const [selectedId, setSelectedId] = useState<string>('')
   const selected = useMemo(
-    () => extraTemplates.find((session) => session.id === selectedId) ?? null,
-    [selectedId],
+    () =>
+      extraTemplates.find((session) => session.id === selectedId) ??
+      extraTemplates[0] ??
+      null,
+    [extraTemplates, selectedId],
   )
 
   const { status, occurrence, sets } = workout
@@ -135,11 +145,16 @@ export function ExtraWorkoutPage() {
 
       {status === 'ready' && !started && (
         <TemplateChooser
+          templates={extraTemplates}
           selected={selected}
-          selectedId={selectedId}
+          selectedId={selected?.id ?? selectedId}
           onSelect={setSelectedId}
           starting={workout.starting}
-          onStart={(session, plan) => void workout.start(toExtraStartPayload(session, plan))}
+          onStart={(session) =>
+            void workout.start(
+              toExtraStartPayload(session.id, programmeState.programme?.revision ?? 0),
+            )
+          }
         />
       )}
 
@@ -187,17 +202,20 @@ export function ExtraWorkoutPage() {
  * and leave no trace.
  */
 function TemplateChooser({
+  templates,
   selected,
   selectedId,
   onSelect,
   starting,
   onStart,
 }: {
-  selected: TrainingSession | null
+  /** The account's CURRENT weekday templates, from its own programme. */
+  templates: TrainingSessionView[]
+  selected: TrainingSessionView | null
   selectedId: string
   onSelect: (id: string) => void
   starting: boolean
-  onStart: (session: TrainingSession, plan: NonNullable<ReturnType<typeof buildExtraPlan>>) => void
+  onStart: (session: TrainingSessionView, plan: NonNullable<ReturnType<typeof buildExtraPlan>>) => void
 }) {
   // Derived for the preview only. Null when a prescription cannot be parsed,
   // in which case Start is refused rather than logging a workout the app
@@ -212,7 +230,7 @@ function TemplateChooser({
           Based on
         </p>
         <ul className="mt-3 flex flex-col gap-2" role="radiogroup" aria-label="Foundation session">
-          {extraTemplates.map((session) => {
+          {templates.map((session) => {
             const active = session.id === selectedId
             return (
               <li key={session.id}>

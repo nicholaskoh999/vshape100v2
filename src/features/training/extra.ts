@@ -27,9 +27,9 @@ import {
 } from '@shared/workoutLog'
 
 import type { AccordionSession } from './ExerciseAccordion'
-import { trainingSessions, type SessionExercise, type TrainingSession } from './sessions'
+import type { SessionExercise, TrainingSession } from './sessions'
 import type { WorkoutOccurrence, WorkoutSet, WorkoutStartPayload } from './workoutApi'
-import { buildWorkoutPlan, toStartPayload, type PlannedExercise } from './workoutPlan'
+import { buildWorkoutPlan, type PlannedExercise } from './workoutPlan'
 
 export { EXTRA_SESSION_ID }
 
@@ -40,8 +40,6 @@ export { EXTRA_SESSION_ID }
  * Sunday are Recovery and are not templates: an Extra performed AT the weekend
  * is a voluntary exception, but it is still a copy of a weekday session.
  */
-export const extraTemplates: readonly TrainingSession[] = trainingSessions
-
 /**
  * How a STARTED Extra's source is named to the user, e.g. `Monday · Back Width
  * + Biceps`.
@@ -75,17 +73,19 @@ export function extraSnapshotLabel(
 }
 
 /**
- * The Start payload for an Extra built from one Foundation session.
+ * The Start payload for an Extra built from one Foundation weekday.
  *
- * The snapshot is the template's CURRENT content — the same payload the
- * scheduled page would send — plus the provenance that says where it came
- * from. Nothing about the template is edited on the way through.
+ * ROUND 22. It no longer carries the template's content. It states the
+ * programme revision the chooser was showing and which weekday was chosen; the
+ * server resolves THAT weekday from the account's current programme and freezes
+ * it. An Extra can therefore never be started from a template the user was not
+ * looking at.
  */
 export function toExtraStartPayload(
-  session: TrainingSession,
-  plan: PlannedExercise[],
+  sessionId: string,
+  expectedRevision: number,
 ): WorkoutStartPayload {
-  return { ...toStartPayload(session, plan), sourceSessionId: session.id }
+  return { expectedRevision, sourceSessionId: sessionId }
 }
 
 /** The set structure an Extra Start would establish, or null if unloggable. */

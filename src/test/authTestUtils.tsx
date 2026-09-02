@@ -11,6 +11,7 @@ import {
 } from './exerciseInputTypeApiTestUtils'
 import { createMediaServer, type MediaServer } from './exerciseMediaApiTestUtils'
 import { createHolidayServer, type HolidayServer } from './holidayApiTestUtils'
+import { createProgrammeServer, type ProgrammeServer } from './programmeApiTestUtils'
 import { createProgressServer, type ProgressServer } from './progressApiTestUtils'
 import { createSettingsServer, type SettingsServer } from './settingsApiTestUtils'
 import {
@@ -78,6 +79,12 @@ export function mockAuthFetch(options: {
    */
   progress?: ProgressServer
   /**
+   * Round 22 programme stand-in. Absent means an account that has never edited
+   * its programme, which resolves the Foundation seed at revision 0 — exactly
+   * what every pre-Round-22 suite was implicitly about.
+   */
+  programme?: ProgrammeServer
+  /**
    * Training progression API stand-in. Absent means one derived from the same
    * in-memory workouts the workout stand-in holds, which is the honest default:
    * guidance is derived from history, so a test that seeds no history sees no
@@ -103,6 +110,7 @@ export function mockAuthFetch(options: {
   const workouts = options.workouts ?? createWorkoutServer()
   const holidays = options.holidays ?? createHolidayServer()
   const progress = options.progress ?? createProgressServer()
+  const programme = options.programme ?? createProgrammeServer()
   const progression = options.progression ?? createProgressionServer(workouts)
   const inputTypes = options.inputTypes ?? createInputTypeServer()
   const settings = options.settings ?? createSettingsServer()
@@ -133,6 +141,18 @@ export function mockAuthFetch(options: {
     if (url.startsWith('/api/holidays')) {
       return holidays.handle(url, init)
     }
+    /*
+     * ROUND 22. Matched before the two /api/progres* prefixes, which are
+     * distinct but adjacent enough to be worth ordering deliberately.
+     *
+     * The default answers the Foundation seed at revision 0 — an account that
+     * has never edited — so every suite written before Round 22 keeps
+     * asserting the same training week it always did.
+     */
+    if (url.startsWith('/api/programme')) {
+      return programme.handle(url, init)
+    }
+
     // `/api/progression/` before `/api/progress/`, and both matched WITH their
     // trailing slash: they are different APIs, and a prefix without the slash
     // would let one swallow the other.

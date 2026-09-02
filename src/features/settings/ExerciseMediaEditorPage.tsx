@@ -6,7 +6,9 @@ import { Link, useParams } from 'react-router'
 import { Card } from '@/components/ui/Card'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { press } from '@/design/motion'
-import { getCatalogExercise, usedInSummary } from '@/features/training/catalog'
+import { usedInSummary } from '@/features/training/catalog'
+import { useProgramme } from '@/features/programme/programmeContext'
+import { toTrainingSessions } from '@/features/programme/programmeApi'
 import { ExerciseMedia } from '@/features/training/ExerciseMedia'
 import {
   deleteExerciseMedia,
@@ -14,6 +16,7 @@ import {
 } from '@/features/training/exerciseMediaApi'
 import { useExerciseMedia } from '@/features/training/useExerciseMedia'
 import { ExerciseInputTypeCard } from './ExerciseInputTypeCard'
+import { ExerciseProgrammeCard } from './ExerciseProgrammeCard'
 import { cn } from '@/lib/utils'
 import {
   isSafeMediaUrl,
@@ -59,7 +62,32 @@ type Feedback =
 
 export function ExerciseMediaEditorPage() {
   const { id } = useParams()
-  const entry = getCatalogExercise(id)
+  /*
+   * ROUND 22. Resolved from the account's PROGRAMME, so a renamed exercise
+   * shows its new name here and a custom one — which was never in the static
+   * Foundation week — has a settings page at all.
+   */
+  const { status, programme } = useProgramme()
+  const exercise = programme?.exercises.find((e) => e.exerciseId === id)
+  const weekdays = programme ? toTrainingSessions(programme) : []
+  const entry = exercise
+    ? {
+        id: exercise.exerciseId,
+        name: exercise.name,
+        appearances: weekdays
+          .filter((session) => session.exercises.some((e) => e.id === exercise.exerciseId))
+          .map((session) => ({ sessionId: session.id, day: session.day })),
+      }
+    : undefined
+
+  if (status === 'loading') {
+    return (
+      <>
+        <BackToLibrary />
+        <PageHeader eyebrow="Exercise Library" title="Loading" subline="Reading your programme." />
+      </>
+    )
+  }
 
   if (!entry) {
     return (
@@ -68,7 +96,7 @@ export function ExerciseMediaEditorPage() {
         <PageHeader
           eyebrow="Exercise Library"
           title="Exercise not found"
-          subline="This exercise is not part of the Foundation base."
+          subline="This exercise is not in your programme."
         />
       </>
     )
@@ -197,6 +225,12 @@ function Editor({
           First, because it changes what the app RECORDS, while everything
           below it changes only what the app shows.
         */}
+        {/*
+          The programme card first: it owns the name, which everything below is
+          labelled by, and the weekdays this exercise is actually trained on.
+        */}
+        <ExerciseProgrammeCard exerciseId={exerciseId} />
+
         <ExerciseInputTypeCard exerciseId={exerciseId} name={name} />
 
         <ExerciseMedia media={previewSource} resolution={previewResolution} />

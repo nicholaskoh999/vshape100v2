@@ -8,7 +8,7 @@ import { PageHeader } from '@/components/ui/PageHeader'
 import { listItemVariants, listVariants, press } from '@/design/motion'
 import { useLocalToday } from '@/features/progress/useLocalToday'
 import { EXTRA_SESSION_ID, extraSnapshotLabel } from './extra'
-import { trainingSessions } from './sessions'
+import { useProgramme } from '@/features/programme/programmeContext'
 import { useWorkoutLog } from './useWorkoutLog'
 
 const restDays = [
@@ -17,6 +17,9 @@ const restDays = [
 ]
 
 export function TrainingPage() {
+  // ROUND 22. The account's own programme, not the static Foundation array.
+  const { status, programme, reload } = useProgramme()
+
   return (
     <>
       <PageHeader
@@ -31,7 +34,31 @@ export function TrainingPage() {
         animate="enter"
         className="flex flex-col gap-3"
       >
-        {trainingSessions.map((session) => (
+        {status === 'loading' && (
+          <li className="text-[13px] text-ink-faint" data-training-week="loading">
+            Loading your training week
+          </li>
+        )}
+
+        {status === 'error' && (
+          <li data-training-week="error" className="flex flex-wrap items-center gap-2 text-[13px] text-coral">
+            {/*
+              Deliberately NOT the static Foundation week. Showing the default
+              programme to somebody whose real one could not be read would show
+              them a session they may have edited away.
+            */}
+            Your training week could not be loaded.
+            <button
+              type="button"
+              onClick={reload}
+              className="rounded-control font-bold text-blue underline-offset-2 hover:underline"
+            >
+              Retry
+            </button>
+          </li>
+        )}
+
+        {(programme?.sessions ?? []).map((session) => (
           <motion.li key={session.id} variants={listItemVariants}>
             <Link to={`/training/${session.id}`} className="block rounded-card">
               <motion.div {...press} tabIndex={-1}>
@@ -47,7 +74,7 @@ export function TrainingPage() {
                       {session.focus}
                     </p>
                     <p className="mt-0.5 text-[13px] text-ink-faint">
-                      {session.exercises.length} exercises
+                      {session.slots.length} exercises
                     </p>
                   </div>
                   <ChevronRight className="size-5 shrink-0 text-ink-faint" aria-hidden="true" />

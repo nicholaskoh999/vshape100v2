@@ -49,7 +49,12 @@ afterEach(() => {
 
 async function renderDetail(path = '/exercises/lat-pulldown') {
   renderApp(path)
-  await screen.findByRole('heading', { level: 1 })
+  // ROUND 22. The exercise comes from the account's programme, so the page
+  // starts on a loading header. Wait past it rather than measuring it.
+  await waitFor(() => {
+    const heading = screen.getByRole('heading', { level: 1 })
+    expect(heading.textContent).not.toBe('Loading')
+  })
 }
 
 /** The single measured column holding the media and the prescriptions. */

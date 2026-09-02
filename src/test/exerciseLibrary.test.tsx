@@ -43,7 +43,12 @@ function user() {
 /** Render at `path` and wait for the media status line to settle. */
 async function renderAt(path: string) {
   const router = renderApp(path)
-  await screen.findByRole('heading', { level: 1 })
+  // ROUND 22. The session comes from the account's programme, so the page
+  // starts on a loading header. Wait past it rather than measuring it.
+  await waitFor(() => {
+    const heading = screen.getByRole('heading', { level: 1 })
+    expect(heading.textContent).not.toBe('Loading')
+  })
   return router
 }
 
@@ -125,6 +130,10 @@ describe('Exercise Library', () => {
   it('never claims "No media" before the server has answered', async () => {
     const release = server.holdReads()
     await renderAt('/settings/exercises')
+    // ROUND 22. The rows come from the account's programme, which resolves
+    // independently of the media read being held here — so wait for a row to
+    // exist before asserting what it says about media.
+    await screen.findByRole('link', { name: 'Edit settings for Plank' })
     // The row shows "Checking" while the read is outstanding.
     expect(screen.getAllByText('Checking').length).toBeGreaterThan(0)
     expect(screen.queryByText('No media')).not.toBeInTheDocument()

@@ -250,27 +250,27 @@ export async function fetchWorkout(
   return toLog(await response.json())
 }
 
-/** What a Start sends. The account is never part of it. */
+/**
+ * What a Start sends.
+ *
+ * ROUND 22 EMPTIED THIS. It used to carry the whole snapshot — every exercise,
+ * name, order, prescription and set count — and the server stored what it was
+ * given. It now carries only the programme revision the user was looking at,
+ * and (for an Extra) which Foundation weekday they chose. The server builds the
+ * snapshot from the account's own programme, so a stale or modified client
+ * cannot establish a workout the user never saw.
+ *
+ * The account is still never part of it.
+ */
 export type WorkoutStartPayload = {
-  day: string
-  focus: string
-  intensity: string
+  /** The programme revision this client was showing. */
+  expectedRevision: number
   /**
-   * The Foundation session an Extra is copied from. Required by the server for
-   * the Extra occurrence and refused for a scheduled one, so this is omitted
+   * The Foundation weekday an Extra is copied from. Required by the server for
+   * an Extra occurrence and refused for a scheduled one, so this is omitted
    * entirely by the normal training flow.
    */
   sourceSessionId?: string
-  exercises: {
-    exerciseId: string
-    name: string
-    prescription: string
-    equipment: string | null
-    resultKind: WorkoutResultKind
-    loadMode: WorkoutLoadMode
-    perSide: boolean
-    setCount: number
-  }[]
 }
 
 /**

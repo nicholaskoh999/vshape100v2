@@ -42,7 +42,7 @@ export type CatalogExercise = {
  * entry's appearances are in the same week order. A repeated exercise id
  * adds an appearance to the existing entry — it never adds a second entry.
  */
-function buildCatalog(sessions: readonly TrainingSession[]): CatalogExercise[] {
+export function buildCatalog(sessions: readonly TrainingSession[]): CatalogExercise[] {
   const byId = new Map<string, CatalogExercise>()
 
   for (const session of sessions) {
@@ -66,7 +66,15 @@ function buildCatalog(sessions: readonly TrainingSession[]): CatalogExercise[] {
   return [...byId.values()]
 }
 
-/** The canonical exercise list — one entry per unique exercise identity. */
+/**
+ * The FALLBACK catalog, built from the static Foundation week.
+ *
+ * ROUND 22 DEMOTED THIS. It is no longer what any live screen shows: the
+ * Exercise Library and every exercise page build their catalog from the
+ * account's own programme via `buildCatalog`. This remains as the identity of
+ * the Foundation default — what a brand-new account starts from — and is what
+ * the seed tests pin against.
+ */
 export const exerciseCatalog: CatalogExercise[] = buildCatalog(trainingSessions)
 
 /** Catalog entry for a slug, or undefined when the slug is not in the week. */

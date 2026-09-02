@@ -7,15 +7,46 @@ import { IntensityBadge } from '@/components/ui/IntensityBadge'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { useLocalToday } from '@/features/progress/useLocalToday'
 import { ExerciseAccordion } from './ExerciseAccordion'
-import { getSession, type TrainingSession } from './sessions'
+import { useProgramme } from '@/features/programme/programmeContext'
+import { toTrainingSession, type TrainingSessionView } from '@/features/programme/programmeApi'
 import { useProgression } from './useProgression'
 import { useWorkoutLog } from './useWorkoutLog'
-import { buildWorkoutPlan, toStartPayload } from './workoutPlan'
+import { buildWorkoutPlan } from './workoutPlan'
 
 /** Nested shell: /training/:session */
 export function TrainingSessionPage() {
   const { session: sessionId } = useParams()
-  const session = getSession(sessionId)
+  // ROUND 22. The session comes from the account's programme.
+  const { status, programme, reload } = useProgramme()
+  const session = programme ? toTrainingSession(programme, sessionId ?? '') : undefined
+
+  if (status === 'loading') {
+    return (
+      <>
+        <BackToTraining />
+        <PageHeader title="Loading" subline="Reading your training week." />
+      </>
+    )
+  }
+
+  if (status === 'error') {
+    return (
+      <>
+        <BackToTraining />
+        <PageHeader
+          title="Could not load this session"
+          subline="Your programme could not be read, so this day is not being guessed at."
+        />
+        <button
+          type="button"
+          onClick={reload}
+          className="mt-3 rounded-control text-[13px] font-bold text-blue underline-offset-2 hover:underline"
+        >
+          Retry
+        </button>
+      </>
+    )
+  }
 
   if (!session) {
     return (
@@ -30,10 +61,23 @@ export function TrainingSessionPage() {
   }
 
   // Session-keyed so workout state resets cleanly when the day changes.
-  return <SessionView key={session.id} session={session} />
+  return (
+    <SessionView
+      key={session.id}
+      session={session}
+      revision={programme?.revision ?? 0}
+    />
+  )
 }
 
-function SessionView({ session }: { session: TrainingSession }) {
+function SessionView({
+  session,
+  revision,
+}: {
+  session: TrainingSessionView
+  /** The programme revision this page is showing, sent with Start. */
+  revision: number
+}) {
   // Round 18: the same rollover fix Round 17 gave the Extra page, for the same
   // reason. Read once at mount, a session opened at 23:58 and started at 00:05
   // filed the workout under YESTERDAY — a day the user did not train on.
@@ -81,7 +125,9 @@ function SessionView({ session }: { session: TrainingSession }) {
         plan={plan}
         workout={workout}
         onStart={() => {
-          if (plan) void workout.start(toStartPayload(session, plan))
+          // ROUND 22. The body states only which programme the user was
+          // looking at. The server builds the snapshot from that programme.
+          if (plan) void workout.start({ expectedRevision: revision })
         }}
       />
 
@@ -129,7 +175,7 @@ function WorkoutBar({
   workout,
   onStart,
 }: {
-  session: TrainingSession
+  session: TrainingSessionView
   plan: ReturnType<typeof buildWorkoutPlan>
   workout: ReturnType<typeof useWorkoutLog>
   onStart: () => void

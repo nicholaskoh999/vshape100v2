@@ -1,4 +1,5 @@
-import { ArrowLeft, ChevronRight, ImageOff, Images, Loader2 } from 'lucide-react'
+import { Archive, ArrowLeft, ChevronRight, ImageOff, Images, Loader2 } from 'lucide-react'
+import { useMemo } from 'react'
 import { motion } from 'motion/react'
 import { Link } from 'react-router'
 
@@ -6,11 +7,10 @@ import { Card } from '@/components/ui/Card'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { listItemVariants, listVariants, press } from '@/design/motion'
-import {
-  exerciseCatalog,
-  usedInSummary,
-  type CatalogExercise,
-} from '@/features/training/catalog'
+import { buildCatalog, usedInSummary, type CatalogExercise } from '@/features/training/catalog'
+import { useProgramme } from '@/features/programme/programmeContext'
+import { toTrainingSessions } from '@/features/programme/programmeApi'
+import { AddExerciseCard } from './AddExerciseCard'
 import { WORKOUT_INPUT_TYPE_LABELS, type WorkoutInputType } from '@shared/workoutInput'
 
 import { useExerciseInputTypeLibrary } from './useExerciseInputTypeLibrary'
@@ -31,6 +31,40 @@ import { useExerciseMediaLibrary } from './useExerciseMediaLibrary'
 export function ExerciseLibraryPage() {
   const library = useExerciseMediaLibrary()
   const inputTypes = useExerciseInputTypeLibrary()
+  /*
+   * ROUND 22. The library is the account's OWN exercises — renamed ones,
+   * custom ones, and the weekdays each is currently used on. The static
+   * Foundation catalog is no longer read here; it is only what a new account
+   * starts from.
+   */
+  const { status: programmeStatus, programme, reload: reloadProgramme } = useProgramme()
+
+  const catalog = useMemo(
+    () => (programme ? buildCatalog(toTrainingSessions(programme)) : []),
+    [programme],
+  )
+
+  // An archived exercise, and a custom one with no weekday yet, both hold no
+  // slot — so neither appears in a catalog built from the weekdays. They are
+  // listed from the exercise master instead.
+  const byId = new Map(catalog.map((entry) => [entry.id, entry]))
+  const active = (programme?.exercises ?? [])
+    .filter((exercise) => !exercise.archived)
+    .map(
+      (exercise) =>
+        byId.get(exercise.exerciseId) ?? {
+          id: exercise.exerciseId,
+          name: exercise.name,
+          appearances: [],
+        },
+    )
+    // The catalog carries the name from the weekday; the master is the truth.
+    .map((entry) => ({
+      ...entry,
+      name:
+        programme?.exercises.find((e) => e.exerciseId === entry.id)?.name ?? entry.name,
+    }))
+  const archived = (programme?.exercises ?? []).filter((exercise) => exercise.archived)
 
   return (
     <>
@@ -72,9 +106,21 @@ export function ExerciseLibraryPage() {
             </button>
           </>
         )}
-        {library.status === 'ready' && (
+        {programmeStatus === 'error' && (
           <>
-            {exerciseCatalog.length} exercises · {library.withMedia.size} with media ·{' '}
+            <span className="text-coral">Your programme could not be loaded.</span>
+            <button
+              type="button"
+              onClick={reloadProgramme}
+              className="rounded-control font-bold text-blue underline-offset-2 hover:underline"
+            >
+              Retry
+            </button>
+          </>
+        )}
+        {library.status === 'ready' && programmeStatus === 'ready' && (
+          <>
+            {active.length} exercises · {library.withMedia.size} with media ·{' '}
             {inputTypes.status === 'ready'
               ? `${inputTypes.byExercise.size} with an input type`
               : 'checking input types'}
@@ -88,7 +134,7 @@ export function ExerciseLibraryPage() {
         animate="enter"
         className="flex flex-col gap-3"
       >
-        {exerciseCatalog.map((entry) => (
+        {active.map((entry) => (
           <motion.li key={entry.id} variants={listItemVariants}>
             <ExerciseRow
               entry={entry}
@@ -101,6 +147,40 @@ export function ExerciseLibraryPage() {
           </motion.li>
         ))}
       </motion.ul>
+
+      {programmeStatus === 'ready' && <AddExerciseCard />}
+
+      {archived.length > 0 && (
+        <section className="mt-6" data-archived-section>
+          <h2 className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em] text-ink-faint">
+            <Archive className="size-3.5" aria-hidden="true" />
+            Archived
+          </h2>
+          <p className="mb-3 text-[13px] text-ink-faint">
+            Kept, with all their history and media. They hold no place in any
+            weekday until you put them back.
+          </p>
+          <ul className="flex flex-col gap-2">
+            {archived.map((exercise) => (
+              <li key={exercise.exerciseId}>
+                <Link
+                  to={`/settings/exercises/${exercise.exerciseId}`}
+                  aria-label={`Edit settings for ${exercise.name}`}
+                  className="flex items-center gap-3 rounded-card border border-dashed border-edge px-4 py-3 transition-colors duration-150 hover:border-edge-strong"
+                >
+                  <span className="min-w-0 flex-1 truncate text-sm font-bold text-ink-dim">
+                    {exercise.name}
+                  </span>
+                  <span className="shrink-0 rounded-full bg-surface-overlay px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-[0.1em] text-ink-faint">
+                    Archived
+                  </span>
+                  <ChevronRight className="size-4 shrink-0 text-ink-faint" aria-hidden="true" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </>
   )
 }

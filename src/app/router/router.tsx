@@ -5,6 +5,7 @@ import { AchievementsPage } from '@/features/achievements/AchievementsPage'
 import { LoginPage } from '@/features/auth/LoginPage'
 import { RequireAuth } from '@/features/auth/RequireAuth'
 import { CalendarPage } from '@/features/calendar/CalendarPage'
+import { ProgrammeProvider } from '@/features/programme/ProgrammeProvider'
 import { ProgressPage } from '@/features/progress/ProgressPage'
 import { ExerciseLibraryPage } from '@/features/settings/ExerciseLibraryPage'
 import { ExerciseMediaEditorPage } from '@/features/settings/ExerciseMediaEditorPage'
@@ -29,7 +30,19 @@ export const routes = [
     element: <RequireAuth />,
     children: [
       {
-        element: <AppShell />,
+        /*
+         * ROUND 22. The account's programme is read ONCE, here, and shared by
+         * Training, the Exercise Library, an exercise's own page and the Extra
+         * chooser. Inside RequireAuth because it is account state; above the
+         * shell because every one of those screens needs the same answer to
+         * the same question, and two of them disagreeing is the bug this
+         * round exists to remove.
+         */
+        element: (
+          <ProgrammeProvider>
+            <AppShell />
+          </ProgrammeProvider>
+        ),
         children: [
           { path: '/', element: <Navigate to="/today" replace /> },
           { path: '/today', element: <TodayPage /> },

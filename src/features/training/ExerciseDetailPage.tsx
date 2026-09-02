@@ -9,14 +9,22 @@ import { press } from '@/design/motion'
 import { ExerciseMedia } from './ExerciseMedia'
 import { toMediaSource } from './exerciseMediaApi'
 import { ORIGIN_PARAM, resolveExerciseReturn } from './navigation'
-import { getExercise, trainingSessions } from './sessions'
+import { useProgramme } from '@/features/programme/programmeContext'
+import { toTrainingSessions } from '@/features/programme/programmeApi'
 import { useExerciseMedia } from './useExerciseMedia'
 
 /** Nested shell: /exercises/:id */
 export function ExerciseDetailPage() {
   const { id } = useParams()
   const [searchParams] = useSearchParams()
-  const found = getExercise(id)
+  /*
+   * ROUND 22. The exercise is looked up in the account's PROGRAMME, not in the
+   * static Foundation array. That is what lets a renamed exercise, and a custom
+   * one that was never in the Foundation week at all, have a page here.
+   */
+  const { status: programmeStatus, programme } = useProgramme()
+  const weekdays = programme ? toTrainingSessions(programme) : []
+  const found = programme?.exercises.find((exercise) => exercise.exerciseId === id)
 
   // The canonical record for this exercise identity — the same one the
   // Settings editor writes. Lat Pulldown resolves to it from Monday,
@@ -28,11 +36,21 @@ export function ExerciseDetailPage() {
   // value is validated before it can become a link (see ./navigation).
   const back = resolveExerciseReturn(searchParams.get(ORIGIN_PARAM))
 
+  // Every weekday this exercise currently appears on. An exercise with none —
+  // a custom one just created, or an archived one — simply lists nothing.
   const appearances = found
-    ? trainingSessions.filter((session) =>
-        session.exercises.some((exercise) => exercise.id === id),
-      )
+    ? weekdays.filter((session) => session.exercises.some((exercise) => exercise.id === id))
     : []
+
+  // Until the programme is read we do not know whether this exercise exists,
+  // and saying "not found" while still looking would be a lie the user acts on.
+  if (programmeStatus === 'loading') {
+    return (
+      <>
+        <PageHeader eyebrow="Exercise" title="Loading" subline="Reading your programme." />
+      </>
+    )
+  }
 
   return (
     <>
@@ -47,17 +65,17 @@ export function ExerciseDetailPage() {
 
       <PageHeader
         eyebrow="Exercise"
-        title={found ? found.exercise.name : 'Exercise not found'}
+        title={found ? found.name : 'Exercise not found'}
         subline={
           found
             ? 'Demo media is shared by every day this exercise is trained.'
-            : 'This exercise is not part of the Foundation base.'
+            : 'This exercise is not in your programme.'
         }
         actions={
           found ? (
             <Link
-              to={`/settings/exercises/${found.exercise.id}`}
-              aria-label={`Edit media for ${found.exercise.name}`}
+              to={`/settings/exercises/${found.exerciseId}`}
+              aria-label={`Edit media for ${found.name}`}
               className="shrink-0 rounded-control"
             >
               <motion.span
