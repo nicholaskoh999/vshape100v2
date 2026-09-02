@@ -1,4 +1,8 @@
-import { getSession, type TrainingSession } from './sessions'
+import {
+  FOUNDATION_SESSION_META,
+  isProgrammeSessionId,
+  type ProgrammeSessionMeta,
+} from '@shared/programme/programme'
 
 /**
  * Session-origin context for the exercise detail route.
@@ -34,7 +38,7 @@ export const TRAINING_OVERVIEW: ExerciseReturn = {
   contextual: false,
 }
 
-function returnToSession(session: TrainingSession): ExerciseReturn {
+function returnToSession(session: ProgrammeSessionMeta): ExerciseReturn {
   // The path is rebuilt from our own session id, never from the raw input.
   return { to: `/training/${session.id}`, label: session.day, contextual: true }
 }
@@ -53,8 +57,15 @@ export function resolveExerciseReturn(
   from: string | null | undefined,
 ): ExerciseReturn {
   if (typeof from !== 'string' || from === '') return TRAINING_OVERVIEW
-  const session = getSession(from)
-  return session ? returnToSession(session) : TRAINING_OVERVIEW
+  /*
+   * ROUND 22. Checked against the FIXED weekday identities, not against the
+   * account's programme. The five session ids and their day names are not
+   * editable this round, and a back link must not depend on programme content
+   * that may still be loading — or fail for somebody whose programme is
+   * temporarily unreadable.
+   */
+  if (!isProgrammeSessionId(from)) return TRAINING_OVERVIEW
+  return returnToSession(FOUNDATION_SESSION_META[from])
 }
 
 /**
