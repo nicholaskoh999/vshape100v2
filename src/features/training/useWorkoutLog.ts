@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { summariseSets, type WorkoutProgress } from '@shared/workoutLog'
 import {
+  cancelWorkoutStart as cancelWorkoutStartRequest,
   completeSet as completeSetRequest,
   fetchWorkout,
   skipSet as skipSetRequest,
   startWorkout as startWorkoutRequest,
   undoSet as undoSetRequest,
+  WorkoutApiError,
   type WorkoutLoad,
   type WorkoutLog,
   type WorkoutOccurrence,
@@ -69,6 +71,17 @@ export type WorkoutLogState = {
   ) => Promise<void>
   skip: (exerciseOrder: number, setIndex: number) => Promise<void>
   undo: (exerciseOrder: number, setIndex: number) => Promise<void>
+  /**
+   * Whether the server would currently allow this Start to be cancelled.
+   *
+   * Advisory. It stops the page offering a button that would be refused; the
+   * server still decides, and a refusal is shown truthfully.
+   */
+  cancelable: boolean
+  /** A cancellation is in flight. */
+  cancelling: boolean
+  /** Take back an accidental Start. */
+  cancelStart: () => Promise<void>
 }
 
 const EMPTY_SETS: WorkoutSet[] = []
@@ -89,6 +102,17 @@ export function useWorkoutLog(date: string, sessionId: string): WorkoutLogState 
   const [starting, setStarting] = useState(false)
   const [busySet, setBusySet] = useState<SetKey | null>(null)
   const [mutationError, setMutationError] = useState<string | null>(null)
+  const [cancelling, setCancelling] = useState(false)
+  /**
+   * Has any set been resolved during THIS view of the workout?
+   *
+   * The server's `cancelable` flag is only refreshed by a read or a Start, so
+   * after a Complete — or a Complete then an Undo — the flag we are holding is
+   * stale. Touching a workout is permanent and one-way, so recording it locally
+   * cannot be wrong: it can only stop the page offering a button the server
+   * would refuse.
+   */
+  const [touchedHere, setTouchedHere] = useState(false)
   // Counts confirmed changes to the STORED workout, so derived reads know when
   // the truth they were derived from has moved.
   const [revision, setRevision] = useState(0)
@@ -166,6 +190,34 @@ export function useWorkoutLog(date: string, sessionId: string): WorkoutLogState 
     [],
   )
 
+  const cancelStart = useCallback(async () => {
+    if (inFlight.current) return
+    inFlight.current = true
+    setCancelling(true)
+    setMutationError(null)
+    try {
+      const result = await cancelWorkoutStartRequest(attempt.date, attempt.sessionId)
+      // The server answers with the not-started shape, so adopting it puts the
+      // page back to "Workout not started" with no special case.
+      setLoaded({ id: attempt.id, log: result })
+      setRevision((n) => n + 1)
+    } catch (error: unknown) {
+      console.error('Workout start could not be cancelled', error)
+      const conflict = error instanceof WorkoutApiError && error.status === 409
+      setMutationError(
+        conflict
+          ? 'This workout has recorded sets, so it cannot be cancelled.'
+          : 'Could not cancel this workout. Check your connection and try again.',
+      )
+      // Reload either way: a refusal means our picture of the workout is out of
+      // date, and the truthful one is what the user should be looking at.
+      setRetries((n) => n + 1)
+    } finally {
+      inFlight.current = false
+      setCancelling(false)
+    }
+  }, [attempt])
+
   const start = useCallback(
     async (payload: WorkoutStartPayload) => {
       if (inFlight.current) return
@@ -174,6 +226,8 @@ export function useWorkoutLog(date: string, sessionId: string): WorkoutLogState 
       setMutationError(null)
       try {
         const result = await startWorkoutRequest(attempt.date, attempt.sessionId, payload)
+        // A fresh Start (or a resume) brings the server's own verdict with it.
+        setTouchedHere(false)
         setLoaded({ id: attempt.id, log: result })
         setRevision((n) => n + 1)
       } catch (error: unknown) {
@@ -197,6 +251,8 @@ export function useWorkoutLog(date: string, sessionId: string): WorkoutLogState 
     ) => {
       if (inFlight.current) return
       inFlight.current = true
+      // Every set mutation - complete, skip AND undo - touches the workout.
+      setTouchedHere(true)
       setBusySet(setKey(exerciseOrder, setIndex))
       setMutationError(null)
       try {
@@ -278,5 +334,10 @@ export function useWorkoutLog(date: string, sessionId: string): WorkoutLogState 
     complete,
     skip,
     undo,
+    // Only offered while the server says so, and only while nothing has been
+    // recorded — the same two facts the server's own guard checks.
+    cancelable: loaded?.log.cancelable === true && matched && !touchedHere,
+    cancelling,
+    cancelStart,
   }
 }

@@ -63,6 +63,13 @@ export type WorkoutSet = {
   band: WorkoutBand | null
   result: number | null
   updatedAt: number
+  /**
+   * When this set's recorded performance was last corrected, or null if it
+   * never was. Read from the immutable audit, so the "Corrected" indicator says
+   * something true rather than inferring it from a timestamp that moves for
+   * other reasons.
+   */
+  correctedAt: number | null
 }
 
 /** A recorded band: which one, and how many. Never a weight. */
@@ -80,6 +87,14 @@ export type WorkoutLog = {
   occurrence: WorkoutOccurrence | null
   sets: WorkoutSet[]
   progress: WorkoutProgress | null
+  /**
+   * Whether the server would currently allow this Start to be cancelled.
+   *
+   * Advisory: it stops the page offering a button that would be refused. The
+   * server's conditional delete remains the authority, and asking anyway gets a
+   * controlled refusal rather than a surprise.
+   */
+  cancelable: boolean
 }
 
 export class WorkoutApiError extends Error {
@@ -173,6 +188,7 @@ function toSet(raw: unknown): WorkoutSet | null {
     band: toBand(row.band),
     result: typeof row.result === 'number' ? row.result : null,
     updatedAt: typeof row.updatedAt === 'number' ? row.updatedAt : 0,
+    correctedAt: typeof row.correctedAt === 'number' ? row.correctedAt : null,
   }
 }
 
@@ -216,7 +232,7 @@ function toLog(body: unknown): WorkoutLog {
     typeof raw.progress === 'object' && raw.progress !== null
       ? (raw.progress as WorkoutProgress)
       : null
-  return { occurrence, sets, progress }
+  return { occurrence, sets, progress, cancelable: raw.cancelable === true }
 }
 
 /* ------------------------------------------------------------------ */
@@ -320,6 +336,63 @@ export async function completeSet(
     }),
     signal,
   })
+}
+
+/**
+ * Cancel an accidental Start.
+ *
+ * Removes the whole occurrence, but only while the server agrees it was never
+ * worked in. The answer is the same shape a never-started workout reads as, so
+ * the page returns to "Workout not started" with no special case.
+ */
+export async function cancelWorkoutStart(
+  date: string,
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<WorkoutLog> {
+  const response = await fetch(occurrenceUrl(date, sessionId), {
+    ...REQUEST_INIT,
+    method: 'DELETE',
+    signal,
+  })
+  await ensureOk(response)
+  return toLog(await response.json())
+}
+
+/**
+ * Correct what one completed set actually recorded.
+ *
+ * `expectedUpdatedAt` is the version the editor read. The server refuses if
+ * anything changed the set since, rather than overwriting a change the user
+ * cannot see.
+ */
+export async function correctRecordedSet(
+  date: string,
+  sessionId: string,
+  exerciseOrder: number,
+  setIndex: number,
+  correction: {
+    inputType: WorkoutInputType
+    load?: { value: number; unit: 'kg' | 'kg_each' } | null
+    band?: WorkoutBand | null
+    result: number
+    expectedUpdatedAt: number
+  },
+  signal?: AbortSignal,
+): Promise<{ corrected: boolean; set: WorkoutSet | null }> {
+  const response = await fetch(
+    `${setUrl(date, sessionId, exerciseOrder, setIndex)}/correction`,
+    {
+      ...REQUEST_INIT,
+      method: 'PUT',
+      headers: { ...REQUEST_INIT.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify(correction),
+      signal,
+    },
+  )
+  await ensureOk(response)
+  const body = (await response.json()) as { corrected?: unknown; set?: unknown }
+  return { corrected: body.corrected === true, set: toSet(body.set) }
 }
 
 /** Mark one set skipped. No result and no load are recorded. */

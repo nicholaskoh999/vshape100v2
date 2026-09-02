@@ -10,6 +10,7 @@
  * already exist before it can be logged against.
  */
 
+import { isNoOpCorrection, parseSetCorrection } from '@shared/workoutCorrection'
 import type { WorkoutInputType } from '@shared/workoutInput'
 import {
   inputTypeForLegacyLoadMode,
@@ -40,6 +41,8 @@ export type ServerSet = {
   band: { label: string; count: number } | null
   result: number | null
   updatedAt: number
+  /** Round 21. When this set was last corrected, or null if it never was. */
+  correctedAt?: number | null
 }
 
 export type ServerOccurrence = {
@@ -59,7 +62,19 @@ export type ServerOccurrence = {
   updatedAt: number
 }
 
-type Stored = { occurrence: ServerOccurrence; sets: ServerSet[] }
+type Stored = {
+  occurrence: ServerOccurrence
+  sets: ServerSet[]
+  /**
+   * Round 21. When any set was FIRST resolved, or null if none ever was.
+   *
+   * Mirrors the real `workout_occurrences.touched_at`: it is what stops a
+   * workout that was completed and then undone from looking disposable.
+   */
+  touchedAt?: number | null
+  /** Round 21. The INSERT-only correction audit for this workout. */
+  corrections?: { exerciseOrder: number; setIndex: number; correctedAt: number }[]
+}
 
 /**
  * What a test hands to `seed`.
@@ -75,6 +90,11 @@ export type SeedStored = {
   occurrence: Omit<ServerOccurrence, 'kind' | 'sourceSessionId'> &
     Partial<Pick<ServerOccurrence, 'kind' | 'sourceSessionId'>>
   sets: ServerSet[]
+  /**
+   * Round 21. Omit it to seed a workout that was never worked in — which is
+   * exactly what an accidental Start looks like.
+   */
+  touchedAt?: number | null
 }
 
 export type WorkoutServer = {
@@ -111,6 +131,24 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { 'Content-Type': 'application/json' },
   })
+}
+
+/**
+ * Round 21 — is this workout genuinely untouched?
+ *
+ * Mirrors the server's conditional DELETE: never resolved, no evidence on any
+ * row, and no set whose own clock has moved away from the Start.
+ */
+function isUntouched(stored: Stored): boolean {
+  if (stored.touchedAt !== null && stored.touchedAt !== undefined) return false
+  return stored.sets.every(
+    (set) =>
+      set.status === 'pending' &&
+      set.load === null &&
+      set.band === null &&
+      set.result === null &&
+      set.updatedAt === stored.occurrence.startedAt,
+  )
 }
 
 function key(date: string, sessionId: string): string {
@@ -244,8 +282,16 @@ export function createWorkoutServer(): WorkoutServer {
               date,
               sessionId,
               occurrence: stored.occurrence,
-              sets: stored.sets,
+              sets: stored.sets.map((set) => ({
+                ...set,
+                correctedAt:
+                  stored.corrections?.find(
+                    (row) =>
+                      row.exerciseOrder === set.exerciseOrder && row.setIndex === set.setIndex,
+                  )?.correctedAt ?? null,
+              })),
               progress: summarise(stored.sets),
+              cancelable: isUntouched(stored),
             }
           : { date, sessionId, occurrence: null, sets: [], progress: null },
       )
@@ -285,6 +331,7 @@ export function createWorkoutServer(): WorkoutServer {
           occurrence: existing.occurrence,
           sets: existing.sets,
           progress: summarise(existing.sets),
+          cancelable: isUntouched(existing),
         })
       }
 
@@ -345,9 +392,28 @@ export function createWorkoutServer(): WorkoutServer {
           occurrence: stored.occurrence,
           sets: stored.sets,
           progress: summarise(stored.sets),
+          // A brand-new workout has never been worked in.
+          cancelable: isUntouched(stored),
         },
         201,
       )
+    }
+
+    // Round 21 — Cancel Start. DELETE on the workout itself.
+    if (segments.length === 2 && method === 'DELETE') {
+      if (mutationFailures > 0) {
+        mutationFailures -= 1
+        return jsonResponse({ error: 'server_error' }, 500)
+      }
+      const stored = workouts.get(id)
+      if (!stored) return jsonResponse({ error: 'not_started' }, 404)
+      // The same eligibility rule the server applies, and for the same reason:
+      // a workout that was resolved and undone is NOT disposable.
+      if (!isUntouched(stored)) {
+        return jsonResponse({ error: 'workout_touched' }, 409)
+      }
+      workouts.delete(id)
+      return jsonResponse({ date, sessionId, occurrence: null, sets: [], progress: null })
     }
 
     if (segments[2] !== 'sets') return jsonResponse({ error: 'not_found' }, 404)
@@ -362,12 +428,67 @@ export function createWorkoutServer(): WorkoutServer {
     if (!stored || !set) return jsonResponse({ error: 'set_not_found' }, 404)
 
     if (method === 'DELETE') {
+      // Undo TOUCHES the workout too: putting the sets back does not put back
+      // the fact that they were resolved.
+      stored.touchedAt = stored.touchedAt ?? clock
       set.status = 'pending'
       set.result = null
       set.load = null
       set.band = null
       set.updatedAt = clock++
       return jsonResponse({ date, sessionId, set })
+    }
+
+    // Round 21 — correcting one completed set's recorded performance.
+    if (segments.length === 6 && segments[5] === 'correction') {
+      if (method !== 'PUT') return jsonResponse({ error: 'method_not_allowed' }, 405)
+      if (mutationFailures > 0) {
+        mutationFailures -= 1
+        return jsonResponse({ error: 'server_error' }, 500)
+      }
+      if (!stored || !set) return jsonResponse({ error: 'set_not_found' }, 404)
+      if (set.status !== 'completed') return jsonResponse({ error: 'not_completed' }, 400)
+
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+      const parsed = parseSetCorrection(body)
+      if (!parsed.ok) {
+        return jsonResponse({ error: 'invalid_correction', field: parsed.field }, 400)
+      }
+
+      const before = {
+        inputType: set.inputType,
+        loadMode: set.loadMode,
+        loadValue: set.load ? set.load.value : null,
+        loadUnit: set.load ? set.load.unit : null,
+        bandLabel: set.band ? set.band.label : null,
+        bandCount: set.band ? set.band.count : null,
+        result: set.result,
+      }
+      // No-op first, so a correction that changes nothing writes no audit.
+      if (isNoOpCorrection(before, parsed.value)) {
+        return jsonResponse({ date, sessionId, corrected: false, set })
+      }
+      // Optimistic concurrency: the editor must submit the version it read.
+      if (set.updatedAt !== parsed.expectedUpdatedAt) {
+        return jsonResponse({ error: 'stale' }, 409)
+      }
+
+      const after = parsed.value
+      set.inputType = after.inputType
+      set.loadMode = after.loadMode
+      set.load = after.load
+      set.band = after.band
+      set.result = after.result
+      set.updatedAt = clock++
+      // The audit and the mutation land together, as they do in production.
+      stored.corrections = [
+        ...(stored.corrections ?? []).filter(
+          (row) => !(row.exerciseOrder === exerciseOrder && row.setIndex === setIndex),
+        ),
+        { exerciseOrder, setIndex, correctedAt: set.updatedAt },
+      ]
+      set.correctedAt = set.updatedAt
+      return jsonResponse({ date, sessionId, corrected: true, set })
     }
 
     if (method === 'PUT') {
@@ -378,6 +499,7 @@ export function createWorkoutServer(): WorkoutServer {
         band?: { label: string; count: number } | null
       }
 
+      stored.touchedAt = stored.touchedAt ?? clock
       if (body.action === 'skip') {
         set.status = 'skipped'
         set.result = null

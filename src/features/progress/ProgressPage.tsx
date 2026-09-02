@@ -1,3 +1,4 @@
+import { RecordedWorkoutSets } from "./RecordedWorkoutSets";
 import { CalendarDays, Dumbbell, Loader2, RefreshCw } from "lucide-react";
 import { motion } from "motion/react";
 import { useMemo } from "react";
@@ -93,7 +94,11 @@ export function ProgressPage() {
         </motion.div>
 
         <motion.div variants={listItemVariants}>
-          <RecentWorkouts state={status} history={history} />
+          <RecentWorkouts
+            state={status}
+            history={history}
+            onHistoryChanged={reload}
+          />
         </motion.div>
       </motion.div>
     </>
@@ -290,9 +295,12 @@ function Stat({
 function RecentWorkouts({
   state,
   history,
+  onHistoryChanged,
 }: {
   state: "loading" | "ready" | "error";
   history: ReturnType<typeof useWorkoutHistory>["history"];
+  /** Re-read the list once a workout has been removed from it. */
+  onHistoryChanged: () => void;
 }) {
   if (state !== "ready" || !history) return null;
 
@@ -390,6 +398,25 @@ function RecentWorkouts({
                 )}
               </div>
               <SetSummary progress={workout.progress} />
+              {/*
+                Round 21. Two things live behind this, and BOTH need to be
+                reachable from every recorded workout:
+
+                  - recorded history can be factually wrong (the user's own
+                    Triceps sets say "3 kg" for what were bands), so a completed
+                    set can be corrected one at a time
+                  - an accidental Start can be taken back, and a workout with
+                    nothing recorded in it is precisely the one that needs it
+
+                So it is offered unconditionally rather than only where
+                something was completed. Collapsed and fetched on demand, so the
+                list still costs one request.
+              */}
+              <RecordedWorkoutSets
+                date={workout.date}
+                sessionId={workout.sessionId}
+                onCancelled={onHistoryChanged}
+              />
             </li>
           ))}
         </ol>

@@ -1,4 +1,4 @@
-import { ArrowLeft, Loader2, Play, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Loader2, Play, RefreshCw, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router'
 
@@ -135,6 +135,10 @@ function WorkoutBar({
   onStart: () => void
 }) {
   const { status, started, starting, progress, mutationError, reload } = workout
+  const { cancelable, cancelling, cancelStart } = workout
+  // The confirmation is local to this card: cancelling a Start is destructive,
+  // so it is never one tap away.
+  const [confirming, setConfirming] = useState(false)
 
   return (
     <Card className="mb-4 p-4">
@@ -200,6 +204,61 @@ function WorkoutBar({
             {progress.completed} completed · {progress.skipped} skipped
           </p>
           <ProgressBar resolved={progress.resolved} total={progress.total} />
+
+          {/*
+            TAKING BACK AN ACCIDENTAL START.
+
+            Offered only while the SERVER says the workout was never worked in.
+            A workout that was completed and then undone reads 0 / 0 here too,
+            and deliberately does not get this button — the training happened,
+            even though the sets were put back.
+          */}
+          {cancelable && !confirming && (
+            <button
+              type="button"
+              onClick={() => setConfirming(true)}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-control border border-edge-strong px-3 py-1.5 text-[12px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite"
+            >
+              <Trash2 className="size-3.5" aria-hidden="true" />
+              Cancel workout start
+            </button>
+          )}
+
+          {cancelable && confirming && (
+            <div className="mt-3 rounded-control border border-edge-strong bg-surface-overlay/60 p-3">
+              <p className="text-[13px] font-bold text-offwhite">Cancel this workout?</p>
+              <p className="mt-0.5 text-[12px] text-ink-faint">
+                No sets have been recorded. This will return the workout to Not
+                started.
+              </p>
+              <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirming(false)
+                    void cancelStart()
+                  }}
+                  disabled={cancelling}
+                  className="inline-flex items-center gap-1.5 rounded-control bg-coral px-3 py-1.5 text-[12px] font-bold text-offwhite transition-opacity duration-150 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {cancelling ? (
+                    <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Trash2 className="size-3.5" aria-hidden="true" />
+                  )}
+                  Cancel workout
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirming(false)}
+                  disabled={cancelling}
+                  className="rounded-control px-3 py-1.5 text-[12px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Keep workout
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
