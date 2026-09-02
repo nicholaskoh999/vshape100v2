@@ -292,6 +292,31 @@ export function createFakeD1() {
   let setWriteGate: Promise<void> | null = null
   /** Round 21. Hold every cancel write, to force the race the other way. */
   let cancelGate: Promise<void> | null = null
+  /**
+   * Round 21 Correction 3. Park ordinary set writes ONE AT A TIME.
+   *
+   * `setWriteGate` holds every set write on a single shared promise and frees
+   * them all together, which is right for the cancel race but cannot express
+   * the race that matters here: two requests that BOTH pre-read the same
+   * version, then commit one after the other. That needs each parked write to
+   * be released individually, in a chosen order.
+   */
+  let setWriteQueue: (() => void)[] | null = null
+  /** Waiters for "n set writes are now parked", so no test has to poll. */
+  let setWriteQueueWaiters: { count: number; resolve: () => void }[] = []
+
+  /** Park the calling statement and hand back the promise it waits on. */
+  function parkSetWrite(): Promise<void> {
+    return new Promise<void>((resolve) => {
+      setWriteQueue?.push(resolve)
+      const parked = setWriteQueue?.length ?? 0
+      setWriteQueueWaiters = setWriteQueueWaiters.filter((waiter) => {
+        if (waiter.count > parked) return true
+        waiter.resolve()
+        return false
+      })
+    })
+  }
 
   /**
    * The scheduled-provenance filter the progression reads carry, in the
@@ -1309,6 +1334,18 @@ export function createFakeD1() {
           // from returning a ghost success.
           return 0
         }
+        // COMPARE-AND-SWAP, read off the REAL statement.
+        //
+        // The condition is applied only because the production SQL carries
+        // `AND updated_at = ?`, and the value compared is the one production
+        // actually bound {DASH} the trailing argument. If that clause were
+        // dropped from the store, this branch would stop guarding too, and the
+        // race regressions would fail. The stand-in must never be more correct
+        // than the code it stands in for.
+        if (sql.includes('AND updated_at = ?')) {
+          const expected = args[args.length - 1] as number
+          if (row.updated_at !== expected) return 0
+        }
         workoutSets.set(id, {
           ...row,
           status,
@@ -1729,7 +1766,12 @@ export function createFakeD1() {
                       // commits.
                       setWriteGate && sql.includes('UPDATE workout_sets')
                       ? setWriteGate
-                      : null
+                      : // Round 21 Correction 3. The same window, but parked
+                        // per statement so two writes that both pre-read the
+                        // same version can be committed in a chosen order.
+                        setWriteQueue && sql.includes('UPDATE workout_sets')
+                        ? parkSetWrite()
+                        : null
             if (gate) {
               await gate
               const previous = writeChain
@@ -1901,6 +1943,41 @@ export function createFakeD1() {
       return () => {
         setWriteGate = null
         release()
+      }
+    },
+    /**
+     * Park ordinary set writes individually and release them in order.
+     *
+     * Round 21 Correction 3. Lets a test drive two requests past their
+     * pre-reads — so both genuinely hold the same version — and then
+     * commit them one at a time. Nothing here depends on Promise timing: a
+     * write is released only when the test says so.
+     */
+    queueSetWrites() {
+      setWriteQueue = []
+      setWriteQueueWaiters = []
+      return {
+        /** Resolves once `count` set writes are parked. */
+        async waitForParked(count: number) {
+          if ((setWriteQueue?.length ?? 0) >= count) return
+          await new Promise<void>((resolve) => {
+            setWriteQueueWaiters.push({ count, resolve })
+          })
+        },
+        /** Commit the earliest still-parked write. */
+        releaseNext() {
+          const next = setWriteQueue?.shift()
+          if (!next) throw new Error('no set write is parked')
+          next()
+        },
+        parked: () => setWriteQueue?.length ?? 0,
+        /** Stop queueing; anything still parked is released. */
+        stop() {
+          const remaining = setWriteQueue ?? []
+          setWriteQueue = null
+          setWriteQueueWaiters = []
+          for (const release of remaining) release()
+        },
       }
     },
     /** The same, for the cancel write, so the race can be forced either way. */

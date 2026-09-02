@@ -209,15 +209,40 @@ export interface WorkoutStore {
   ): Promise<WorkoutSetRecord | null>
 
   /**
-   * Update only the live logging columns of an existing set.
+   * Update only the live logging columns of an existing set, COMPARE-AND-SWAP.
    *
-   * Answers whether a row was ACTUALLY changed. That matters because a set can
-   * cease to exist between a caller reading it and writing it — Cancel Start
-   * removes the whole occurrence — and an update that quietly matched nothing
-   * would otherwise report success for a row that is gone, inventing a
-   * completed set out of a workout the user just cancelled.
+   * `expectedUpdatedAt` is the version the caller actually read. It travels
+   * into the statement's own WHERE clause, so the write itself proves the row
+   * is still the one the caller looked at.
+   *
+   * WHY THE VERSION HAS TO BE IN THE WRITE.
+   *
+   * `nextSetVersion` guarantees a successful write produces a version ahead of
+   * the one it replaces. On its own that is not enough, because two requests
+   * can read the SAME version before either of them writes:
+   *
+   *   stored version T
+   *   B reads T, C reads T
+   *   both compute nextSetVersion(T, T) = T + 1
+   *   B commits: version T + 1
+   *   C commits: version T + 1
+   *
+   * Both changed the user's recorded facts, and the version moved once. C
+   * overwrote B without either of them noticing, and an editor who read T + 1
+   * in between still holds a token that matches the row C has since rewritten
+   * — so a History Correction against it silently discards C's work. D1's
+   * single writer does not help here: it serialises the two WRITES, it does not
+   * stop the two READS from both happening first.
+   *
+   * With the version in the WHERE clause, the second write matches no row.
+   *
+   * Answers whether a row was ACTUALLY changed. Zero rows now has two honest
+   * causes — the row is gone (Cancel Start removes the whole occurrence
+   * atomically), or the row has moved on since it was read — and both mean
+   * the same thing to the caller: this write did not happen, so do not report
+   * that it did.
    */
-  updateSet(record: WorkoutSetRecord): Promise<boolean>
+  updateSet(record: WorkoutSetRecord, expectedUpdatedAt: number): Promise<boolean>
 
   /**
    * Bump the occurrence's updated_at when its sets change, and record that the
@@ -621,7 +646,12 @@ export async function applySetUpdate(
       status: 'skipped',
       updatedAt: nextSetVersion(existing.updatedAt, now),
     }
-    if (!(await store.updateSet(record))) return { ok: false, reason: 'not_found' }
+    // Compare-and-swap on the version that was just read. If it lost, the
+    // occurrence is NOT touched: a write that did not happen must not mark the
+    // workout as worked in, and must not change what Cancel Start may do.
+    if (!(await store.updateSet(record, existing.updatedAt))) {
+      return { ok: false, reason: 'not_found' }
+    }
     await store.touchOccurrence(googleSub, workoutDate, sessionId, now)
     return { ok: true, record }
   }
@@ -674,7 +704,14 @@ export async function applySetUpdate(
   // occurrence since — atomically, and legitimately. If this update matched no
   // row, the set is gone, and reporting success would manufacture a completed
   // set inside a workout that no longer exists.
-  if (!(await store.updateSet(record))) return { ok: false, reason: 'not_found' }
+  // The version travels into the statement too, so the write matches only the
+  // row this call actually looked at. If another request rewrote this set in
+  // the meantime, this completion lost, and reporting success would quietly
+  // discard what that request recorded.
+  if (!(await store.updateSet(record, existing.updatedAt))) {
+    return { ok: false, reason: 'not_found' }
+  }
+  // Only a write that landed touches the workout.
   await store.touchOccurrence(googleSub, workoutDate, sessionId, now)
   return { ok: true, record }
 }
@@ -714,7 +751,11 @@ export async function undoSet(
     status: 'pending',
     updatedAt: nextSetVersion(existing.updatedAt, now),
   }
-  if (!(await store.updateSet(record))) return { ok: false, reason: 'not_found' }
+  // Compare-and-swap, exactly as Complete and Skip do. An Undo that lost the
+  // race must not blank out a completion that landed after it read the set.
+  if (!(await store.updateSet(record, existing.updatedAt))) {
+    return { ok: false, reason: 'not_found' }
+  }
   // Undo still TOUCHES the workout. Putting the sets back does not put back the
   // fact that they were resolved, and Cancel Start must keep refusing.
   await store.touchOccurrence(googleSub, workoutDate, sessionId, now)

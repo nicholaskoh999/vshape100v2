@@ -426,10 +426,17 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
       return row ? toSet(row) : null
     },
 
-    async updateSet(record) {
+    async updateSet(record, expectedUpdatedAt) {
       // Only the live logging columns are assignable. The snapshot columns and
       // the ownership token are not in this statement at all, so no code path
       // can rewrite history or re-home a set.
+      //
+      // COMPARE-AND-SWAP. The last bound value is the version the caller READ,
+      // not the version it is writing. It is the whole point of the statement:
+      // eligibility travels inside the write, so the row is proved to be the
+      // one the caller looked at at the moment it is replaced. A read followed
+      // by an unconditional write cannot promise that, however carefully the
+      // read is done, because another request can commit in between.
       const result = await db
         .prepare(
           `UPDATE workout_sets
@@ -441,7 +448,8 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
                   actual_result = ?,
                   updated_at = ?
             WHERE google_sub = ? AND workout_date = ? AND session_id = ?
-              AND exercise_order = ? AND set_index = ?`,
+              AND exercise_order = ? AND set_index = ?
+              AND updated_at = ?`,
         )
         .bind(
           record.status,
@@ -456,12 +464,16 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
           record.sessionId,
           record.exerciseOrder,
           record.setIndex,
+          expectedUpdatedAt,
         )
         .run()
 
-      // Did it land? A set can be gone by now - Cancel Start removes the whole
-      // occurrence atomically - and a caller that assumed success would report
-      // a completed set inside a workout that no longer exists.
+      // Did it land? Two honest reasons it may not have. The set can be gone
+      // — Cancel Start removes the whole occurrence atomically — or it
+      // can have been rewritten since it was read. Either way this write lost,
+      // and a caller that assumed success would report a set that either sits
+      // inside a workout that no longer exists, or silently replaces somebody
+      // else's recorded performance.
       return (result.meta?.changes ?? 0) > 0
     },
 
