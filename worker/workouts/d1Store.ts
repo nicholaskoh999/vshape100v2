@@ -571,7 +571,24 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
     },
 
     async deleteUntouchedOccurrence(googleSub, workoutDate, sessionId) {
-      // THE WHOLE ELIGIBILITY DECISION LIVES IN THIS STATEMENT.
+      // THE WHOLE CANCELLATION IS ONE TRANSACTIONAL BOUNDARY.
+      //
+      // Parent and children go together, in a single batch, because D1 runs a
+      // batch as one transaction. Correction 1: this used to be a conditional
+      // parent DELETE via `.run()` followed by a SEPARATE batch for the
+      // children, which opened a window nothing could close --
+      //
+      //   1. the parent delete commits
+      //   2. the occurrence is gone but its set rows are still there
+      //   3. a concurrent set write matches one of those rows and reports
+      //      SUCCESS to its caller
+      //   4. the child cleanup commits and the row disappears
+      //
+      // The final state looked right, and the user had been told their set was
+      // recorded into a workout that no longer existed. Making it one batch
+      // means that intermediate state is never observable.
+      //
+      // THE ELIGIBILITY DECISION LIVES IN THE FIRST STATEMENT.
       //
       // Not read-then-delete. The conditions are evaluated against committed
       // state at the instant the delete commits, so a set completion that lands
@@ -591,40 +608,37 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
       //                             undo leaves behind. This is what protects
       //                             workouts that predate touched_at, since the
       //                             migration deliberately back-fills nothing.
-      const result = await db
-        .prepare(
-          `DELETE FROM workout_occurrences
-            WHERE google_sub = ? AND workout_date = ? AND session_id = ?
-              AND touched_at IS NULL
-              AND NOT EXISTS (
-                    SELECT 1 FROM workout_sets s
-                     WHERE s.google_sub   = workout_occurrences.google_sub
-                       AND s.workout_date = workout_occurrences.workout_date
-                       AND s.session_id   = workout_occurrences.session_id
-                       AND ( s.status <> 'pending'
-                          OR s.actual_load_value IS NOT NULL
-                          OR s.actual_load_unit  IS NOT NULL
-                          OR s.actual_band_label IS NOT NULL
-                          OR s.actual_band_count IS NOT NULL
-                          OR s.actual_result     IS NOT NULL
-                          OR s.updated_at <> workout_occurrences.started_at )
-              )`,
-        )
-        .bind(googleSub, workoutDate, sessionId)
-        .run()
-
-      const removed = (result.meta?.changes ?? 0) > 0
-      if (!removed) return false
-
-      // The children go only BECAUSE the parent went, each gated on the
-      // occurrence being absent. The same guarded-child idiom the Start insert
-      // uses, and it does not depend on foreign keys being enforced - Fresh
-      // Start deletes its children explicitly for the same reason.
+      //
+      // The children are gated on the parent being ABSENT, so they do nothing
+      // at all when the guard refuses. That also makes this safe whether or not
+      // foreign keys cascade: if the database already removed them, these
+      // statements simply change zero rows.
       const gone = `NOT EXISTS (
               SELECT 1 FROM workout_occurrences o
                WHERE o.google_sub = ? AND o.workout_date = ? AND o.session_id = ?
             )`
-      await db.batch([
+
+      const results = await db.batch([
+        db
+          .prepare(
+            `DELETE FROM workout_occurrences
+              WHERE google_sub = ? AND workout_date = ? AND session_id = ?
+                AND touched_at IS NULL
+                AND NOT EXISTS (
+                      SELECT 1 FROM workout_sets s
+                       WHERE s.google_sub   = workout_occurrences.google_sub
+                         AND s.workout_date = workout_occurrences.workout_date
+                         AND s.session_id   = workout_occurrences.session_id
+                         AND ( s.status <> 'pending'
+                            OR s.actual_load_value IS NOT NULL
+                            OR s.actual_load_unit  IS NOT NULL
+                            OR s.actual_band_label IS NOT NULL
+                            OR s.actual_band_count IS NOT NULL
+                            OR s.actual_result     IS NOT NULL
+                            OR s.updated_at <> workout_occurrences.started_at )
+                )`,
+          )
+          .bind(googleSub, workoutDate, sessionId),
         db
           .prepare(
             `DELETE FROM workout_sets
@@ -641,7 +655,11 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
           .bind(googleSub, workoutDate, sessionId, googleSub, workoutDate, sessionId),
       ])
 
-      return true
+      // The PARENT statement is the authority on whether a cancellation
+      // happened. The child statements are cleanup, and their counts say
+      // nothing about eligibility - with foreign keys cascading they would
+      // legitimately be zero.
+      return ((results[0]?.meta?.changes ?? 0) as number) > 0
     },
 
     async listCorrectionTimes(googleSub, workoutDate, sessionId) {

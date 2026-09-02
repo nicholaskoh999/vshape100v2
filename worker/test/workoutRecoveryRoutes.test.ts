@@ -350,3 +350,136 @@ describe('PUT .../sets/:order/:index/correction — correct a recorded set', () 
     }
   })
 })
+
+/* ------------------------------------------------------------------ */
+/* Correction 1 — the corrected timestamp on the wire                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Blocker 2.
+ *
+ * The successful correction response used to send `correctedAt: null`, because
+ * `toPublicSet` defaulted it and nothing passed the committed audit time in.
+ * The React editor adopts that response directly, so for one render the app
+ * showed the corrected Black ×3 truth while claiming the set had never been
+ * corrected — the mark only appeared after some later refetch.
+ *
+ * The React test did not catch it because the in-memory stand-in set
+ * `correctedAt` itself, making the double MORE correct than production. These
+ * go through the REAL Worker handler, where nothing can paper over it.
+ */
+describe('a successful correction carries its audit timestamp', () => {
+  const path = `${DATE}/${SESSION}/sets/0/0/correction`
+
+  async function completedWorkout() {
+    const fake = createFakeD1()
+    const token = await seedToken(fake.db, 'sub-a', 'a@example.com')
+    await start(fake.db, token)
+    await complete(fake.db, token)
+    const read = await call(fake.db, { token })
+    const set = (read.body.sets as unknown as { updatedAt: number; correctedAt: number | null }[])[0]
+    return { fake, token, updatedAt: set.updatedAt, correctedAt: set.correctedAt }
+  }
+
+  const band = (expectedUpdatedAt: number) => ({
+    inputType: 'resistance_band',
+    band: { label: 'Black', count: 3 },
+    result: 12,
+    expectedUpdatedAt,
+  })
+
+  it('reports the committed correction time in the response itself', async () => {
+    const { fake, token, updatedAt, correctedAt } = await completedWorkout()
+    // Before: never corrected, and the read says so honestly.
+    expect(correctedAt).toBeNull()
+
+    const { response, body } = await call(fake.db, {
+      token, method: 'PUT', origin: ORIGIN, path, body: band(updatedAt),
+    })
+
+    expect(response.status).toBe(200)
+    expect(body.corrected).toBe(true)
+    const set = body.set as unknown as Record<string, unknown>
+    expect(typeof set.correctedAt).toBe('number')
+
+    // It is the AUDIT EVENT's own timestamp, not an arbitrary clock reading.
+    expect(fake.workoutSetCorrections.size).toBe(1)
+    const audit = [...fake.workoutSetCorrections.values()][0]
+    expect(set.correctedAt).toBe(audit.corrected_at)
+  })
+
+  it('answers the same value on a subsequent read', async () => {
+    const { fake, token, updatedAt } = await completedWorkout()
+    const saved = await call(fake.db, {
+      token, method: 'PUT', origin: ORIGIN, path, body: band(updatedAt),
+    })
+    const fromSave = (saved.body.set as unknown as Record<string, unknown>).correctedAt
+
+    const read = await call(fake.db, { token })
+    const fromRead = (read.body.sets as unknown as { correctedAt: number | null }[])[0].correctedAt
+
+    // No drift between what the save said and what the workout says afterwards.
+    expect(fromRead).toBe(fromSave)
+  })
+
+  it('does NOT manufacture a timestamp for a no-op', async () => {
+    const { fake, token, updatedAt } = await completedWorkout()
+
+    const { body } = await call(fake.db, {
+      token, method: 'PUT', origin: ORIGIN, path,
+      body: { inputType: 'weight_kg', load: { value: 20, unit: 'kg' }, result: 12, expectedUpdatedAt: updatedAt },
+    })
+
+    expect(body.corrected).toBe(false)
+    // Never corrected, and a no-op does not make it look otherwise.
+    expect((body.set as unknown as Record<string, unknown>).correctedAt).toBeNull()
+    expect(fake.workoutSetCorrections.size).toBe(0)
+  })
+
+  it('preserves an EXISTING correction time when a later no-op is submitted', async () => {
+    const { fake, token, updatedAt } = await completedWorkout()
+    const first = await call(fake.db, {
+      token, method: 'PUT', origin: ORIGIN, path, body: band(updatedAt),
+    })
+    const original = (first.body.set as unknown as Record<string, unknown>).correctedAt
+    const nextVersion = (first.body.set as unknown as { updatedAt: number }).updatedAt
+
+    // Submit exactly what is now stored: no event happened, so the existing
+    // history must be reported unchanged rather than refreshed.
+    const noop = await call(fake.db, {
+      token, method: 'PUT', origin: ORIGIN, path, body: band(nextVersion),
+    })
+
+    expect(noop.body.corrected).toBe(false)
+    expect((noop.body.set as unknown as Record<string, unknown>).correctedAt).toBe(original)
+    expect(fake.workoutSetCorrections.size).toBe(1)
+  })
+
+  it('reports the LATEST event after a second real correction', async () => {
+    const { fake, token, updatedAt } = await completedWorkout()
+    const first = await call(fake.db, {
+      token, method: 'PUT', origin: ORIGIN, path, body: band(updatedAt),
+    })
+    const firstAt = (first.body.set as unknown as Record<string, unknown>).correctedAt
+    const nextVersion = (first.body.set as unknown as { updatedAt: number }).updatedAt
+
+    const second = await call(fake.db, {
+      token, method: 'PUT', origin: ORIGIN, path,
+      body: { inputType: 'weight_kg', load: { value: 9, unit: 'kg' }, result: 10, expectedUpdatedAt: nextVersion },
+    })
+
+    expect(second.body.corrected).toBe(true)
+    const secondAt = (second.body.set as unknown as Record<string, unknown>).correctedAt as number
+    // Two distinct events, appended rather than replaced. The timestamps can be
+    // equal - both corrections can land inside the same millisecond - so the
+    // count is what proves the audit chained, and the ordering is asserted as
+    // non-decreasing rather than strictly later.
+    expect(fake.workoutSetCorrections.size).toBe(2)
+    expect(new Set([...fake.workoutSetCorrections.keys()]).size).toBe(2)
+    expect(secondAt).toBeGreaterThanOrEqual(firstAt as number)
+
+    // And the workout read agrees with the newer of the two.
+    const read = await call(fake.db, { token })
+    expect((read.body.sets as unknown as { correctedAt: number }[])[0].correctedAt).toBe(secondAt)
+  })
+})

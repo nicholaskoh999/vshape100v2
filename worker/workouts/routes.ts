@@ -368,7 +368,11 @@ async function handleSetCorrection(
     // False when the asserted facts were already the stored facts. Nothing was
     // written and no audit event exists, because no correction happened.
     corrected: outcome.corrected,
-    set: toPublicSet(outcome.record),
+    // The committed audit event's own timestamp, so the client can show the
+    // set as corrected immediately rather than only after a later refetch. On a
+    // no-op this is whatever the set's real history already said - including
+    // null, when it has never been corrected.
+    set: toPublicSet(outcome.record, outcome.correctedAt),
   })
 }
 

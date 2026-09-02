@@ -92,7 +92,7 @@ export function RecordedWorkoutSets({
       const conflict = (error as { status?: number }).status === 409
       setCancelError(
         conflict
-          ? 'This workout has recorded sets, so it cannot be cancelled.'
+          ? 'This workout has already been used, so its start can no longer be cancelled.'
           : 'Could not cancel this workout. Check your connection and try again.',
       )
       // Our picture is out of date either way; go and get the truthful one.

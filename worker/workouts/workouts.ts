@@ -828,9 +828,33 @@ export type CorrectionWrite = {
 }
 
 export type CorrectionOutcome =
-  | { ok: true; record: WorkoutSetRecord; corrected: true }
+  | {
+      ok: true
+      record: WorkoutSetRecord
+      corrected: true
+      /**
+       * When the audit event that just committed says the correction happened.
+       *
+       * Carried out of here so the response can tell the client the truth
+       * immediately. Without it the successful reply said `correctedAt: null`
+       * and the UI lost its "Corrected" mark until some later refetch —
+       * reporting, for one render, that a set it had just corrected never was.
+       */
+      correctedAt: number
+    }
   /** The asserted facts are already the stored facts; nothing was written. */
-  | { ok: true; record: WorkoutSetRecord; corrected: false }
+  | {
+      ok: true
+      record: WorkoutSetRecord
+      corrected: false
+      /**
+       * The set's EXISTING correction time, if it was corrected before, and
+       * null otherwise. A no-op must never manufacture a fresh timestamp: no
+       * event happened, so claiming one would be a small lie in the audit's own
+       * language.
+       */
+      correctedAt: number | null
+    }
   | { ok: false; reason: 'not_found' }
   /** Only a completed set records a performance that can be wrong. */
   | { ok: false; reason: 'not_completed' }
@@ -888,7 +912,19 @@ export async function correctSet(
     result: existing.result,
   }
   if (isNoOpCorrection(before, after)) {
-    return { ok: true, record: existing, corrected: false }
+    // Nothing is written, so nothing new is claimed. Whatever the set's real
+    // correction history says stays exactly as it was.
+    const history = await store.listCorrectionTimes(
+      address.googleSub,
+      address.workoutDate,
+      address.sessionId,
+    )
+    const existingCorrection =
+      history.find(
+        (row) =>
+          row.exerciseOrder === address.exerciseOrder && row.setIndex === address.setIndex,
+      )?.correctedAt ?? null
+    return { ok: true, record: existing, corrected: false, correctedAt: existingCorrection }
   }
 
   if (existing.updatedAt !== expectedUpdatedAt) return { ok: false, reason: 'stale' }
@@ -917,5 +953,8 @@ export async function correctSet(
     result: after.result,
     updatedAt: now,
   }
-  return { ok: true, record, corrected: true }
+  // `now` is the audit event's own `corrected_at`: the same value written into
+  // the row in the batch above, not a second clock reading and not the client's
+  // idea of the time.
+  return { ok: true, record, corrected: true, correctedAt: now }
 }

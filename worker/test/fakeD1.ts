@@ -1687,8 +1687,18 @@ export function createFakeD1() {
 
   function prepare(sql: string) {
     const statement = {
+      /**
+       * The statement's own SQL, so `batch` can tell which batch it is looking
+       * at. Read off the REAL text the production store sent — never a label a
+       * caller attaches — which is the same rule every guard in this file
+       * follows.
+       */
+      sql,
       bind(...args: unknown[]) {
-        return {
+        const bound = {
+          sql,
+          /** Set by `batch` while this statement runs as part of one. */
+          inBatch: false,
           async first<T>() {
             return execute(sql, args) as T | null
           },
@@ -1703,18 +1713,22 @@ export function createFakeD1() {
             // it parks here rather than at the batch gate. Parking it lets a
             // test drive BOTH sides past their pre-reads before either commits.
             const gate =
-              holidayGate && sql.includes('holiday_overrides')
+              // Never gate a statement that is running as part of a batch: the
+              // batch already holds the single-writer lock, and taking it again
+              // here would deadlock rather than model anything real. A batch is
+              // parked as a whole, at the batch boundary.
+              bound.inBatch
+                ? null
+                : holidayGate && sql.includes('holiday_overrides')
                 ? holidayGate
-                : trainingFlexGate && sql.includes('INSERT INTO training_flex')
-                  ? trainingFlexGate
-                  : // Round 21. Both sides of the cancel race are single
-                    // statements, so each parks here. Parking one lets a test
-                    // drive it past its pre-read and hold it there while the
-                    // other commits.
-                    setWriteGate && sql.includes('UPDATE workout_sets')
-                    ? setWriteGate
-                    : cancelGate && sql.includes('DELETE FROM workout_occurrences')
-                      ? cancelGate
+                  : trainingFlexGate && sql.includes('INSERT INTO training_flex')
+                    ? trainingFlexGate
+                    : // Round 21. A set write is a single statement, so it
+                      // parks here. Parking it lets a test drive it past its
+                      // pre-read and hold it there while a cancellation
+                      // commits.
+                      setWriteGate && sql.includes('UPDATE workout_sets')
+                      ? setWriteGate
                       : null
             if (gate) {
               await gate
@@ -1744,6 +1758,7 @@ export function createFakeD1() {
             }
           },
         }
+        return bound
       },
     }
     return statement
@@ -1762,8 +1777,18 @@ export function createFakeD1() {
    * result of the batches before it. Without that, a guarded insert could
    * read a stale occurrence.
    */
-  async function batch(statements: { run: () => Promise<unknown> }[]) {
+  async function batch(
+    statements: { run: () => Promise<unknown>; sql?: string; inBatch?: boolean }[],
+  ) {
     if (batchGate) await batchGate
+    // Round 21 Correction 1. Cancellation is ONE batch — parent and children
+    // together — so it is parked as a whole. Identified by the statement text
+    // the production store actually sent: split the parent delete back out of
+    // the batch and this stops parking it, so the atomicity test fails rather
+    // than passing on the stand-in's goodwill.
+    if (cancelGate && statements.some((s) => s.sql?.includes('DELETE FROM workout_occurrences'))) {
+      await cancelGate
+    }
 
     const previous = writeChain
     let finished!: () => void
@@ -1772,11 +1797,21 @@ export function createFakeD1() {
     })
     await previous
 
+    // Set ONLY once the write lock is actually held, and cleared the moment the
+    // statements are done. Setting it earlier would leave it true across the
+    // await above, and a concurrent single statement would see it and skip its
+    // own gate - which is not a lock this batch holds yet.
+    // Mark THESE statements as belonging to a batch, rather than setting a
+    // global flag: D1 holds one writer for the whole batch, so a gate inside it
+    // would wait for a lock the batch itself holds — but an unrelated statement
+    // running at the same moment must still be gated normally.
+    for (const statement of statements) statement.inBatch = true
     try {
       const results = []
       for (const statement of statements) results.push(await statement.run())
       return results
     } finally {
+      for (const statement of statements) statement.inBatch = false
       finished()
     }
   }

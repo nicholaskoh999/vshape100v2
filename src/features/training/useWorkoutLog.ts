@@ -206,7 +206,7 @@ export function useWorkoutLog(date: string, sessionId: string): WorkoutLogState 
       const conflict = error instanceof WorkoutApiError && error.status === 409
       setMutationError(
         conflict
-          ? 'This workout has recorded sets, so it cannot be cancelled.'
+          ? 'This workout has already been used, so its start can no longer be cancelled.'
           : 'Could not cancel this workout. Check your connection and try again.',
       )
       // Reload either way: a refusal means our picture of the workout is out of

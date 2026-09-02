@@ -181,7 +181,11 @@ describe('correcting a recorded set', () => {
     expect(stored.status).toBe('completed')
   })
 
-  it('marks the set as Corrected afterwards', async () => {
+  it('shows Corrected IMMEDIATELY, with no reload or reopen', async () => {
+    // Blocker 2. The successful response used to carry `correctedAt: null`, and
+    // the editor adopts that response directly — so for one render the app
+    // showed the corrected Black ×3 truth while claiming the set had never been
+    // corrected. The mark only appeared after some later refetch.
     seedLegacyTriceps()
     const u = await openProgress()
     await openRecordedSets(u)
@@ -189,9 +193,40 @@ describe('correcting a recorded set', () => {
     await u.click(screen.getByRole('radio', { name: 'Resistance band' }))
     await u.type(screen.getByLabelText('Band'), 'Black')
     await u.type(screen.getByLabelText('How many'), '3')
+
+    const callsBefore = server.calls.length
     await u.click(screen.getByRole('button', { name: 'Save correction' }))
 
-    await screen.findByText('Corrected')
+    // Both facts land together, off the save response alone.
+    await screen.findByText(/Black ×3 · 12 reps/)
+    expect(screen.getByText('Corrected')).toBeInTheDocument()
+
+    // And nothing re-read the workout to get there: exactly the one PUT.
+    const since = server.calls.slice(callsBefore)
+    expect(since.filter((call) => call.method === 'PUT')).toHaveLength(1)
+    expect(since.filter((call) => call.method === 'GET')).toHaveLength(0)
+  })
+
+  it('does not mark an uncorrected set as Corrected', async () => {
+    // NON-VACUITY for the indicator: it is not simply always rendered.
+    seedLegacyTriceps()
+    const u = await openProgress()
+    await openRecordedSets(u)
+
+    await screen.findByText(/3 kg × 12 reps/)
+    expect(screen.queryByText('Corrected')).not.toBeInTheDocument()
+  })
+
+  it('does not claim a correction happened when nothing changed', async () => {
+    seedLegacyTriceps()
+    const u = await openProgress()
+    await openRecordedSets(u)
+    await u.click(await screen.findByRole('button', { name: 'Edit recorded set' }))
+    await u.click(screen.getByRole('button', { name: 'Save correction' }))
+
+    await screen.findByText(/already what this set records/i)
+    // A no-op must not manufacture the mark.
+    expect(screen.queryByText('Corrected')).not.toBeInTheDocument()
   })
 
   it('says so, and writes nothing, when the correction changes nothing', async () => {
@@ -345,7 +380,7 @@ describe('cancelling a past accidental Start from Recent Workouts', () => {
 
     await u.click(screen.getByRole('button', { name: 'Cancel workout' }))
 
-    await screen.findByText(/cannot be cancelled/i)
+    await screen.findByText(/already been used/i)
     expect(server.workouts.size).toBe(1)
   })
 })

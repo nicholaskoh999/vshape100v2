@@ -148,7 +148,7 @@ describe('cancelling an accidental Start', () => {
 
     await u.click(screen.getByRole('button', { name: 'Cancel workout' }))
 
-    await screen.findByText(/cannot be cancelled/i)
+    await screen.findByText(/already been used/i)
     // Nothing was deleted, and the page shows the truthful workout again.
     expect(server.workouts.size).toBe(1)
     expect(await screen.findByText('Resume workout')).toBeInTheDocument()

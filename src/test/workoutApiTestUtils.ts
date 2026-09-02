@@ -464,9 +464,20 @@ export function createWorkoutServer(): WorkoutServer {
         bandCount: set.band ? set.band.count : null,
         result: set.result,
       }
-      // No-op first, so a correction that changes nothing writes no audit.
+      // No-op first, so a correction that changes nothing writes no audit — and
+      // reports whatever the set's real history already said, never a fresh
+      // timestamp for an event that did not happen.
       if (isNoOpCorrection(before, parsed.value)) {
-        return jsonResponse({ date, sessionId, corrected: false, set })
+        const existing =
+          stored.corrections?.find(
+            (row) => row.exerciseOrder === exerciseOrder && row.setIndex === setIndex,
+          )?.correctedAt ?? null
+        return jsonResponse({
+          date,
+          sessionId,
+          corrected: false,
+          set: { ...set, correctedAt: existing },
+        })
       }
       // Optimistic concurrency: the editor must submit the version it read.
       if (set.updatedAt !== parsed.expectedUpdatedAt) {
@@ -487,6 +498,10 @@ export function createWorkoutServer(): WorkoutServer {
         ),
         { exerciseOrder, setIndex, correctedAt: set.updatedAt },
       ]
+      // MIRRORS PRODUCTION, and only because production now does this. Before
+      // Correction 1 the real handler answered `correctedAt: null` here while
+      // this stand-in filled it in — so the stand-in was more correct than the
+      // thing it stood in for, and the UI test passed over a real defect.
       set.correctedAt = set.updatedAt
       return jsonResponse({ date, sessionId, corrected: true, set })
     }

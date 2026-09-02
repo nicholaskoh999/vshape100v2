@@ -206,3 +206,98 @@ describe('the race tests are not vacuous', () => {
     expect(outcome.ok).toBe(true)
   })
 })
+
+/* ------------------------------------------------------------------ */
+/* THE GAP — parent gone, children still writable                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Correction 1, Blocker 1.
+ *
+ * Cancel used to be a conditional parent DELETE via `.run()` followed by a
+ * SEPARATE batch for the children. Two transactional boundaries, and between
+ * them a state nothing could rule out:
+ *
+ *   1. the parent delete commits
+ *   2. the occurrence is gone, but its set rows are still there
+ *   3. a concurrent set write matches one of those rows and reports SUCCESS
+ *   4. the child cleanup commits and the row disappears
+ *
+ * The final state looked correct, and the user had been told a set was recorded
+ * into a workout that no longer existed.
+ *
+ * The tests above cannot see that: they park the SET write and let the whole
+ * cancellation finish first, so the window never opens. These park the
+ * CANCELLATION and let a set write run while it is mid-flight, which is the
+ * only way to observe the gap — and with parent and children in one batch,
+ * there is no moment at which it exists.
+ */
+describe('the cancellation is ONE transactional boundary', () => {
+  it('never lets a set write succeed against a workout whose parent is gone', async () => {
+    const { fake, store } = await started()
+
+    // The cancellation is parked at its batch — before ANY of its statements
+    // have run, because they are one unit.
+    const release = fake.holdCancelWrites()
+    const cancelling = cancelWorkoutStart(store, ACCOUNT, DATE, SESSION)
+
+    // A set write runs squarely inside the window the old split shape opened.
+    const completion = await applySetUpdate(store, ACCOUNT, DATE, SESSION, 0, 0, COMPLETE, 200)
+
+    release()
+    const cancelled = await cancelling
+
+    // THE INVARIANT: the two outcomes are never both favourable. Either the
+    // cancellation happened and the set write was refused, or the set write
+    // happened and the cancellation was refused. What must never occur is a
+    // successful set write against an occurrence that has been removed.
+    const ghost = completion.ok && fake.occurrences.size === 0
+    expect(ghost).toBe(false)
+
+    if (completion.ok) {
+      // The set write won: the workout is intact and the cancellation refused.
+      expect(cancelled).toEqual({ ok: false, reason: 'workout_touched' })
+      expect(fake.occurrences.size).toBe(1)
+      expect(fake.workoutSets.size).toBe(3)
+    } else {
+      // The cancellation won: nothing of the workout survives.
+      expect(cancelled).toEqual({ ok: true })
+      expect(fake.occurrences.size).toBe(0)
+      expect(fake.workoutSets.size).toBe(0)
+    }
+  })
+
+  it('never leaves a set row behind a removed occurrence, even momentarily', async () => {
+    const { fake, store } = await started()
+
+    const release = fake.holdCancelWrites()
+    const cancelling = cancelWorkoutStart(store, ACCOUNT, DATE, SESSION)
+
+    // Sample the store from outside while the cancellation is in flight. With
+    // one batch there is no observable moment where the parent has gone and its
+    // children have not.
+    const samples: { occurrences: number; sets: number }[] = []
+    for (let i = 0; i < 5; i += 1) {
+      samples.push({ occurrences: fake.occurrences.size, sets: fake.workoutSets.size })
+      await Promise.resolve()
+    }
+    release()
+    await cancelling
+
+    samples.push({ occurrences: fake.occurrences.size, sets: fake.workoutSets.size })
+    // Orphaned children are the shape of the gap: parent gone, sets remaining.
+    expect(samples.some((s) => s.occurrences === 0 && s.sets > 0)).toBe(false)
+  })
+
+  it('refuses a set write that arrives after the whole unit has committed', async () => {
+    // NON-VACUITY for the invariant above: when the cancellation is allowed to
+    // finish first, the set write is genuinely refused rather than the test
+    // simply never reaching a decision.
+    const { fake, store } = await started()
+    await cancelWorkoutStart(store, ACCOUNT, DATE, SESSION)
+
+    const outcome = await applySetUpdate(store, ACCOUNT, DATE, SESSION, 0, 0, COMPLETE, 200)
+    expect(outcome).toEqual({ ok: false, reason: 'not_found' })
+    expect(fake.workoutSets.size).toBe(0)
+  })
+})
