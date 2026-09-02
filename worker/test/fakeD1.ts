@@ -288,6 +288,10 @@ export function createFakeD1() {
   let holidayGate: Promise<void> | null = null
   /** Set to hold every training_flex write, so a race can be forced. */
   let trainingFlexGate: Promise<void> | null = null
+  /** Round 21. Hold every ordinary set write, to force the cancel race. */
+  let setWriteGate: Promise<void> | null = null
+  /** Round 21. Hold every cancel write, to force the race the other way. */
+  let cancelGate: Promise<void> | null = null
 
   /**
    * The scheduled-provenance filter the progression reads carry, in the
@@ -996,18 +1000,31 @@ export function createFakeD1() {
       }
 
       if (sql.includes('SELECT')) {
-        const [google_sub, workout_date, session_id, exercise_order, set_index] =
-          args as [string, string, string, number, number]
-        return [...workoutSetCorrections.values()]
+        const [google_sub, workout_date, session_id] = args as [string, string, string]
+        const owned = [...workoutSetCorrections.values()]
           .filter(
             (row) =>
               row.google_sub === google_sub &&
               row.workout_date === workout_date &&
-              row.session_id === session_id &&
-              row.exercise_order === exercise_order &&
-              row.set_index === set_index,
+              row.session_id === session_id,
           )
           .sort((a, b) => a.corrected_at - b.corrected_at)
+
+        // GROUP BY exercise_order, set_index with MAX(corrected_at) — when the
+        // real statement asks for it. A set corrected twice reports the latest.
+        if (sql.includes('GROUP BY')) {
+          const latest = new Map<string, { exercise_order: number; set_index: number; corrected_at: number }>()
+          for (const row of owned) {
+            latest.set(`${row.exercise_order}|${row.set_index}`, {
+              exercise_order: row.exercise_order,
+              set_index: row.set_index,
+              corrected_at: row.corrected_at,
+            })
+          }
+          return [...latest.values()]
+        }
+
+        return owned
       }
 
       throw new Error(`fakeD1 received an unexpected statement: ${sql}`)
@@ -1102,7 +1119,11 @@ export function createFakeD1() {
       }
     }
 
-    if (sql.includes('workout_sets')) {
+    // Dispatch is on the statement's TARGET, not on any table it happens to
+    // name. Round 21's cancel DELETE targets workout_occurrences and mentions
+    // workout_sets only inside its eligibility guard, so it must not be
+    // swallowed here — the same hazard the Round 19 flex guard hit.
+    if (sql.includes('workout_sets') && !sql.includes('DELETE FROM workout_occurrences')) {
       if (workoutFailure) throw workoutFailure
 
       // Checked before the SELECT branch: the guarded insert is itself an
@@ -1408,16 +1429,6 @@ export function createFakeD1() {
         return 0
       }
 
-      if (sql.includes('SELECT')) {
-        const [google_sub, workout_date, session_id] = args as [string, string, string]
-        const row = occurrences.get(occurrenceId(google_sub, workout_date, session_id))
-        if (!row) return null
-        // The progression read carries `AND kind = 'scheduled'`; the workout
-        // API's read does not. Honouring the difference is what lets a test
-        // prove an Extra is invisible to progression but readable as a workout.
-        return scheduledOnly(sql, [row])[0] ?? null
-      }
-
       // Round 21 — Cancel Start. The eligibility decision travels INSIDE the
       // delete, and every condition below is modelled ONLY when the real
       // statement declares it. Strip a condition from the production SQL and
@@ -1460,6 +1471,16 @@ export function createFakeD1() {
 
         occurrences.delete(id)
         return 1
+      }
+
+      if (sql.includes('SELECT')) {
+        const [google_sub, workout_date, session_id] = args as [string, string, string]
+        const row = occurrences.get(occurrenceId(google_sub, workout_date, session_id))
+        if (!row) return null
+        // The progression read carries `AND kind = 'scheduled'`; the workout
+        // API's read does not. Honouring the difference is what lets a test
+        // prove an Extra is invisible to progression but readable as a workout.
+        return scheduledOnly(sql, [row])[0] ?? null
       }
 
       if (sql.includes('UPDATE workout_occurrences')) {
@@ -1686,7 +1707,15 @@ export function createFakeD1() {
                 ? holidayGate
                 : trainingFlexGate && sql.includes('INSERT INTO training_flex')
                   ? trainingFlexGate
-                  : null
+                  : // Round 21. Both sides of the cancel race are single
+                    // statements, so each parks here. Parking one lets a test
+                    // drive it past its pre-read and hold it there while the
+                    // other commits.
+                    setWriteGate && sql.includes('UPDATE workout_sets')
+                    ? setWriteGate
+                    : cancelGate && sql.includes('DELETE FROM workout_occurrences')
+                      ? cancelGate
+                      : null
             if (gate) {
               await gate
               const previous = writeChain
@@ -1809,6 +1838,34 @@ export function createFakeD1() {
      * The counterpart to `holdBatches` for the other side of the Round 19
      * exclusion, so a test can force either write order deterministically.
      */
+    /**
+     * Hold every ordinary set write until the returned function is called.
+     *
+     * Round 21: lets a test drive a set completion past its pre-read and park
+     * it, then commit a cancellation, then release the set write — the exact
+     * window a check-then-write would lose.
+     */
+    holdSetWrites() {
+      let release!: () => void
+      setWriteGate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      return () => {
+        setWriteGate = null
+        release()
+      }
+    },
+    /** The same, for the cancel write, so the race can be forced either way. */
+    holdCancelWrites() {
+      let release!: () => void
+      cancelGate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      return () => {
+        cancelGate = null
+        release()
+      }
+    },
     holdTrainingFlexWrites() {
       let release!: () => void
       trainingFlexGate = new Promise<void>((resolve) => {
