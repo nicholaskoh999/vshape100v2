@@ -19,6 +19,7 @@ import { handleHolidayRequest } from './holiday/routes'
 import { readVapidConfig } from './notifications/config'
 import { createD1PushStore } from './notifications/d1Store'
 import { handleNotificationRequest } from './notifications/routes'
+import { handleProgrammeRequest } from './programme/routes'
 import { handleProgressionRequest } from './progression/routes'
 import { handleProgressRequest } from './progress/routes'
 import { runScheduledDelivery } from './notifications/scheduler'
@@ -41,6 +42,12 @@ export default {
 
     const inputTypeResponse = await handleExerciseInputTypeRequest(request, env)
     if (inputTypeResponse) return inputTypeResponse
+
+    // Round 22. `/api/programme` is matched before the workout API so the two
+    // never contend, and before `/api/progress*` because those prefixes are
+    // distinct but adjacent enough to be worth ordering deliberately.
+    const programmeResponse = await handleProgrammeRequest(request, env)
+    if (programmeResponse) return programmeResponse
 
     const workoutResponse = await handleWorkoutRequest(request, env)
     if (workoutResponse) return workoutResponse
