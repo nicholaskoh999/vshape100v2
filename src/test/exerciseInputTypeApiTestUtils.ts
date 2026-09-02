@@ -10,11 +10,19 @@
  * unrecognised input type refused instead of coerced.
  */
 
-import { isWorkoutInputType, type WorkoutInputType } from '@shared/workoutInput'
+import { isWorkoutInputType } from '@shared/workoutInput'
 
+/**
+ * One stored row, holding the RAW persisted value.
+ *
+ * `inputType` is a plain string, not a `WorkoutInputType`, so a test can seed
+ * the value a corrupt or future write would leave behind. Whether that value is
+ * readable is decided below by the production predicate — the double supplies
+ * storage, never the verdict.
+ */
 export type InputTypeRow = {
   exerciseId: string
-  inputType: WorkoutInputType
+  inputType: string
   updatedAt: number
 }
 
@@ -60,10 +68,30 @@ export function createInputTypeServer(initial: InputTypeRow[] = []): InputTypeSe
         return jsonResponse({ error: 'server_error' }, 500)
       }
       if (exerciseId === null) {
-        return jsonResponse({ inputTypes: [...rows.values()] })
+        // Readable and unreadable rows are reported separately, exactly as the
+        // real collection handler does — a dropped row would be
+        // indistinguishable from one that was never written.
+        const stored = [...rows.values()]
+        return jsonResponse({
+          inputTypes: stored.filter((row) => isWorkoutInputType(row.inputType)),
+          unreadable: stored
+            .filter((row) => !isWorkoutInputType(row.inputType))
+            .map((row) => row.exerciseId),
+        })
       }
-      // An exercise nobody has configured is an honest null, not a 404.
-      return jsonResponse({ exerciseId, inputType: rows.get(exerciseId) ?? null })
+
+      // THREE STATES, ALL 200, mirroring the real item handler. An exercise
+      // nobody has configured is an honest `absent`, not a 404; a row whose
+      // stored value this build cannot read is `unreadable`, which the client
+      // may offer to REPLACE. Neither is an error — a genuine storage failure
+      // is, and answers 500 above.
+      const row = rows.get(exerciseId)
+      if (!row) return jsonResponse({ exerciseId, state: 'absent', inputType: null })
+      // The production predicate decides, not this file.
+      if (!isWorkoutInputType(row.inputType)) {
+        return jsonResponse({ exerciseId, state: 'unreadable', inputType: null })
+      }
+      return jsonResponse({ exerciseId, state: 'readable', inputType: row })
     }
 
     if (method === 'PUT' && exerciseId !== null) {

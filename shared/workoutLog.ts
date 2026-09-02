@@ -807,19 +807,34 @@ export function readInputTypeSnapshot(
  *
  * Every consumer of a persisted set goes through this: the workout log, the
  * Progress derivation and the Round 16 progression engine. Null means the row
- * cannot be understood, for either of the two reasons a row can fail:
+ * cannot be understood, for any of the three reasons a row can fail:
  *
- *   - its stored input type is not a value this build knows
- *   - its stored input type and load mode contradict each other
+ *   - its stored LOAD MODE is not a value this build knows
+ *   - its stored INPUT TYPE is not a value this build knows
+ *   - the two contradict each other
  *
- * Null is never "assume kilograms". A legacy row — no snapshot at all — always
+ * IT TAKES BOTH VALUES RAW, and that is the point. Correction 1 left this
+ * taking an already-narrowed `WorkoutLoadMode`, so each caller had to narrow
+ * first — and the workout D1 mapper narrowed by COERCING an unknown stored load
+ * mode to 'none'. A row saying `bodyweight` + `elastic_vibes` therefore arrived
+ * here as `bodyweight` + `none`, which is a perfectly coherent pair, and read
+ * as ordinary bodyweight work. Progress and the progression engine saw the raw
+ * value and refused it. Three consumers, three answers, from one row.
+ *
+ * Validating internally means no caller can hide an invalid value before
+ * compatibility is checked, because no caller has to touch it first.
+ *
+ * Null is never "assume kilograms". A legacy row — no snapshot at all — still
  * derives a compatible pair from its own frozen load mode, so this changes
  * nothing for the history that already exists.
  */
 export function readSetModality(
   snapshot: unknown,
-  loadMode: WorkoutLoadMode,
+  loadMode: unknown,
 ): WorkoutInputType | null {
+  // Checked FIRST. A load mode this build cannot name makes the row
+  // unreadable outright — there is nothing to be compatible with.
+  if (!isLoadMode(loadMode)) return null
   const inputType = readInputTypeSnapshot(snapshot, loadMode)
   if (inputType === null) return null
   return isCompatibleSnapshot(inputType, loadMode) ? inputType : null

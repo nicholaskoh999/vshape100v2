@@ -71,18 +71,25 @@ async function handleRead(
 ): Promise<Response> {
   const stored = await readInputType(store, googleSub, exerciseId)
 
-  // A stored setting that cannot be read is a 500, not a null. The client did
-  // nothing wrong, and answering `null` would tell it this exercise is simply
-  // unanswered — which is a different fact, and the wrong one to act on.
-  if (stored.state === 'unreadable') {
-    return json({ error: 'input_type_unreadable' }, { status: 500 })
-  }
-
-  // An exercise nobody has configured is an honest null, not a 404: the
-  // exercise exists, its modality has simply never been stated. The client
-  // must not read null as "kilograms" — it means "not yet answered".
+  // THREE STATES ON THE WIRE, ALL OF THEM 200.
+  //
+  // Correction 1 answered 500 for `unreadable`, which was wrong in a way that
+  // mattered: the Library told the user their setting could not be read and to
+  // set it again, and then the editor — seeing a failed request — disabled
+  // every choice. The user was instructed to fix something the app would not
+  // let them fix.
+  //
+  // `unreadable` is a KNOWN, REPAIRABLE state of persisted data, not a
+  // failure of the request. It is reported as such, and the client can offer a
+  // replacement. A genuine storage failure still throws and still answers 500
+  // from the catch below, which keeps that case failing closed.
+  //
+  // `absent` is likewise an honest answer, not a 404: the exercise exists, its
+  // modality has simply never been stated. The client must not read it as
+  // "kilograms" — it means "not yet answered".
   return json({
     exerciseId,
+    state: stored.state,
     inputType: stored.state === 'readable' ? toPublicInputType(stored.record) : null,
   })
 }

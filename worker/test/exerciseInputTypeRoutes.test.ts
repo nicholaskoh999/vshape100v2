@@ -110,6 +110,7 @@ describe('authentication and identity', () => {
     })
 
     const aliceRead = await call(db, { token: alice, id: EXERCISE })
+    expect(aliceRead.body.state).toBe('readable')
     expect((aliceRead.body.inputType as Record<string, unknown>).inputType).toBe(
       'resistance_band',
     )
@@ -138,7 +139,7 @@ describe('reading', () => {
     // The exercise exists; its modality has simply never been stated. Reading
     // this as "kilograms" is the assumption the whole round removes.
     expect(response.status).toBe(200)
-    expect(body).toEqual({ exerciseId: EXERCISE, inputType: null })
+    expect(body).toEqual({ exerciseId: EXERCISE, state: 'absent', inputType: null })
   })
 
   it('lists only what this account has configured', async () => {
@@ -171,11 +172,15 @@ describe('reading', () => {
     expect(list.body.inputTypes).toEqual([])
     expect(list.body.unreadable).toEqual([EXERCISE])
 
-    // And the item read refuses outright: `null` here would mean "never
-    // answered", which is a different fact from "answered, unreadably".
+    // And the item read names the state rather than answering null — which
+    // would mean "never answered", a different fact from "answered,
+    // unreadably". Correction 2 made this a 200 with a known state instead of
+    // a 500, because it is a REPAIRABLE state of persisted data and not a
+    // failure of the request: answering 500 left the editor unable to offer
+    // the replacement the Library had just told the user to make.
     const item = await call(fake.db, { token, id: EXERCISE })
-    expect(item.response.status).toBe(500)
-    expect(item.body).toEqual({ error: 'input_type_unreadable' })
+    expect(item.response.status).toBe(200)
+    expect(item.body).toEqual({ exerciseId: EXERCISE, state: 'unreadable', inputType: null })
   })
 
   it('reports nothing as unreadable when every stored row is fine', async () => {

@@ -36,6 +36,14 @@ import {
  * already recorded keeps exactly what it recorded — including the old rows that
  * now read wrongly. Rewriting those would replace one inaccurate history with a
  * guessed one, so nothing here touches them.
+ *
+ * IT MUST BE REPAIRABLE. If the stored setting cannot be read, this is the
+ * screen the user is sent to, and it has to let them fix it. The app never
+ * repairs it on their behalf — it does not know what they meant, and guessing
+ * is the failure this whole round exists to remove — but it must not tell them
+ * to set it again and then disable every choice. So `unreadable` enables the
+ * selector with its own wording, while a genuine load FAILURE still disables
+ * it: one is knowledge about the data, the other is ignorance of it.
  */
 
 type Feedback =
@@ -60,13 +68,27 @@ export function ExerciseInputTypeCard({
   const [busy, setBusy] = useState(false)
 
   const saved = setting.record?.inputType ?? null
+  const unreadable = setting.status === 'unreadable'
+  // Choosing is allowed whenever we KNOW the state of the stored setting —
+  // including when we know it is unreadable, which is the case the user has
+  // been sent here to fix. It is refused only while loading, and after a
+  // failure that leaves us unable to say what is stored at all.
+  const canChoose = setting.status === 'ready' || unreadable
+
   // Only ever a hint, and only while nothing is saved. It comes from the
   // programme text, which is evidence about what the author intended and not
   // about the user's equipment — so it is offered, never applied.
-  const suggestion = saved === null ? suggestedInputType(exerciseId) : null
+  //
+  // Deliberately absent when the stored setting is unreadable: the user HAS
+  // answered, and putting the programme's guess in front of them would present
+  // their deliberate choice as though it had never been made.
+  const suggestion = saved === null && !unreadable ? suggestedInputType(exerciseId) : null
 
   async function choose(next: WorkoutInputType) {
-    if (inFlight.current || next === saved) return
+    if (inFlight.current || !canChoose) return
+    // Re-picking the value already stored is a no-op — except when the stored
+    // value is unreadable, where picking anything is the whole point.
+    if (next === saved && !unreadable) return
     inFlight.current = true
     setBusy(true)
     setFeedback({ state: 'saving' })
@@ -123,16 +145,21 @@ export function ExerciseInputTypeCard({
             </button>
           </>
         )}
-        {setting.status === 'ready' && feedback.state === 'saving' && (
+        {unreadable && feedback.state === 'idle' && (
+          <span className="text-coral">
+            Saved input type could not be read. Choose the correct type to replace it.
+          </span>
+        )}
+        {canChoose && feedback.state === 'saving' && (
           <span className="flex items-center gap-2 text-ink-faint">
             <Loader2 className="size-4 animate-spin" aria-hidden="true" />
             Saving
           </span>
         )}
-        {setting.status === 'ready' && feedback.state === 'saved' && (
+        {canChoose && feedback.state === 'saved' && (
           <span className="font-semibold text-completed">Saved.</span>
         )}
-        {setting.status === 'ready' && feedback.state === 'error' && (
+        {canChoose && feedback.state === 'error' && (
           <span className="text-coral">{feedback.message}</span>
         )}
         {setting.status === 'ready' && feedback.state === 'idle' && saved === null && (
@@ -142,7 +169,7 @@ export function ExerciseInputTypeCard({
         )}
       </div>
 
-      <fieldset className="min-w-0" disabled={setting.status !== 'ready'}>
+      <fieldset className="min-w-0" disabled={!canChoose}>
         <legend className="sr-only">Input type</legend>
         <div
           role="radiogroup"
@@ -156,7 +183,7 @@ export function ExerciseInputTypeCard({
               type="button"
               role="radio"
               aria-checked={saved === option}
-              disabled={busy || setting.status !== 'ready'}
+              disabled={busy || !canChoose}
               onClick={() => void choose(option)}
               className={cn(
                 'rounded-control border px-4 py-3 text-left transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-60',

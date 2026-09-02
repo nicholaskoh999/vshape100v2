@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -255,5 +255,155 @@ describe('the input type selector', () => {
     // The read failed, so the answer is unknown — never rendered as "not set".
     expect(within(rows[0]).getByText('Checking input type')).toBeInTheDocument()
     expect(screen.queryByText('Input type not set')).not.toBeInTheDocument()
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* Correction 2 — an unreadable setting must be repairable HERE        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The Library tells the user their setting could not be read and to set it
+ * again. Correction 1 answered 500 for that item read, so the editor saw a
+ * failed request and disabled every choice: the user was instructed to fix
+ * something the app would not let them fix, and the only ways out were the API
+ * or the database.
+ *
+ * `unreadable` and "the read failed" are different facts, and the difference
+ * decides whether the user can act. These tests hold both apart.
+ */
+describe('repairing an unreadable input type', () => {
+  /** A stored row holding a value this build cannot read. */
+  function seedUnreadable() {
+    server.rows.set('triceps-pushdown', {
+      exerciseId: 'triceps-pushdown',
+      inputType: 'elastic_vibes',
+      updatedAt: 1,
+    })
+  }
+
+  it('says so on the Library row', async () => {
+    seedUnreadable()
+    await renderAt('/settings/exercises')
+
+    const row = await screen.findByRole('link', {
+      name: 'Edit settings for Triceps Pushdown',
+    })
+    expect(within(row).getByText(/could not be read/i)).toBeInTheDocument()
+    // Not "not set": the user HAS answered, and saying otherwise hides that
+    // this exercise's workouts are being refused.
+    expect(within(row).queryByText('Input type not set')).not.toBeInTheDocument()
+  })
+
+  it('offers the choices ENABLED, with nothing selected and no false "not set"', async () => {
+    seedUnreadable()
+    await renderAt(TRICEPS)
+
+    await screen.findByText(/Saved input type could not be read/i)
+    expect(
+      screen.queryByText('Not set yet — this exercise still records the way it always has.'),
+    ).not.toBeInTheDocument()
+
+    for (const node of options()) {
+      expect(node).toBeEnabled()
+      expect(node).toHaveAttribute('aria-checked', 'false')
+    }
+    // And no suggestion: putting the programme's guess in front of the user
+    // would present their deliberate choice as though it were never made.
+    expect(screen.queryByText('Suggested')).not.toBeInTheDocument()
+  })
+
+  it('replaces the corrupt row when the user chooses, and reads back readable', async () => {
+    seedUnreadable()
+    await renderAt(TRICEPS)
+    await screen.findByText(/Saved input type could not be read/i)
+
+    await user().click(option('Resistance band'))
+    await screen.findByText('Saved.')
+
+    // The row was REPLACED through the ordinary upsert — one row, not two.
+    expect(server.rows.size).toBe(1)
+    expect(server.rows.get('triceps-pushdown')?.inputType).toBe('resistance_band')
+    expect(option('Resistance band')).toHaveAttribute('aria-checked', 'true')
+    // The warning is gone, because the setting is no longer unreadable.
+    expect(screen.queryByText(/Saved input type could not be read/i)).not.toBeInTheDocument()
+  })
+
+  it('reads back as an ordinary readable setting afterwards', async () => {
+    seedUnreadable()
+    await renderAt(TRICEPS)
+    await screen.findByText(/Saved input type could not be read/i)
+    await user().click(option('Resistance band'))
+    await screen.findByText('Saved.')
+
+    // A fresh visit: the repair is durable, not a local optimism.
+    cleanup()
+    await renderAt(TRICEPS)
+    await waitFor(() =>
+      expect(option('Resistance band')).toHaveAttribute('aria-checked', 'true'),
+    )
+    expect(screen.queryByText(/could not be read/i)).not.toBeInTheDocument()
+  })
+
+  it('shows the Library row as repaired afterwards', async () => {
+    seedUnreadable()
+    await renderAt(TRICEPS)
+    await screen.findByText(/Saved input type could not be read/i)
+    await user().click(option('Resistance band'))
+    await screen.findByText('Saved.')
+
+    cleanup()
+    await renderAt('/settings/exercises')
+    const row = await screen.findByRole('link', {
+      name: 'Edit settings for Triceps Pushdown',
+    })
+    expect(within(row).getByText('Resistance band')).toBeInTheDocument()
+    expect(within(row).queryByText(/could not be read/i)).not.toBeInTheDocument()
+  })
+
+  it('never repairs, deletes or defaults the setting on its own', async () => {
+    seedUnreadable()
+    await renderAt(TRICEPS)
+    await screen.findByText(/Saved input type could not be read/i)
+
+    // Merely opening the editor changes nothing. The app does not know what the
+    // user meant, and guessing is the failure this round exists to remove.
+    expect(server.rows.get('triceps-pushdown')?.inputType).toBe('elastic_vibes')
+    expect(server.calls.every((call) => call.method === 'GET')).toBe(true)
+  })
+
+  /* ---- the control: a genuine read failure still fails closed ------ */
+
+  it('DISABLES the choices when the read itself failed', async () => {
+    // The distinction that matters. Here we do not know WHICH state the stored
+    // setting is in, so offering to overwrite it blind would risk destroying a
+    // perfectly good answer.
+    server.failReads(1)
+    await renderAt(TRICEPS)
+
+    await screen.findByText('The saved input type could not be loaded.')
+    expect(screen.queryByText(/Saved input type could not be read/i)).not.toBeInTheDocument()
+    for (const node of options()) {
+      expect(node).toBeDisabled()
+    }
+    // And a way back that re-establishes the truth rather than overwriting it.
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+  })
+
+  it('writes nothing while the read is failed, even if a choice is clicked', async () => {
+    server.rows.set('triceps-pushdown', {
+      exerciseId: 'triceps-pushdown',
+      inputType: 'weight_kg',
+      updatedAt: 1,
+    })
+    server.failReads(1)
+    await renderAt(TRICEPS)
+    await screen.findByText('The saved input type could not be loaded.')
+
+    await user().click(option('Resistance band'))
+
+    // The perfectly good stored answer survives.
+    expect(server.rows.get('triceps-pushdown')?.inputType).toBe('weight_kg')
+    expect(server.calls.some((call) => call.method === 'PUT')).toBe(false)
   })
 })

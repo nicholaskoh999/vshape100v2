@@ -98,21 +98,46 @@ export async function fetchExerciseInputTypes(
 }
 
 /**
- * The setting for one exercise, or null when it has never been answered.
+ * What the server knows about one exercise's setting.
  *
- * A setting that exists but cannot be read answers 500, which surfaces here as
- * a thrown error rather than as null. That is deliberate: null means "never
- * answered", and reporting an unreadable setting that way would invite the user
- * to re-answer a question they have already answered.
+ *   absent      never answered. The exercise behaves as it always has.
+ *   readable    answered, and this build understands the answer.
+ *   unreadable  answered, and this build cannot understand the answer.
+ *
+ * The third is REPAIRABLE, which is why it is a state rather than an error. A
+ * genuine storage or network failure is a different thing entirely: it throws,
+ * and the caller must fail closed, because it does not know which of the three
+ * is true.
  */
+export type ExerciseInputTypeRead =
+  | { state: 'absent' }
+  | { state: 'readable'; record: ExerciseInputTypeRecord }
+  | { state: 'unreadable' }
+
 export async function fetchExerciseInputType(
   exerciseId: string,
   signal?: AbortSignal,
-): Promise<ExerciseInputTypeRecord | null> {
+): Promise<ExerciseInputTypeRead> {
   const response = await fetch(itemUrl(exerciseId), { ...REQUEST_INIT, signal })
   await ensureOk(response)
-  const body = (await response.json()) as { inputType?: unknown }
-  return toRecord(body.inputType)
+  const body = (await response.json()) as { state?: unknown; inputType?: unknown }
+
+  if (body.state === 'unreadable') return { state: 'unreadable' }
+
+  const record = toRecord(body.inputType)
+  if (body.state === 'readable') {
+    // The server says it is readable and the payload does not parse. We cannot
+    // tell what the setting is, so we do not guess — this throws, and the
+    // caller shows a load failure rather than an editable blank.
+    if (!record) {
+      throw new ExerciseInputTypeApiError('input type payload could not be read', 200)
+    }
+    return { state: 'readable', record }
+  }
+  if (body.state === 'absent') return { state: 'absent' }
+
+  // A state this build does not know. Fail closed rather than assume.
+  throw new ExerciseInputTypeApiError('unrecognised input type state', 200)
 }
 
 /**

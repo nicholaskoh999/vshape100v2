@@ -161,10 +161,11 @@ function toSet(row: SetRow): WorkoutSetRecord {
     // recorded at the time, not a guess from the exercise's current setting.
     // An unrecognised value, or one contradicting its own load mode, resolves
     // to null so every caller fails closed instead of assuming kilograms.
-    inputType: readSetModality(
-      row.input_type_snapshot,
-      isLoadMode(row.load_mode_snapshot) ? row.load_mode_snapshot : 'none',
-    ),
+    // The RAW stored load mode, deliberately. Narrowing it here — which used
+    // to coerce an unknown value to 'none' — hid invalid rows from the
+    // compatibility check and let this mapper accept what Progress and the
+    // progression engine refused.
+    inputType: readSetModality(row.input_type_snapshot, row.load_mode_snapshot),
     bandLabel: parseBandLabel(row.actual_band_label),
     bandCount: parseBandCount(row.actual_band_count),
     result: row.actual_result,
