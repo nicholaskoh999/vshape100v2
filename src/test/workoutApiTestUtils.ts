@@ -464,8 +464,15 @@ export function createWorkoutServer(): WorkoutServer {
         bandCount: set.band ? set.band.count : null,
         result: set.result,
       }
-      // No-op first, so a correction that changes nothing writes no audit — and
-      // reports whatever the set's real history already said, never a fresh
+      // VERSION FIRST, mirroring production. Somebody changing the set between
+      // the editor's read and its save is a conflict even when the stored facts
+      // happen to have become what the editor intended — the editor is looking
+      // at a stale screen either way.
+      if (set.updatedAt !== parsed.expectedUpdatedAt) {
+        return jsonResponse({ error: 'stale' }, 409)
+      }
+      // A genuine no-op from the CURRENT version writes no audit, and reports
+      // whatever the set's real history already said rather than a fresh
       // timestamp for an event that did not happen.
       if (isNoOpCorrection(before, parsed.value)) {
         const existing =
@@ -478,10 +485,6 @@ export function createWorkoutServer(): WorkoutServer {
           corrected: false,
           set: { ...set, correctedAt: existing },
         })
-      }
-      // Optimistic concurrency: the editor must submit the version it read.
-      if (set.updatedAt !== parsed.expectedUpdatedAt) {
-        return jsonResponse({ error: 'stale' }, 409)
       }
 
       const after = parsed.value

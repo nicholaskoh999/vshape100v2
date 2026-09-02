@@ -531,6 +531,38 @@ export async function startWorkout(
  * future field recording what happened must be added HERE, and both callers get
  * it.
  */
+/**
+ * THE NEXT VERSION OF A SET, WHICH IS ALSO ITS updated_at.
+ *
+ * `updated_at` is the optimistic-concurrency token that History Correction
+ * submits and the write-time condition matches on. For that to mean anything,
+ * a successful factual mutation must ALWAYS produce a different value.
+ *
+ * `Date.now()` alone does not. It has millisecond resolution, and two writes
+ * inside the same millisecond produce the same number:
+ *
+ *   stored updated_at = 1000
+ *   A and B both read 1000
+ *   B commits a real correction while the clock still reads 1000
+ *   updated_at is still 1000
+ *   A saves with expectedUpdatedAt 1000 - and the guard MATCHES
+ *
+ * A would then silently overwrite B, which is exactly the outcome the whole
+ * optimistic-concurrency contract exists to prevent. It is not a rare
+ * theoretical window either: the mutations are small and a fast client, or a
+ * test, will collide inside one millisecond routinely.
+ *
+ * So the version is strictly monotonic. It is still a truthful timestamp - it
+ * only ever runs ahead of the clock, and only by the number of writes that
+ * happened to land in the same millisecond.
+ *
+ * Every path that changes a set's stored facts goes through this. That is the
+ * point of it being one function rather than a rule to remember.
+ */
+export function nextSetVersion(previous: number, now: number): number {
+  return Math.max(now, previous + 1)
+}
+
 function withoutEvidence(record: WorkoutSetRecord): WorkoutSetRecord {
   return {
     ...record,
@@ -587,7 +619,7 @@ export async function applySetUpdate(
     const record: WorkoutSetRecord = {
       ...withoutEvidence(existing),
       status: 'skipped',
-      updatedAt: now,
+      updatedAt: nextSetVersion(existing.updatedAt, now),
     }
     if (!(await store.updateSet(record))) return { ok: false, reason: 'not_found' }
     await store.touchOccurrence(googleSub, workoutDate, sessionId, now)
@@ -634,7 +666,7 @@ export async function applySetUpdate(
     bandLabel: update.band ? update.band.label : null,
     bandCount: update.band ? update.band.count : null,
     result: update.result,
-    updatedAt: now,
+    updatedAt: nextSetVersion(existing.updatedAt, now),
   }
   // THE WRITE DECIDES, NOT THE READ ABOVE.
   //
@@ -680,7 +712,7 @@ export async function undoSet(
   const record: WorkoutSetRecord = {
     ...withoutEvidence(existing),
     status: 'pending',
-    updatedAt: now,
+    updatedAt: nextSetVersion(existing.updatedAt, now),
   }
   if (!(await store.updateSet(record))) return { ok: false, reason: 'not_found' }
   // Undo still TOUCHES the workout. Putting the sets back does not put back the
@@ -900,8 +932,20 @@ export async function correctSet(
   // door — that would change what happened, not how it was measured.
   if (existing.status !== 'completed') return { ok: false, reason: 'not_completed' }
 
-  // Reported before the version check, because "you are looking at an old
-  // version" is less useful than "this is already what it says".
+  // THE VERSION IS CHECKED FIRST, BEFORE THE NO-OP.
+  //
+  // The order matters, and it used to be the other way round. Consider:
+  //
+  //   A reads the set at version T
+  //   B changes it into exactly what A was about to assert
+  //   A saves with version T
+  //
+  // Checking the no-op first told A "nothing changed" - a 200, as if A's
+  // intention had been honoured. But somebody DID change the set between A's
+  // read and A's save, which the contract says is a conflict. A is looking at a
+  // stale screen and deserves to know, not to be quietly told all is well.
+  if (existing.updatedAt !== expectedUpdatedAt) return { ok: false, reason: 'stale' }
+
   const before: CorrectableFacts = {
     inputType: existing.inputType,
     loadMode: existing.loadMode,
@@ -911,9 +955,10 @@ export async function correctSet(
     bandCount: existing.bandCount,
     result: existing.result,
   }
+  // A genuine no-op, from the CURRENT version: the user asserted exactly what
+  // is already stored. Nothing is written, so nothing new is claimed, and the
+  // set's real correction history is reported exactly as it stands.
   if (isNoOpCorrection(before, after)) {
-    // Nothing is written, so nothing new is claimed. Whatever the set's real
-    // correction history says stays exactly as it was.
     const history = await store.listCorrectionTimes(
       address.googleSub,
       address.workoutDate,
@@ -927,12 +972,15 @@ export async function correctSet(
     return { ok: true, record: existing, corrected: false, correctedAt: existingCorrection }
   }
 
-  if (existing.updatedAt !== expectedUpdatedAt) return { ok: false, reason: 'stale' }
+  // Strictly ahead of the version being replaced, so a correction that lands in
+  // the same millisecond as the write before it still moves the token every
+  // other editor is holding.
+  const correctedAt = nextSetVersion(existing.updatedAt, now)
 
   const written = await store.correctSet({
     address,
     correctionId,
-    correctedAt: now,
+    correctedAt,
     expectedUpdatedAt,
     before,
     after,
@@ -951,10 +999,10 @@ export async function correctSet(
     bandLabel: after.band ? after.band.label : null,
     bandCount: after.band ? after.band.count : null,
     result: after.result,
-    updatedAt: now,
+    updatedAt: correctedAt,
   }
-  // `now` is the audit event's own `corrected_at`: the same value written into
-  // the row in the batch above, not a second clock reading and not the client's
-  // idea of the time.
-  return { ok: true, record, corrected: true, correctedAt: now }
+  // The audit event's own `corrected_at`: the same value written into the row
+  // in the batch above, not a second clock reading and not the client's idea of
+  // the time. It is also the set's new version.
+  return { ok: true, record, corrected: true, correctedAt }
 }
