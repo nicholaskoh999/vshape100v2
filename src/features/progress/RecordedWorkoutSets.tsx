@@ -29,11 +29,22 @@ export function RecordedWorkoutSets({
   date,
   sessionId,
   onCancelled,
+  onSetCorrected,
 }: {
   date: string
   sessionId: string
   /** Called once an accidental Start has actually been removed. */
   onCancelled?: () => void
+  /**
+   * Called once a set's recorded truth has changed on the SERVER.
+   *
+   * Personal Best and Exercise Performance are a separate read domain, derived
+   * by the server from the whole of history. This component can adopt the one
+   * corrected set it was handed, but it cannot know what that does to a best
+   * ranked across every workout — so it says the facts moved and lets the
+   * owner of that domain go and re-read it.
+   */
+  onSetCorrected?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const [state, setState] = useState<State>({ status: 'idle' })
@@ -52,21 +63,34 @@ export function RecordedWorkoutSets({
     }
   }, [date, sessionId])
 
-  /** Replace one set with the corrected truth the server confirmed. */
-  const adopt = useCallback((next: WorkoutSet) => {
-    setState((current) =>
-      current.status === 'ready'
-        ? {
-            ...current,
-            sets: current.sets.map((row) =>
-              row.exerciseOrder === next.exerciseOrder && row.setIndex === next.setIndex
-                ? next
-                : row,
-            ),
-          }
-        : current,
-    )
-  }, [])
+  /**
+   * Replace one set with the corrected truth the server confirmed.
+   *
+   * Both of the editor's outcomes arrive here: a correction this editor made,
+   * and the fresh row it fetches after a 409 because somebody else changed the
+   * set first. In both cases the stored performance is not what the derived
+   * panels were built from, so both must announce it. The alternative — telling
+   * only the success path — would leave a page that has just refused a write
+   * displaying a best derived from the value it refused.
+   */
+  const adopt = useCallback(
+    (next: WorkoutSet) => {
+      setState((current) =>
+        current.status === 'ready'
+          ? {
+              ...current,
+              sets: current.sets.map((row) =>
+                row.exerciseOrder === next.exerciseOrder && row.setIndex === next.setIndex
+                  ? next
+                  : row,
+              ),
+            }
+          : current,
+      )
+      onSetCorrected?.()
+    },
+    [onSetCorrected],
+  )
 
   const completed = state.status === 'ready' ? state.sets.filter((s) => s.status === 'completed') : []
 

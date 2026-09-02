@@ -18,8 +18,15 @@ export type ProgressServer = {
   handle: (url: string, init?: RequestInit) => Promise<Response>
   /** Seed a stored measurement without going through the API. */
   seedWeight: (date: string, tenths: number) => void
-  /** Replace the performance payload the server will answer with. */
-  setPerformance: (payload: unknown) => void
+  /**
+   * Replace the performance payload the server will answer with.
+   *
+   * A FUNCTION is evaluated per request, not once. That is what lets a test
+   * derive the answer from whatever the workout store holds at the moment it
+   * is read — so Personal Best changes because a correction was persisted, and
+   * only then, rather than because the test swapped a fixture by hand.
+   */
+  setPerformance: (payload: unknown | (() => unknown)) => void
   /** Fail the next N requests, to exercise the error states. */
   failWith: (status: number | null) => void
   calls: { method: string; url: string; body: unknown }[]
@@ -35,7 +42,11 @@ function jsonResponse(body: unknown, status = 200): Response {
 export function createProgressServer(): ProgressServer {
   const weights = new Map<string, number>()
   const calls: ProgressServer['calls'] = []
-  let performance: unknown = { complete: true, examined: 0, variants: [] }
+  let performance: unknown | (() => unknown) = {
+    complete: true,
+    examined: 0,
+    variants: [],
+  }
   let failure: number | null = null
 
   function point(date: string) {
@@ -96,7 +107,11 @@ export function createProgressServer(): ProgressServer {
       if (failure !== null) return jsonResponse({ error: 'server_error' }, failure)
 
       if (url.startsWith('/api/progress/performance')) {
-        return jsonResponse(performance)
+        return jsonResponse(
+          typeof performance === 'function'
+            ? (performance as () => unknown)()
+            : performance,
+        )
       }
 
       if (method === 'PUT') {

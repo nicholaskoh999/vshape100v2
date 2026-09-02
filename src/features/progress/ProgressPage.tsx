@@ -94,10 +94,18 @@ export function ProgressPage() {
         </motion.div>
 
         <motion.div variants={listItemVariants}>
+          {/*
+            A correction changes what Personal Best and Exercise Performance
+            are derived FROM, but they are a different read domain on this same
+            page. Without this the page contradicts itself after a save: the
+            recorded row says 16 reps while the best above it still says 18,
+            until a reload nobody has a reason to perform.
+          */}
           <RecentWorkouts
             state={status}
             history={history}
             onHistoryChanged={reload}
+            onSetCorrected={performance.reload}
           />
         </motion.div>
       </motion.div>
@@ -296,11 +304,14 @@ function RecentWorkouts({
   state,
   history,
   onHistoryChanged,
+  onSetCorrected,
 }: {
   state: "loading" | "ready" | "error";
   history: ReturnType<typeof useWorkoutHistory>["history"];
   /** Re-read the list once a workout has been removed from it. */
   onHistoryChanged: () => void;
+  /** Re-read derived performance once a recorded set's truth has changed. */
+  onSetCorrected: () => void;
 }) {
   if (state !== "ready" || !history) return null;
 
@@ -416,6 +427,7 @@ function RecentWorkouts({
                 date={workout.date}
                 sessionId={workout.sessionId}
                 onCancelled={onHistoryChanged}
+                onSetCorrected={onSetCorrected}
               />
             </li>
           ))}
