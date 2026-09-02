@@ -14,6 +14,7 @@ import migration0009 from '../../migrations/0009_training_progression.sql?raw'
 import migration0010 from '../../migrations/0010_flexible_training.sql?raw'
 import migration0011 from '../../migrations/0011_account_settings.sql?raw'
 import migration0012 from '../../migrations/0012_training_flex.sql?raw'
+import migration0013 from '../../migrations/0013_workout_input_types.sql?raw'
 
 import {
   FRESH_START_PRESERVED_TABLES,
@@ -37,6 +38,7 @@ import {
 const CHAIN = [
   migration0001, migration0002, migration0003, migration0004, migration0005, migration0006,
   migration0007, migration0008, migration0009, migration0010, migration0011, migration0012,
+  migration0013,
 ]
 
 const CUTOFF = '2026-09-01'
@@ -123,6 +125,13 @@ function seedPreserved(db: DatabaseSync, googleSub: string) {
   db.prepare(
     `INSERT INTO exercise_media (google_sub, exercise_id, media_type, media_url, media_alt, updated_at)
      VALUES (?, 'lat-pulldown', 'image', 'https://example.com/a.png', 'alt', 1)`,
+  ).run(googleSub)
+
+  // Round 20. How an exercise is loaded is equipment configuration — a fact
+  // about the user's gym — so a history reset has no business forgetting it.
+  db.prepare(
+    `INSERT INTO exercise_input_types (google_sub, exercise_id, input_type, created_at, updated_at)
+     VALUES (?, 'triceps-pushdown', 'resistance_band', 1, 1)`,
   ).run(googleSub)
 
   // The endpoint hash carries a real CHECK — it must be a 64-character digest,
@@ -289,6 +298,9 @@ describe('20. non-training data is preserved', () => {
     expect(count(db, `SELECT COUNT(*) AS n FROM today_completions WHERE google_sub = ?`, [MINE])).toBe(1)
     expect(count(db, `SELECT COUNT(*) AS n FROM holiday_overrides WHERE google_sub = ?`, [MINE])).toBe(1)
     expect(count(db, `SELECT COUNT(*) AS n FROM exercise_media WHERE google_sub = ?`, [MINE])).toBe(1)
+    expect(
+      count(db, `SELECT COUNT(*) AS n FROM exercise_input_types WHERE google_sub = ?`, [MINE]),
+    ).toBe(1)
     expect(count(db, `SELECT COUNT(*) AS n FROM push_subscriptions WHERE google_sub = ?`, [MINE])).toBe(1)
     expect(count(db, `SELECT COUNT(*) AS n FROM auth_sessions WHERE google_sub = ?`, [MINE])).toBe(1)
 

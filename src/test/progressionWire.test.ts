@@ -40,6 +40,7 @@ function validLane(overrides: Record<string, unknown> = {}) {
       resultKind: 'reps',
       loadMode: 'kg',
       perSide: false,
+      inputType: 'weight_kg',
     },
     state: 'build_reps',
     reasonCode: 'below_upper_bound',

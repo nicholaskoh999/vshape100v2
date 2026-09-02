@@ -13,6 +13,7 @@
 
 import type { Env } from './auth/config'
 import { handleAuthRequest } from './auth/routes'
+import { handleExerciseInputTypeRequest } from './exerciseInput/routes'
 import { handleExerciseMediaRequest } from './exerciseMedia/routes'
 import { handleHolidayRequest } from './holiday/routes'
 import { readVapidConfig } from './notifications/config'
@@ -37,6 +38,9 @@ export default {
 
     const mediaResponse = await handleExerciseMediaRequest(request, env)
     if (mediaResponse) return mediaResponse
+
+    const inputTypeResponse = await handleExerciseInputTypeRequest(request, env)
+    if (inputTypeResponse) return inputTypeResponse
 
     const workoutResponse = await handleWorkoutRequest(request, env)
     if (workoutResponse) return workoutResponse

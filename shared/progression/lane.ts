@@ -31,6 +31,7 @@
  * and reps already recorded on it incomparable.
  */
 
+import type { WorkoutInputType } from '../workoutInput'
 import { isLoadUnit, isSetLoad, type WorkoutLoadMode, type WorkoutLoadUnit, type WorkoutResultKind } from '../workoutLog'
 
 /* ------------------------------------------------------------------ */
@@ -50,6 +51,8 @@ export type ProgressionLane = {
   resultKind: WorkoutResultKind
   loadMode: WorkoutLoadMode
   perSide: boolean
+  /** How the work is loaded. See the fingerprint note below. */
+  inputType: WorkoutInputType
 }
 
 /**
@@ -57,6 +60,22 @@ export type ProgressionLane = {
  *
  * Versioned, so a future round that widens lane identity cannot silently make
  * old durable calibration rows look compatible with new semantics.
+ *
+ * WHY ROUND 20's INPUT TYPE IS NOT IN HERE.
+ *
+ * It would change every existing kilogram lane's fingerprint, and this string
+ * is how BOTH durable calibration and historical evidence are matched to a
+ * lane. Rewriting it would orphan the user's real recorded history — the very
+ * thing this round promised not to touch — in exchange for nothing, because
+ * `load_mode` already separates kilogram lanes from every non-kilogram one:
+ * a weight_kg lane always freezes 'kg' or 'kg_each', and band and bodyweight
+ * always freeze 'none'.
+ *
+ * What the fingerprint alone does NOT separate is band from bodyweight, since
+ * both are 'none'. That is handled explicitly instead — evidence is matched on
+ * the input type as well as the fingerprint, and band lanes are refused outright
+ * before any load reasoning — which keeps the exclusion visible in the code
+ * rather than buried in a string format.
  */
 export function laneFingerprint(lane: ProgressionLane): string {
   return [

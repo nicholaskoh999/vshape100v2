@@ -38,6 +38,8 @@
  * timestamps — a lock inside one isolate would not be seen by another.
  */
 
+import { parseBandCount, parseBandLabel } from '../../shared/workoutInput'
+import { readInputTypeSnapshot } from '../../shared/workoutLog'
 import {
   isLoadMode,
   isLoadUnit,
@@ -84,6 +86,10 @@ type SetRow = {
   actual_load_unit: string | null
   actual_result: number | null
   updated_at: number
+  /** Null on any row written before Round 20. */
+  input_type_snapshot: string | null
+  actual_band_label: string | null
+  actual_band_count: number | null
 }
 
 /**
@@ -150,6 +156,16 @@ function toSet(row: SetRow): WorkoutSetRecord {
     status: isSetStatus(row.status) ? row.status : 'pending',
     loadValue: row.actual_load_value,
     loadUnit: isLoadUnit(row.actual_load_unit) ? row.actual_load_unit : null,
+    // A row with no stored input type predates Round 20 and is read through
+    // its own frozen load mode — a fact recorded at the time, not a guess from
+    // the exercise's current setting. An unrecognised value resolves to null so
+    // every caller fails closed instead of assuming kilograms.
+    inputType: readInputTypeSnapshot(
+      row.input_type_snapshot,
+      isLoadMode(row.load_mode_snapshot) ? row.load_mode_snapshot : 'none',
+    ),
+    bandLabel: parseBandLabel(row.actual_band_label),
+    bandCount: parseBandCount(row.actual_band_count),
     result: row.actual_result,
     updatedAt: row.updated_at,
   }
@@ -179,6 +195,10 @@ const SET_COLUMN_NAMES = [
   'actual_load_unit',
   'actual_result',
   'updated_at',
+  // Round 20, appended so the existing bind order is untouched.
+  'input_type_snapshot',
+  'actual_band_label',
+  'actual_band_count',
 ] as const
 
 const SET_COLUMNS = SET_COLUMN_NAMES.join(', ')
@@ -366,6 +386,11 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
               set.loadUnit,
               set.result,
               set.updatedAt,
+              set.inputType,
+              // Never written at Start: a pending set has no result yet, so it
+              // has no band either.
+              null,
+              null,
               // The guard's own bindings.
               set.googleSub,
               set.workoutDate,
@@ -404,6 +429,8 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
               SET status = ?,
                   actual_load_value = ?,
                   actual_load_unit = ?,
+                  actual_band_label = ?,
+                  actual_band_count = ?,
                   actual_result = ?,
                   updated_at = ?
             WHERE google_sub = ? AND workout_date = ? AND session_id = ?
@@ -413,6 +440,8 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
           record.status,
           record.loadValue,
           record.loadUnit,
+          record.bandLabel,
+          record.bandCount,
           record.result,
           record.updatedAt,
           record.googleSub,

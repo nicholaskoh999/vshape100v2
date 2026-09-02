@@ -5,6 +5,10 @@ import { vi } from 'vitest'
 import { routes } from '@/app/router/router'
 import { AuthProvider } from '@/features/auth/AuthProvider'
 import type { SessionState } from '@/features/auth/api'
+import {
+  createInputTypeServer,
+  type InputTypeServer,
+} from './exerciseInputTypeApiTestUtils'
 import { createMediaServer, type MediaServer } from './exerciseMediaApiTestUtils'
 import { createHolidayServer, type HolidayServer } from './holidayApiTestUtils'
 import { createProgressServer, type ProgressServer } from './progressApiTestUtils'
@@ -58,6 +62,7 @@ export function mockAuthFetch(options: {
   onLogout?: () => void
   today?: TodayServer
   media?: MediaServer
+  inputTypes?: InputTypeServer
   workouts?: WorkoutServer
   holidays?: HolidayServer
   /**
@@ -99,6 +104,7 @@ export function mockAuthFetch(options: {
   const holidays = options.holidays ?? createHolidayServer()
   const progress = options.progress ?? createProgressServer()
   const progression = options.progression ?? createProgressionServer(workouts)
+  const inputTypes = options.inputTypes ?? createInputTypeServer()
   const settings = options.settings ?? createSettingsServer()
   const trainingFlex = options.trainingFlex ?? createTrainingFlexServer()
 
@@ -112,6 +118,11 @@ export function mockAuthFetch(options: {
     }
     if (url.startsWith('/api/today/completions')) {
       return today.handle(url, init)
+    }
+    // Before '/api/exercise-media' would matter either way — the two prefixes
+    // are distinct — but kept adjacent so the exercise APIs read together.
+    if (url.startsWith('/api/exercise-input-types')) {
+      return inputTypes.handle(url, init)
     }
     if (url.startsWith('/api/exercise-media')) {
       return media.handle(url, init)

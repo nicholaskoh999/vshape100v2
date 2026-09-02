@@ -231,6 +231,7 @@ describe('historical snapshot immutability', () => {
       action: 'complete',
       result: 12,
       load: { value: 20, unit: 'kg' },
+      band: null,
     })
 
     const resumed = unwrap(await startWorkout(store, ACCOUNT_A, DATE, 'monday', MONDAY))
@@ -501,6 +502,7 @@ describe('concurrent first start', () => {
       action: 'complete',
       result: 11,
       load: { value: 20, unit: 'kg' },
+      band: null,
     })
     expect(outcome.ok).toBe(true)
 
@@ -528,6 +530,7 @@ describe('isolation', () => {
       action: 'complete',
       result: 12,
       load: null,
+      band: null,
     })
 
     // B has not started the same date + session at all.
@@ -550,6 +553,7 @@ describe('isolation', () => {
       action: 'complete',
       result: 99,
       load: null,
+      band: null,
     })
 
     expect(outcome).toEqual({ ok: false, reason: 'not_found' })
@@ -566,6 +570,7 @@ describe('isolation', () => {
       action: 'complete',
       result: 10,
       load: null,
+      band: null,
     })
 
     const later = await readWorkout(store, ACCOUNT_A, OTHER_DATE, 'monday')
@@ -584,6 +589,7 @@ describe('isolation', () => {
       action: 'complete',
       result: 12,
       load: { value: 20, unit: 'kg' },
+      band: null,
     })
 
     const monday = await readWorkout(store, ACCOUNT_A, DATE, 'monday')
@@ -608,6 +614,7 @@ describe('isolation', () => {
       action: 'complete',
       result: 11,
       load: null,
+      band: null,
     })
 
     const log = await readWorkout(store, ACCOUNT_A, DATE, 'monday')
@@ -630,6 +637,7 @@ describe('isolation', () => {
       action: 'complete',
       result: 9,
       load: { value: 10, unit: 'kg_each' },
+      band: null,
     })
 
     const log = await readWorkout(store, ACCOUNT_A, DATE, 'monday')
@@ -654,6 +662,7 @@ describe('logging sets', () => {
       action: 'complete',
       result: 10,
       load: { value: 12.5, unit: 'kg_each' },
+      band: null,
     })
 
     expect(outcome.ok).toBe(true)
@@ -674,6 +683,7 @@ describe('logging sets', () => {
       action: 'complete',
       result: 45,
       load: null,
+      band: null,
     })
 
     expect(outcome.ok).toBe(true)
@@ -692,6 +702,7 @@ describe('logging sets', () => {
       action: 'complete',
       result: 45,
       load: { value: 20, unit: 'kg' },
+      band: null,
     })
 
     expect(outcome).toEqual({ ok: false, reason: 'load_not_applicable' })
@@ -706,6 +717,7 @@ describe('logging sets', () => {
       action: 'complete',
       result: 12,
       load: { value: 20, unit: 'kg_each' },
+      band: null,
     })
 
     expect(outcome).toEqual({ ok: false, reason: 'load_unit_mismatch' })
@@ -734,6 +746,7 @@ describe('logging sets', () => {
       action: 'complete',
       result: 12,
       load: { value: 20, unit: 'kg' },
+      band: null,
     })
 
     const outcome = await applySetUpdate(store, ACCOUNT_A, DATE, 'monday', 0, 0, {
@@ -756,6 +769,7 @@ describe('logging sets', () => {
       action: 'complete',
       result: 12,
       load: null,
+      band: null,
     })
 
     expect(outcome).toEqual({ ok: false, reason: 'not_found' })
@@ -775,6 +789,7 @@ describe('undo', () => {
       action: 'complete',
       result: 12,
       load: { value: 20, unit: 'kg' },
+      band: null,
     })
 
     const outcome = await undoSet(store, ACCOUNT_A, DATE, 'monday', 0, 0)
@@ -803,6 +818,7 @@ describe('undo', () => {
       action: 'complete',
       result: 12,
       load: null,
+      band: null,
     })
 
     await undoSet(store, ACCOUNT_A, DATE, 'monday', 0, 0)
@@ -837,6 +853,7 @@ describe('progress', () => {
       action: 'complete',
       result: 12,
       load: null,
+      band: null,
     })
     await applySetUpdate(store, ACCOUNT_A, DATE, 'monday', 0, 1, { action: 'skip' })
 

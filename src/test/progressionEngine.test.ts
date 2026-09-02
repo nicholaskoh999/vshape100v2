@@ -42,6 +42,9 @@ type SlotSpec = {
   prescription?: string
   resultKind?: string
   loadMode?: string
+  /** Round 20. Left unset the slot is a legacy row, read from its load mode. */
+  inputTypeSnapshot?: string | null
+  band?: { label: string; count: number }
   perSide?: boolean | number
   sets: SetSpec[]
 }
@@ -56,6 +59,9 @@ function slot(spec: SlotSpec): ProgressionSetRow[] {
       workoutDate: spec.date,
       exerciseOrder: spec.order ?? 0,
       setIndex,
+      inputTypeSnapshot: spec.inputTypeSnapshot ?? null,
+      bandLabel: spec.band && status === 'completed' ? spec.band.label : null,
+      bandCount: spec.band && status === 'completed' ? spec.band.count : null,
       exerciseId: spec.exerciseId ?? 'lat-pulldown',
       exerciseName: spec.exerciseName ?? 'Lat Pulldown',
       prescription: spec.prescription ?? '4 × 10–15',
@@ -232,6 +238,7 @@ describe('starting-load calibration', () => {
       upper: 15,
       resultKind: 'reps',
       loadMode: 'kg',
+      inputType: 'weight_kg',
       perSide: false,
     }),
     feedback: 'good',
@@ -755,6 +762,7 @@ describe('lane isolation', () => {
     upper: 15,
     resultKind: 'reps',
     loadMode: 'kg',
+    inputType: 'weight_kg',
     perSide: false,
   } as const
 

@@ -24,7 +24,13 @@
  * exerciseMedia/media.ts.
  */
 
-import { kindForSessionId, MAX_HISTORY_RANGE_ROWS } from '../../shared/workoutLog'
+import type { WorkoutInputType } from '../../shared/workoutInput'
+import {
+  inputTypeForLegacyLoadMode,
+  kindForSessionId,
+  loadModeForInputType,
+  MAX_HISTORY_RANGE_ROWS,
+} from '../../shared/workoutLog'
 import type {
   HistoryRange,
   WorkoutHistoryEntry,
@@ -39,6 +45,15 @@ import type {
 } from '../../shared/workoutLog'
 
 export * from '../../shared/workoutLog'
+
+/**
+ * The account's chosen input type per canonical exercise.
+ *
+ * Passed in already resolved so this module keeps its storage boundary: it
+ * decides what a Start freezes, and never reaches for a second store to find
+ * out. An exercise absent from the map has simply never been configured.
+ */
+export type ExerciseInputTypes = ReadonlyMap<string, WorkoutInputType>
 
 export type WorkoutOccurrenceRecord = {
   googleSub: string
@@ -77,10 +92,23 @@ export type WorkoutSetRecord = {
   resultKind: WorkoutResultKind
   loadMode: WorkoutLoadMode
   perSide: boolean
+  /**
+   * How this set was loaded, frozen at Start.
+   *
+   * `null` means the stored value could not be read as any known input type,
+   * which is a corruption, not a legacy row — a row written before Round 20
+   * resolves through its own frozen load mode instead. Callers must fail closed
+   * on null rather than guessing kilograms.
+   */
+  inputType: WorkoutInputType | null
   /** Live logging state. */
   status: WorkoutSetStatus
   loadValue: number | null
   loadUnit: WorkoutLoadUnit | null
+  /** The band actually used. Only ever set on a completed resistance_band set. */
+  bandLabel: string | null
+  /** How MANY bands. A count, never a weight, never converted to one. */
+  bandCount: number | null
   result: number | null
   updatedAt: number
 }
@@ -189,6 +217,7 @@ export function buildSnapshot(
   snapshotId: string,
   input: WorkoutStartInput,
   now: number,
+  inputTypes: ExerciseInputTypes = new Map(),
 ): WorkoutLog {
   const occurrence: WorkoutOccurrenceRecord = {
     googleSub,
@@ -210,6 +239,20 @@ export function buildSnapshot(
 
   const sets: WorkoutSetRecord[] = []
   input.exercises.forEach((exercise, exerciseOrder) => {
+    // THE SERVER DECIDES THE MODALITY, NOT THE CLIENT.
+    //
+    // The request supplies a load mode, so an input type taken from the body
+    // would let any caller declare a band exercise to be kilograms. Instead the
+    // account's own saved setting is used; an exercise never configured keeps
+    // exactly its previous behaviour, read from the load mode the plan asked
+    // for ('none' meant bodyweight, kilograms meant kilograms).
+    const inputType =
+      inputTypes.get(exercise.exerciseId) ?? inputTypeForLegacyLoadMode(exercise.loadMode)
+    // And the frozen load mode is then forced to agree, which is what makes a
+    // band set carrying kilogram semantics unrepresentable rather than merely
+    // unlikely.
+    const loadMode = loadModeForInputType(inputType, exercise.loadMode)
+
     for (let setIndex = 0; setIndex < exercise.setCount; setIndex += 1) {
       sets.push({
         googleSub,
@@ -223,13 +266,16 @@ export function buildSnapshot(
         prescription: exercise.prescription,
         equipment: exercise.equipment,
         resultKind: exercise.resultKind,
-        loadMode: exercise.loadMode,
+        loadMode,
+        inputType,
         perSide: exercise.perSide,
         // Every expected set exists from the start, pending. The workout's
         // shape is therefore history too, not just what happened to be logged.
         status: 'pending',
         loadValue: null,
         loadUnit: null,
+        bandLabel: null,
+        bandCount: null,
         result: null,
         updatedAt: now,
       })
@@ -290,13 +336,22 @@ export async function startWorkout(
   input: WorkoutStartInput,
   now: number = Date.now(),
   snapshotId: string = newSnapshotId(),
+  inputTypes: ExerciseInputTypes = new Map(),
 ): Promise<StartOutcome> {
   const existing = await readWorkout(store, googleSub, workoutDate, sessionId)
   // A resume is never blocked: the workout already exists, so there is no
   // exclusion left to enforce, and refusing would strand a started session.
   if (existing) return { ok: true, result: { ...existing, created: false } }
 
-  const snapshot = buildSnapshot(googleSub, workoutDate, sessionId, snapshotId, input, now)
+  const snapshot = buildSnapshot(
+    googleSub,
+    workoutDate,
+    sessionId,
+    snapshotId,
+    input,
+    now,
+    inputTypes,
+  )
   await store.insertOccurrence(snapshot.occurrence, snapshot.sets)
 
   // Re-read rather than trusting the values just sent: if another request won
@@ -327,6 +382,12 @@ export type SetOutcome =
   | { ok: false; reason: 'not_found' }
   | { ok: false; reason: 'load_not_applicable' }
   | { ok: false; reason: 'load_unit_mismatch' }
+  /** The payload described a different modality than the set was started with. */
+  | { ok: false; reason: 'modality_mismatch' }
+  /** A completed band set that does not say which band, or how many. */
+  | { ok: false; reason: 'band_required' }
+  /** The stored input type is not a value this build understands. */
+  | { ok: false; reason: 'input_type_unreadable' }
 
 /**
  * Apply a completion or a skip to one expected set.
@@ -363,12 +424,39 @@ export async function applySetUpdate(
       status: 'skipped',
       loadValue: null,
       loadUnit: null,
+      bandLabel: null,
+      bandCount: null,
       result: null,
       updatedAt: now,
     }
     await store.updateSet(record)
     await store.touchOccurrence(googleSub, workoutDate, sessionId, now)
     return { ok: true, record }
+  }
+
+  // THE FROZEN SNAPSHOT DECIDES WHAT MAY BE RECORDED.
+  //
+  // Not the request, and not the exercise's setting as it stands right now: a
+  // workout begun as kilograms stays kilograms even if the user switches that
+  // exercise to bands mid-session. A payload describing the other modality is
+  // refused outright rather than half-stored, because a set holding both a
+  // weight and a band — or a band on a kilogram exercise — is not a fact about
+  // anything that happened.
+  const inputType = existing.inputType
+  if (inputType === null) {
+    // Unreadable modality: it cannot be displayed or compared honestly, so it
+    // is not written to either.
+    return { ok: false, reason: 'input_type_unreadable' }
+  }
+
+  if (inputType === 'resistance_band') {
+    if (update.load) return { ok: false, reason: 'modality_mismatch' }
+    // A completed band set that cannot say WHICH band records nothing usable
+    // later, so it is refused rather than stored blank.
+    if (!update.band) return { ok: false, reason: 'band_required' }
+  } else if (update.band) {
+    // Kilogram and bodyweight sets have no band to record.
+    return { ok: false, reason: 'modality_mismatch' }
   }
 
   if (update.load) {
@@ -383,6 +471,8 @@ export async function applySetUpdate(
     status: 'completed',
     loadValue: update.load ? update.load.value : null,
     loadUnit: update.load ? update.load.unit : null,
+    bandLabel: update.band ? update.band.label : null,
+    bandCount: update.band ? update.band.count : null,
     result: update.result,
     updatedAt: now,
   }

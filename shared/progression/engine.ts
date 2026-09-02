@@ -49,7 +49,8 @@
  * manufactures the strike that would reduce someone's load.
  */
 
-import { loadUnitLabel } from '../workoutLog'
+import type { WorkoutInputType } from '../workoutInput'
+import { loadUnitLabel, readInputTypeSnapshot } from '../workoutLog'
 import type {
   WorkoutLoadMode,
   WorkoutLoadUnit,
@@ -94,6 +95,10 @@ export type ProgressionSetRow = {
   loadValue: number | null
   loadUnit: string | null
   result: number | null
+  /** Frozen at Start. Null on any row written before Round 20. */
+  inputTypeSnapshot: string | null
+  bandLabel: string | null
+  bandCount: number | null
 }
 
 /** A durable calibration row, read back for the current occurrence. */
@@ -174,6 +179,8 @@ export const PROGRESSION_REASON_CODES = [
   'evidence_incomplete',
   'quality_focus',
   'no_load_target',
+  /** Round 20: band work, which this engine deliberately does not progress. */
+  'band_not_progressable',
   'ambiguous_slot',
   'ambiguous_history',
   'unreadable_history',
@@ -301,6 +308,8 @@ type SlotIdentity = {
   resultKind: WorkoutResultKind
   loadMode: WorkoutLoadMode
   perSide: boolean
+  /** How the work was loaded, frozen at Start. */
+  inputType: WorkoutInputType
 }
 
 type SlotFacts = {
@@ -349,6 +358,12 @@ function readSlot(sessionId: string, rows: readonly ProgressionSetRow[]): ReadSl
   const perSide = first.perSide === true || first.perSide === 1
   if (typeof first.prescription !== 'string') return { ok: false }
 
+  // The modality is part of the slot's identity. A row with no snapshot is
+  // legacy and answers from its own frozen load mode; one this build cannot
+  // name fails the slot closed rather than being assumed to be kilograms.
+  const inputType = readInputTypeSnapshot(first.inputTypeSnapshot, first.loadMode)
+  if (inputType === null) return { ok: false }
+
   const identity: SlotIdentity = {
     exerciseId: first.exerciseId,
     exerciseName: typeof first.exerciseName === 'string' ? first.exerciseName : first.exerciseId,
@@ -356,6 +371,7 @@ function readSlot(sessionId: string, rows: readonly ProgressionSetRow[]): ReadSl
     resultKind: first.resultKind,
     loadMode: first.loadMode,
     perSide,
+    inputType,
   }
 
   const sets: SlotSet[] = []
@@ -369,7 +385,10 @@ function readSlot(sessionId: string, rows: readonly ProgressionSetRow[]): ReadSl
       row.prescription !== identity.prescription ||
       row.resultKind !== identity.resultKind ||
       row.loadMode !== identity.loadMode ||
-      (row.perSide === true || row.perSide === 1) !== identity.perSide
+      (row.perSide === true || row.perSide === 1) !== identity.perSide ||
+      // One position in one workout was performed one way. Rows disagreeing
+      // about the modality cannot be reconciled either.
+      readInputTypeSnapshot(row.inputTypeSnapshot, identity.loadMode) !== identity.inputType
     ) {
       return { ok: false }
     }
@@ -426,6 +445,7 @@ function readSlot(sessionId: string, rows: readonly ProgressionSetRow[]): ReadSl
         resultKind: identity.resultKind,
         loadMode: identity.loadMode,
         perSide: identity.perSide,
+        inputType: identity.inputType,
       }
     : null
 
@@ -575,7 +595,16 @@ function gatherEvidence(
   const found: LaneOccurrence[] = []
 
   for (const occurrence of occurrences) {
-    const matches = occurrence.slots.filter((slot) => slot.fingerprint === fingerprint)
+    const matches = occurrence.slots.filter(
+      (slot) =>
+        slot.fingerprint === fingerprint &&
+        // The fingerprint separates kilograms from everything else through the
+        // load mode, but band and bodyweight both freeze 'none' and would
+        // otherwise share a lane. They are not the same work, so the modality
+        // is matched explicitly — a set done with a band is never evidence
+        // about a set done with nothing.
+        slot.identity.inputType === lane.inputType,
+    )
     if (matches.length === 0) continue
     if (matches.length > 1) return { ok: false, reason: 'ambiguous_history' }
 
@@ -870,6 +899,33 @@ function deriveLane(context: {
     lane,
     target,
     lastResult: lastRecorded,
+  }
+
+  /* ---- band work is not progressed at all -------------------------- */
+
+  // DELIBERATELY BEFORE THE BODYWEIGHT BRANCH.
+  //
+  // Band work also freezes a load mode of 'none', so without this it would be
+  // answered with "Bodyweight work" — true about the kilograms and false about
+  // the training the user actually did.
+  //
+  // And it is refused rather than approximated. Double progression means "hold
+  // the load until every set reaches the top of the range, then add one step",
+  // where a step is a real number of kilograms from an authoritative ladder.
+  // There is no such ladder for bands: a black band is not a quantity this app
+  // can add to, and converting "one more band" into kilograms would be
+  // inventing a measurement. A smaller, honest answer is the only one there is.
+  if (lane.inputType === 'resistance_band') {
+    return {
+      ...base,
+      state: 'quality',
+      reasonCode: 'band_not_progressable',
+      gap: null,
+      reason: `Band work — no load progression is offered, because band resistance cannot honestly be converted to kilograms. Keep the authored ${target.text} target.`,
+      suggestedLoad: null,
+      loadDirection: null,
+      calibration: null,
+    }
   }
 
   /* ---- work with no load never grows one -------------------------- */

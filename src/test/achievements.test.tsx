@@ -68,6 +68,8 @@ function seedWorkout(options: {
       resultKind: 'reps' as const,
       loadMode: 'kg' as const,
       perSide: false,
+      inputType: 'weight_kg' as const,
+      band: null,
       status: status as ServerSet['status'],
       load: status === 'completed' ? { value: 20, unit: 'kg' as const } : null,
       result: status === 'completed' ? 12 : null,

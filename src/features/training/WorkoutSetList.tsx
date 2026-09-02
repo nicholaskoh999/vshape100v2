@@ -9,8 +9,10 @@ import {
   resultLabel,
   type WorkoutLoadUnit,
 } from '@shared/workoutLog'
+import { parseBandCount, parseBandLabel } from '@shared/workoutInput'
+
 import { parsePrescription } from './workoutPlan'
-import type { WorkoutLoad, WorkoutSet } from './workoutApi'
+import type { WorkoutBand, WorkoutLoad, WorkoutSet } from './workoutApi'
 import { setKey, type SetKey } from './useWorkoutLog'
 
 /**
@@ -55,7 +57,7 @@ export type WorkoutSetListProps = {
   onComplete: (
     exerciseOrder: number,
     setIndex: number,
-    entry: { result: number; load: WorkoutLoad | null },
+    entry: { result: number; load: WorkoutLoad | null; band: WorkoutBand | null },
   ) => void
   onSkip: (exerciseOrder: number, setIndex: number) => void
   onUndo: (exerciseOrder: number, setIndex: number) => void
@@ -112,10 +114,24 @@ function WorkoutSetRow({
   const fieldId = useId()
   // Never prefilled: a default number would be a value the user did not do.
   const [loadInput, setLoadInput] = useState('')
+  const [bandLabelInput, setBandLabelInput] = useState('')
+  const [bandCountInput, setBandCountInput] = useState('')
   const [resultInput, setResultInput] = useState('')
 
   const label = `Set ${set.setIndex + 1}`
-  const takesLoad = set.loadMode !== 'none'
+  // WHICH CONTROL THIS SET GETS IS DECIDED BY THE FROZEN SNAPSHOT.
+  //
+  // Not by the exercise's current setting, and not by its name. A workout begun
+  // as kilograms keeps its kilogram field even if the user switches that
+  // exercise to bands mid-session, because that is what they are actually doing
+  // right now.
+  const isBand = set.inputType === 'resistance_band'
+  const isKilograms = set.inputType === 'weight_kg'
+  // A modality the client cannot name. Logging is refused rather than guessed —
+  // recording reps against the wrong kind of resistance is how the bad data
+  // this round exists to fix got there in the first place.
+  const unreadable = set.inputType === null
+  const takesLoad = isKilograms && set.loadMode !== 'none'
   const unit = takesLoad ? (set.loadMode as WorkoutLoadUnit) : null
   const target = parsePrescription(set.prescription)?.target ?? ''
 
@@ -125,10 +141,25 @@ function WorkoutSetRow({
   const loadValue = Number(loadTrimmed)
   const loadValid = loadTrimmed === '' || isSetLoad(loadValue)
 
-  const canComplete = resultValid && loadValid && !locked
+  const bandLabel = parseBandLabel(bandLabelInput)
+  const bandCountTrimmed = bandCountInput.trim()
+  const bandCount = parseBandCount(Number(bandCountTrimmed))
+  const bandLabelValid = bandLabelInput.trim() === '' || bandLabel !== null
+  const bandCountValid = bandCountTrimmed === '' || bandCount !== null
+  // A completed band set must say WHICH band and how many. Half an answer is
+  // not a smaller record, it is an unreadable one.
+  const bandComplete = bandLabel !== null && bandCount !== null
+
+  const canComplete =
+    resultValid &&
+    loadValid &&
+    !locked &&
+    !unreadable &&
+    (!isBand || bandComplete)
 
   // Offered only where it means the same thing as this set's own load field.
-  // A kg suggestion must never land in a per-dumbbell input.
+  // A kg suggestion must never land in a per-dumbbell input, and never in a
+  // band set at all.
   const offered =
     takesLoad && suggestedLoad && unit && suggestedLoad.unit === unit ? suggestedLoad : null
 
@@ -136,7 +167,12 @@ function WorkoutSetRow({
     if (!canComplete) return
     onComplete(set.exerciseOrder, set.setIndex, {
       result: resultValue,
+      // Exactly one kind of resistance travels, chosen by the frozen modality.
+      // A payload carrying both is refused by the server; it is not built here.
       load: unit && loadTrimmed !== '' ? { value: loadValue, unit } : null,
+      band: isBand && bandLabel !== null && bandCount !== null
+        ? { label: bandLabel, count: bandCount }
+        : null,
     })
   }
 
@@ -161,6 +197,33 @@ function WorkoutSetRow({
     >
       <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
         <p className="min-w-14 text-[13px] font-bold text-ink-dim">{label}</p>
+
+        {isBand && (
+          <>
+            <div className="min-w-0">
+              <Field
+                id={`${fieldId}-band-label`}
+                label="Band"
+                value={bandLabelInput}
+                onChange={setBandLabelInput}
+                placeholder="e.g. Black"
+                invalid={!bandLabelValid}
+                wide
+              />
+            </div>
+            <div className="min-w-0">
+              <Field
+                id={`${fieldId}-band-count`}
+                label="How many"
+                value={bandCountInput}
+                onChange={setBandCountInput}
+                inputMode="numeric"
+                placeholder="—"
+                invalid={!bandCountValid}
+              />
+            </div>
+          </>
+        )}
 
         {takesLoad && unit && (
           <div className="min-w-0">
@@ -223,6 +286,13 @@ function WorkoutSetRow({
           </button>
         </div>
       </div>
+
+      {unreadable && (
+        <p className="mt-2 text-[12px] font-semibold text-late">
+          This set’s input type could not be read, so it cannot be logged. Nothing
+          is assumed about how it was loaded.
+        </p>
+      )}
 
       {busy && (
         <p role="status" className="mt-2 text-[12px] font-semibold text-ink-faint">
@@ -288,12 +358,19 @@ function ResolvedSetRow({
   )
 }
 
-/** "12 reps · 20kg each" — exactly what was stored, with its unit meaning. */
+/**
+ * "12 reps · 20kg each", or "12 reps · Black ×3" — exactly what was stored.
+ *
+ * The band is named and counted, never converted. This is the line that used to
+ * read "12 reps · 3kg" for three black bands, because the count had been stored
+ * in the weight column and the unit was appended unconditionally.
+ */
 function describeResult(set: WorkoutSet): string {
   if (set.result === null) return '—'
   const unitWord = set.resultKind === 'seconds' ? 's' : ' reps'
   const perSide = set.resultKind === 'reps' && set.perSide ? ' / side' : ''
   const result = `${set.result}${unitWord}${perSide}`
+  if (set.band) return `${result} · ${set.band.label} ×${set.band.count}`
   if (!set.load) return result
   return `${result} · ${set.load.value}${loadUnitLabel(set.load.unit)}`
 }
@@ -303,17 +380,21 @@ function Field({
   label,
   value,
   onChange,
-  inputMode,
+  // Text by default: a band is named, not measured, so it is the one field
+  // here that does not want a numeric keypad.
+  inputMode = 'text',
   placeholder,
   invalid,
+  wide = false,
 }: {
   id: string
   label: string
   value: string
   onChange: (next: string) => void
-  inputMode: 'numeric' | 'decimal'
+  inputMode?: 'numeric' | 'decimal' | 'text'
   placeholder: string
   invalid: boolean
+  wide?: boolean
 }) {
   return (
     <div className="min-w-0">
@@ -333,7 +414,9 @@ function Field({
         onChange={(event) => onChange(event.target.value)}
         aria-invalid={invalid || undefined}
         className={cn(
-          'mt-1 w-20 rounded-control border bg-surface px-2.5 py-1.5 text-[15px] font-bold text-offwhite outline-offset-[-2px]',
+          'mt-1 rounded-control border bg-surface px-2.5 py-1.5 text-[15px] font-bold text-offwhite outline-offset-[-2px]',
+          // A band label is a word, not a two-digit number.
+          wide ? 'w-32' : 'w-20',
           invalid ? 'border-coral' : 'border-edge-strong',
         )}
       />

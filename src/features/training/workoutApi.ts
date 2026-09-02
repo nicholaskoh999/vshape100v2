@@ -7,6 +7,12 @@
  * which React can never see. A refresh re-reads; it never replays a cache.
  */
 
+import {
+  isWorkoutInputType,
+  parseBandCount,
+  parseBandLabel,
+  type WorkoutInputType,
+} from '@shared/workoutInput'
 import { readProvenance, type WorkoutKind } from '@shared/workoutLog'
 import type {
   WorkoutLoadMode,
@@ -43,11 +49,24 @@ export type WorkoutSet = {
   resultKind: WorkoutResultKind
   loadMode: WorkoutLoadMode
   perSide: boolean
+  /**
+   * How this set is loaded, frozen when the workout was started.
+   *
+   * Null means the server could not read the stored modality. The controls must
+   * refuse to log against it rather than fall back to kilograms — that fallback
+   * is the whole reason this field exists.
+   */
+  inputType: WorkoutInputType | null
   status: WorkoutSetStatus
   load: WorkoutLoad | null
+  /** The band actually used. Only ever present on a completed band set. */
+  band: WorkoutBand | null
   result: number | null
   updatedAt: number
 }
+
+/** A recorded band: which one, and how many. Never a weight. */
+export type WorkoutBand = { label: string; count: number }
 
 export type WorkoutProgress = {
   total: number
@@ -110,6 +129,18 @@ function toLoad(raw: unknown): WorkoutLoad | null {
   return { value: row.value, unit: row.unit }
 }
 
+/** A recorded band, or null when the row carries none to read. */
+function toBand(raw: unknown): WorkoutBand | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const row = raw as Record<string, unknown>
+  const label = parseBandLabel(row.label)
+  const count = parseBandCount(row.count)
+  // A name with no quantity, or a quantity of something unnamed, records no
+  // setup at all and is dropped rather than half-shown.
+  if (label === null || count === null) return null
+  return { label, count }
+}
+
 /** Returns null for anything that is not a full set row. */
 function toSet(raw: unknown): WorkoutSet | null {
   if (typeof raw !== 'object' || raw === null) return null
@@ -134,8 +165,12 @@ function toSet(raw: unknown): WorkoutSet | null {
     resultKind: row.resultKind,
     loadMode: row.loadMode,
     perSide: row.perSide === true,
+    // Absent or unrecognised is carried through as null, NOT defaulted. The
+    // set list refuses to log a set it cannot describe.
+    inputType: isWorkoutInputType(row.inputType) ? row.inputType : null,
     status: row.status,
     load: toLoad(row.load),
+    band: toBand(row.band),
     result: typeof row.result === 'number' ? row.result : null,
     updatedAt: typeof row.updatedAt === 'number' ? row.updatedAt : 0,
   }
@@ -259,19 +294,30 @@ async function mutateSet(
   return toSet(body.set)
 }
 
-/** Log one set as completed. A result is required; load is optional. */
+/**
+ * Log one set as completed.
+ *
+ * A result is required. The resistance is whatever that set's frozen modality
+ * says it is: a kilogram load, a band, or neither. Sending both is refused by
+ * the server, which is the authority on what this set was started as.
+ */
 export async function completeSet(
   date: string,
   sessionId: string,
   exerciseOrder: number,
   setIndex: number,
-  entry: { result: number; load: WorkoutLoad | null },
+  entry: { result: number; load: WorkoutLoad | null; band?: WorkoutBand | null },
   signal?: AbortSignal,
 ): Promise<WorkoutSet | null> {
   return mutateSet(date, sessionId, exerciseOrder, setIndex, {
     method: 'PUT',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'complete', result: entry.result, load: entry.load }),
+    body: JSON.stringify({
+      action: 'complete',
+      result: entry.result,
+      load: entry.load,
+      band: entry.band ?? null,
+    }),
     signal,
   })
 }

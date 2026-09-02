@@ -39,6 +39,8 @@ function set(over: Partial<EligibleSet> = {}): EligibleSet {
     resultKind: 'reps',
     loadMode: 'kg',
     perSide: false,
+    inputType: 'weight_kg',
+    band: null,
     loadValue: 50,
     result: 10,
     workoutDate: '2026-09-07',
@@ -57,6 +59,11 @@ function row(over: Partial<CompletedSetRow> = {}): CompletedSetRow {
     resultKind: 'reps',
     loadMode: 'kg',
     perSide: 0,
+    // A Round 20 kilogram row. The legacy shape — no snapshot at all — is
+    // covered by its own tests rather than being the default here.
+    inputTypeSnapshot: 'weight_kg',
+    bandLabel: null,
+    bandCount: null,
     loadValue: 50,
     loadUnit: 'kg',
     result: 10,

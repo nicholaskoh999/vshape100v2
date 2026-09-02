@@ -10,6 +10,9 @@ import {
   usedInSummary,
   type CatalogExercise,
 } from '@/features/training/catalog'
+import { WORKOUT_INPUT_TYPE_LABELS, type WorkoutInputType } from '@shared/workoutInput'
+
+import { useExerciseInputTypeLibrary } from './useExerciseInputTypeLibrary'
 import { useExerciseMediaLibrary } from './useExerciseMediaLibrary'
 
 /**
@@ -17,11 +20,16 @@ import { useExerciseMediaLibrary } from './useExerciseMediaLibrary'
  *
  * One row per unique exercise identity. Lat Pulldown appears once even though
  * the week trains it on Monday, Wednesday and Thursday; those days show up in
- * its "Used in" line instead. Each row opens the one canonical media editor
- * for that exercise.
+ * its "Used in" line instead. Each row opens that exercise's settings.
+ *
+ * Round 20 put the input type on these rows because it is the setting that
+ * decides what the app RECORDS, and the user needs to see at a glance which
+ * exercises they have answered for. An unanswered exercise says so rather than
+ * showing a default — "not set" and "kilograms" are different facts.
  */
 export function ExerciseLibraryPage() {
   const library = useExerciseMediaLibrary()
+  const inputTypes = useExerciseInputTypeLibrary()
 
   return (
     <>
@@ -37,7 +45,7 @@ export function ExerciseLibraryPage() {
       <PageHeader
         eyebrow="Settings"
         title="Exercise Library"
-        subline="One media record per exercise, shared by every day it is trained."
+        subline="One record per exercise, shared by every day it is trained."
       />
 
       <div
@@ -65,7 +73,10 @@ export function ExerciseLibraryPage() {
         )}
         {library.status === 'ready' && (
           <>
-            {exerciseCatalog.length} exercises · {library.withMedia.size} with media
+            {exerciseCatalog.length} exercises · {library.withMedia.size} with media ·{' '}
+            {inputTypes.status === 'ready'
+              ? `${inputTypes.byExercise.size} with an input type`
+              : 'checking input types'}
           </>
         )}
       </div>
@@ -82,6 +93,8 @@ export function ExerciseLibraryPage() {
               entry={entry}
               hasMedia={library.withMedia.has(entry.id)}
               known={library.status === 'ready'}
+              inputType={inputTypes.byExercise.get(entry.id) ?? null}
+              inputTypeKnown={inputTypes.status === 'ready'}
             />
           </motion.li>
         ))}
@@ -94,15 +107,20 @@ function ExerciseRow({
   entry,
   hasMedia,
   known,
+  inputType,
+  inputTypeKnown,
 }: {
   entry: CatalogExercise
   hasMedia: boolean
   known: boolean
+  /** The stated input type, or null when this exercise has never been answered for. */
+  inputType: WorkoutInputType | null
+  inputTypeKnown: boolean
 }) {
   return (
     <Link
       to={`/settings/exercises/${entry.id}`}
-      aria-label={`Edit media for ${entry.name}`}
+      aria-label={`Edit settings for ${entry.name}`}
       className="block rounded-card"
     >
       <motion.div {...press} tabIndex={-1}>
@@ -120,6 +138,13 @@ function ExerciseRow({
             </p>
             <p className="mt-0.5 truncate text-[13px] text-ink-faint">
               Used in {usedInSummary(entry)}
+            </p>
+            <p className="mt-0.5 truncate text-[12px] font-semibold text-ink-faint">
+              {inputTypeKnown
+                ? inputType
+                  ? WORKOUT_INPUT_TYPE_LABELS[inputType]
+                  : 'Input type not set'
+                : 'Checking input type'}
             </p>
           </div>
 

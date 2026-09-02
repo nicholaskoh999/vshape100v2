@@ -53,8 +53,12 @@ function seedStarted(sessionId: string) {
       resultKind: exercise.resultKind,
       loadMode: exercise.loadMode,
       perSide: exercise.perSide,
+      // Seeded the way a pre-Round-20 workout reads: kilograms meant
+      // kilograms, no load meant bodyweight.
+      inputType: exercise.loadMode === 'none' ? ('bodyweight' as const) : ('weight_kg' as const),
       status: 'pending' as const,
       load: null,
+      band: null,
       result: null,
       updatedAt: 1,
     })),

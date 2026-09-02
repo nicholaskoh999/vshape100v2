@@ -26,6 +26,8 @@ import {
   requireAccount,
   withSessionHeaders,
 } from '../http/authenticated'
+import { createD1ExerciseInputTypeStore } from '../exerciseInput/d1Store'
+import { resolveInputTypes, type ExerciseInputTypeStore } from '../exerciseInput/exerciseInput'
 import { createD1WorkoutStore } from './d1Store'
 import {
   applySetUpdate,
@@ -44,6 +46,7 @@ import {
   startWorkout,
   summariseSets,
   undoSet,
+  type SetOutcome,
   type WorkoutLog,
   type WorkoutOccurrenceRecord,
   type WorkoutSetRecord,
@@ -83,11 +86,19 @@ function toPublicSet(record: WorkoutSetRecord) {
     resultKind: record.resultKind,
     loadMode: record.loadMode,
     perSide: record.perSide,
+    // The frozen modality, so the training controls offer the right input and
+    // the log renders what actually happened. Null means the stored value could
+    // not be read, which the client must show as such rather than as kilograms.
+    inputType: record.inputType,
     status: record.status,
     load:
       record.loadValue === null || record.loadUnit === null
         ? null
         : { value: record.loadValue, unit: record.loadUnit },
+    band:
+      record.bandLabel === null || record.bandCount === null
+        ? null
+        : { label: record.bandLabel, count: record.bandCount },
     result: record.result,
     updatedAt: record.updatedAt,
   }
@@ -160,6 +171,7 @@ async function handleRead(
 async function handleStart(
   request: Request,
   store: WorkoutStore,
+  inputTypeStore: ExerciseInputTypeStore,
   googleSub: string,
   date: string,
   sessionId: string,
@@ -199,8 +211,28 @@ async function handleStart(
   //   - and a pre-read that fires before the resume path is reached would
   //     refuse to reopen a workout the user is in the middle of
   //
+  // THE MODALITY IS RESOLVED SERVER-SIDE, FROM THE ACCOUNT'S OWN SETTINGS.
+  //
+  // Read here, not taken from the request: the body already carries a load
+  // mode, so trusting it for the input type too would let any caller declare a
+  // band exercise to be kilograms. This is the authenticated account's stored
+  // answer, and an exercise it has never configured is simply absent from the
+  // map, which leaves that exercise behaving exactly as it did before.
+  const inputTypes = await resolveInputTypes(inputTypeStore, googleSub)
+
   // One decision, in one place, evaluated against committed state.
-  const outcome = await startWorkout(store, googleSub, date, sessionId, parsed.value)
+  const outcome = await startWorkout(
+    store,
+    googleSub,
+    date,
+    sessionId,
+    parsed.value,
+    Date.now(),
+    // Let the rules mint the ownership token; only the caller's clock and the
+    // account's settings are supplied here.
+    undefined,
+    inputTypes,
+  )
   // The authoritative refusal: the conditional insert itself declined, because
   // the day carried a flex choice at the moment the write committed. Nothing
   // was created — no occurrence, and no sets.
@@ -216,9 +248,21 @@ async function handleStart(
   )
 }
 
-/** Map a rules-level refusal onto a controlled response. */
-function setFailure(reason: 'not_found' | 'load_not_applicable' | 'load_unit_mismatch') {
+/**
+ * Map a rules-level refusal onto a controlled response.
+ *
+ * Derived from SetOutcome rather than re-listed, so a refusal added to the
+ * rules cannot be silently dropped here: it fails to compile instead.
+ *
+ * `input_type_unreadable` is a corrupt stored row, not a bad request, so it
+ * answers 500 — the client did nothing wrong and retrying the same call would
+ * not help. Everything else is the payload's own fault, and 400 says so.
+ */
+type SetFailureReason = Extract<SetOutcome, { ok: false }>['reason']
+
+function setFailure(reason: SetFailureReason) {
   if (reason === 'not_found') return json({ error: 'set_not_found' }, { status: 404 })
+  if (reason === 'input_type_unreadable') return json({ error: reason }, { status: 500 })
   return json({ error: reason }, { status: 400 })
 }
 
@@ -385,7 +429,14 @@ export async function handleWorkoutRequest(
 
     if (isStart) {
       return withSessionHeaders(
-        await handleStart(request, store, account.googleSub, date, sessionId),
+        await handleStart(
+          request,
+          store,
+          createD1ExerciseInputTypeStore(env.DB),
+          account.googleSub,
+          date,
+          sessionId,
+        ),
         sessionHeaders,
       )
     }

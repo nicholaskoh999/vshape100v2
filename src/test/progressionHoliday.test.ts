@@ -42,6 +42,9 @@ function slot(date: string, results: number[], load: number): ProgressionSetRow[
     prescription: '4 × 10–15',
     resultKind: 'reps',
     loadMode: 'kg',
+    inputTypeSnapshot: null,
+    bandLabel: null,
+    bandCount: null,
     perSide: false,
     status: 'completed',
     loadValue: load,
@@ -60,6 +63,9 @@ function pending(date: string): ProgressionSetRow[] {
     prescription: '4 × 10–15',
     resultKind: 'reps',
     loadMode: 'kg',
+    inputTypeSnapshot: null,
+    bandLabel: null,
+    bandCount: null,
     perSide: false,
     status: 'pending',
     loadValue: null,
@@ -92,6 +98,7 @@ describe('31. Holiday Training On uses the underlying weekday lane', () => {
       upper: 15,
       resultKind: 'reps',
       loadMode: 'kg',
+      inputType: 'weight_kg',
       perSide: false,
     } as const
 

@@ -91,23 +91,23 @@ describe('Settings entry', () => {
 describe('Exercise Library', () => {
   it('lists every exercise exactly once', async () => {
     await renderAt('/settings/exercises')
-    const rows = await screen.findAllByRole('link', { name: /^Edit media for / })
+    const rows = await screen.findAllByRole('link', { name: /^Edit settings for / })
     expect(rows).toHaveLength(exerciseCatalog.length)
   })
 
   it('shows Lat Pulldown once, not once per training day', async () => {
     await renderAt('/settings/exercises')
-    const rows = await screen.findAllByRole('link', { name: 'Edit media for Lat Pulldown' })
+    const rows = await screen.findAllByRole('link', { name: 'Edit settings for Lat Pulldown' })
     expect(rows).toHaveLength(1)
     expect(screen.getAllByText('Lat Pulldown')).toHaveLength(1)
   })
 
   it('summarises where an exercise is used', async () => {
     await renderAt('/settings/exercises')
-    const row = await screen.findByRole('link', { name: 'Edit media for Lat Pulldown' })
+    const row = await screen.findByRole('link', { name: 'Edit settings for Lat Pulldown' })
     expect(within(row).getByText('Used in Monday · Wednesday · Thursday')).toBeInTheDocument()
 
-    const single = screen.getByRole('link', { name: 'Edit media for Dead Bug' })
+    const single = screen.getByRole('link', { name: 'Edit settings for Dead Bug' })
     expect(within(single).getByText('Used in Wednesday')).toBeInTheDocument()
   })
 
@@ -115,10 +115,10 @@ describe('Exercise Library', () => {
     server.rows.set(GIF.exerciseId, GIF)
     await renderAt('/settings/exercises')
 
-    const withMedia = await screen.findByRole('link', { name: 'Edit media for Lat Pulldown' })
+    const withMedia = await screen.findByRole('link', { name: 'Edit settings for Lat Pulldown' })
     await waitFor(() => expect(within(withMedia).getByText('Media set')).toBeInTheDocument())
 
-    const without = screen.getByRole('link', { name: 'Edit media for Plank' })
+    const without = screen.getByRole('link', { name: 'Edit settings for Plank' })
     expect(within(without).getByText('No media')).toBeInTheDocument()
   })
 
@@ -147,7 +147,7 @@ describe('Exercise Library', () => {
   it('opens the canonical editor for a row', async () => {
     const router = await renderAt('/settings/exercises')
     await user().click(
-      await screen.findByRole('link', { name: 'Edit media for Lat Pulldown' }),
+      await screen.findByRole('link', { name: 'Edit settings for Lat Pulldown' }),
     )
 
     await waitFor(() =>

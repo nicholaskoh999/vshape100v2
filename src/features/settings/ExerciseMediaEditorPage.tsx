@@ -13,6 +13,7 @@ import {
   saveExerciseMedia,
 } from '@/features/training/exerciseMediaApi'
 import { useExerciseMedia } from '@/features/training/useExerciseMedia'
+import { ExerciseInputTypeCard } from './ExerciseInputTypeCard'
 import { cn } from '@/lib/utils'
 import {
   isSafeMediaUrl,
@@ -186,12 +187,18 @@ function Editor({
       <BackToLibrary />
 
       <PageHeader
-        eyebrow="Exercise media"
+        eyebrow="Exercise settings"
         title={name}
         subline={`Used in ${usedIn}`}
       />
 
       <div className="flex flex-col gap-4">
+        {/*
+          First, because it changes what the app RECORDS, while everything
+          below it changes only what the app shows.
+        */}
+        <ExerciseInputTypeCard exerciseId={exerciseId} name={name} />
+
         <ExerciseMedia media={previewSource} resolution={previewResolution} />
 
         <StatusLine media={media} feedback={feedback} />

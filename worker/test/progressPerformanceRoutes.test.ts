@@ -85,7 +85,12 @@ async function resolveSet(
   order: number,
   index: number,
   update:
-    | { action: 'complete'; result: number; load: { value: number; unit: 'kg' | 'kg_each' } | null }
+    | {
+        action: 'complete'
+        result: number
+        load: { value: number; unit: 'kg' | 'kg_each' } | null
+        band: null
+      }
     | { action: 'skip' },
 ) {
   const outcome = await applySetUpdate(
@@ -138,6 +143,7 @@ describe('1. completed sets only', () => {
       action: 'complete',
       result: 10,
       load: { value: 50, unit: 'kg' },
+      band: null,
     })
 
     const { body } = await performance(db, token)
@@ -180,6 +186,7 @@ describe('1. completed sets only', () => {
       action: 'complete',
       result: 12,
       load: { value: 45, unit: 'kg' },
+      band: null,
     })
     await resolveSet(db, 'sub-a', '2026-08-03', 'monday', 0, 2, { action: 'skip' })
 
@@ -205,6 +212,7 @@ describe('2. one account cannot see another', () => {
       action: 'complete',
       result: 10,
       load: { value: 200, unit: 'kg' },
+      band: null,
     })
 
     const { body } = await performance(db, a)
@@ -228,6 +236,7 @@ describe('2. one account cannot see another', () => {
         action: 'complete',
         result: 10,
         load: { value: load, unit: 'kg' },
+        band: null,
       })
     }
 
@@ -251,6 +260,7 @@ describe('3. all-time really means all-time', () => {
       action: 'complete',
       result: 5,
       load: { value: 95, unit: 'kg' },
+      band: null,
     })
 
     // Sixty more recent workouts, all lighter — more than any page the
@@ -263,6 +273,7 @@ describe('3. all-time really means all-time', () => {
         action: 'complete',
         result: 10,
         load: { value: 50, unit: 'kg' },
+        band: null,
       })
     }
 
@@ -288,6 +299,7 @@ describe('3. all-time really means all-time', () => {
         action: 'complete',
         result: 10 + index,
         load: { value: 50, unit: 'kg' },
+        band: null,
       })
     }
 
@@ -314,11 +326,13 @@ describe('4. measurement systems stay apart', () => {
       action: 'complete',
       result: 10,
       load: { value: 30, unit: 'kg' },
+      band: null,
     })
     await resolveSet(db, 'sub-a', '2026-08-03', 'monday', 1, 0, {
       action: 'complete',
       result: 10,
       load: { value: 20, unit: 'kg_each' },
+      band: null,
     })
 
     const { body } = await performance(db, token)
@@ -343,11 +357,13 @@ describe('4. measurement systems stay apart', () => {
       action: 'complete',
       result: 12,
       load: null,
+      band: null,
     })
     await resolveSet(db, 'sub-a', '2026-08-03', 'monday', 1, 0, {
       action: 'complete',
       result: 60,
       load: null,
+      band: null,
     })
 
     const { body } = await performance(db, token)
@@ -371,11 +387,13 @@ describe('4. measurement systems stay apart', () => {
       action: 'complete',
       result: 10,
       load: { value: 24, unit: 'kg' },
+      band: null,
     })
     await resolveSet(db, 'sub-a', '2026-08-03', 'monday', 1, 0, {
       action: 'complete',
       result: 10,
       load: { value: 24, unit: 'kg' },
+      band: null,
     })
 
     const { body } = await performance(db, token)
@@ -408,11 +426,13 @@ describe('5. one point per workout, through the real query', () => {
         action: 'complete',
         result: 15,
         load: { value: 20, unit: 'kg' },
+        band: null,
       })
       await resolveSet(db, 'sub-a', date, 'monday', 0, 1, {
         action: 'complete',
         result: reps,
         load: { value: load, unit: 'kg' },
+        band: null,
       })
     }
 
@@ -439,11 +459,13 @@ describe('5. one point per workout, through the real query', () => {
       action: 'complete',
       result: 12,
       load: { value: 45, unit: 'kg' },
+      band: null,
     })
     await resolveSet(db, 'sub-a', '2026-08-03', 'monday', 1, 0, {
       action: 'complete',
       result: 6,
       load: { value: 52.5, unit: 'kg' },
+      band: null,
     })
 
     const { body } = await performance(db, token)
@@ -463,6 +485,7 @@ describe('5. one point per workout, through the real query', () => {
         action: 'complete',
         result: 10,
         load: { value: session === 'monday' ? 50 : 45, unit: 'kg' },
+        band: null,
       })
     }
 
@@ -487,6 +510,7 @@ describe('5. one point per workout, through the real query', () => {
       action: 'complete',
       result: 10,
       load: { value: 50, unit: 'kg' },
+      band: null,
     })
 
     const { body } = await performance(db, token)
@@ -519,6 +543,7 @@ describe('5b. a loaded set with no recorded load', () => {
       action: 'complete',
       result,
       load: null,
+      band: null,
     })
   }
 
@@ -531,6 +556,7 @@ describe('5b. a loaded set with no recorded load', () => {
       action: 'complete',
       result: 8,
       load: { value: 50, unit: 'kg' },
+      band: null,
     })
     // Thirty reps, no weight written down.
     await completeWithoutLoad(db, '2026-08-03', 0, 1, 30)
@@ -551,6 +577,7 @@ describe('5b. a loaded set with no recorded load', () => {
       action: 'complete',
       result: 6,
       load: { value: 45, unit: 'kg' },
+      band: null,
     })
 
     const { body } = await performance(db, token)
@@ -568,6 +595,7 @@ describe('5b. a loaded set with no recorded load', () => {
       action: 'complete',
       result: 8,
       load: { value: 50, unit: 'kg' },
+      band: null,
     })
 
     // A second workout where only reps were logged.
@@ -614,6 +642,7 @@ describe('5b. a loaded set with no recorded load', () => {
       action: 'complete',
       result: 22,
       load: null,
+      band: null,
     })
 
     const { body } = await performance(db, token)
@@ -633,6 +662,7 @@ describe('5b. a loaded set with no recorded load', () => {
       action: 'complete',
       result: 75,
       load: null,
+      band: null,
     })
 
     const { body } = await performance(db, token)
@@ -662,6 +692,7 @@ describe('5c. two workouts on one date', () => {
       action: 'complete',
       result: 10,
       load: { value: 40, unit: 'kg' },
+      band: null,
     })
 
     await startSession(
@@ -676,6 +707,7 @@ describe('5c. two workouts on one date', () => {
       action: 'complete',
       result: 10,
       load: { value: 40, unit: 'kg' },
+      band: null,
     })
 
     const { body } = await performance(db, token)
@@ -694,6 +726,7 @@ describe('5c. two workouts on one date', () => {
       action: 'complete',
       result: 10,
       load: { value: 50, unit: 'kg' },
+      band: null,
     })
 
     const { body } = await performance(db, token)
@@ -713,6 +746,7 @@ describe('6. no derived scores', () => {
       action: 'complete',
       result: 10,
       load: { value: 50, unit: 'kg' },
+      band: null,
     })
 
     const { body } = await performance(db, token)

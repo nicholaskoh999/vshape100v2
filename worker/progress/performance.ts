@@ -1,5 +1,12 @@
 import {
+  normalizeBandLabel,
+  parseBandCount,
+  parseBandLabel,
+  type WorkoutInputType,
+} from '../../shared/workoutInput'
+import {
   LOAD_MODES,
+  readInputTypeSnapshot,
   RESULT_KINDS,
   type WorkoutLoadMode,
   type WorkoutResultKind,
@@ -23,11 +30,25 @@ import {
  * Only sets sharing an identical COMPARABLE VARIANT compete:
  *
  *   canonical exercise id + result kind + load mode + per-side
+ *     + input type + the exact band setup
  *
  * kg is not kg_each, per-side is not both-sides, reps are not seconds. These
  * are different measurement systems, and a "best" that spans two of them is
  * not a fact about anything. `kg_each` in particular stays PER DUMBBELL: 10 kg
  * each is never rewritten as 20 kg total.
+ *
+ * Round 20 adds the two that matter most for honesty:
+ *
+ *   - KILOGRAMS AND BANDS NEVER MEET. An exercise whose history is part legacy
+ *     kilograms and part band work produces two variants, not one confused
+ *     series. There is no conversion, so there is no comparison.
+ *
+ *   - BAND COLOURS ARE NEVER RANKED. The band label and count are part of the
+ *     variant identity, so Black x3 and Red x3 are simply different variants.
+ *     Nothing in this file claims one band is stronger than another — that is
+ *     manufacturer-specific, and the app has no basis for the claim. Within one
+ *     band setup, progress is measured the only way it honestly can be: reps,
+ *     or seconds.
  *
  * ## What is deliberately absent
  *
@@ -59,6 +80,10 @@ export type CompletedSetRow = {
   sessionId: string
   /** The occurrence's start time, for same-date recency. */
   startedAt: number
+  /** Frozen at Start. Null on any row written before Round 20. */
+  inputTypeSnapshot: string | null
+  bandLabel: string | null
+  bandCount: number | null
 }
 
 /**
@@ -75,6 +100,10 @@ export type EligibleSet = {
   resultKind: WorkoutResultKind
   loadMode: WorkoutLoadMode
   perSide: boolean
+  /** How this set was loaded, as it was frozen when the workout started. */
+  inputType: WorkoutInputType
+  /** The exact band setup. Non-null exactly when `inputType` is resistance_band. */
+  band: { label: string; count: number } | null
   /** Recorded load. Null only where the variant does not rank by load. */
   loadValue: number | null
   result: number
@@ -133,6 +162,38 @@ export function readSet(row: CompletedSetRow): ReadSetResult {
   // row that somehow does not is not a performance.
   if (!Number.isFinite(row.result) || row.result <= 0) return unreadable
 
+  // THE MODALITY, AND WHAT IT MAKES POSSIBLE.
+  //
+  // A row with no snapshot predates Round 20 and answers from its own frozen
+  // load mode. A snapshot this build cannot name is unreadable — never assumed
+  // to be kilograms, because filing band work into a kilogram series is exactly
+  // the fiction this round removes.
+  const inputType = readInputTypeSnapshot(row.inputTypeSnapshot, row.loadMode)
+  if (inputType === null) return unreadable
+
+  const bandLabel = parseBandLabel(row.bandLabel)
+  const bandCount = parseBandCount(row.bandCount)
+  // Half a band record is not a band record. A row that says "Black" but not
+  // how many, or three of something unnamed, cannot be grouped with anything.
+  if ((bandLabel === null) !== (bandCount === null)) return unreadable
+
+  let band: { label: string; count: number } | null = null
+
+  if (inputType === 'resistance_band') {
+    // Bands and kilograms are mutually exclusive by construction. A row
+    // carrying both contradicts itself and neither half can be trusted.
+    if (row.loadValue !== null || row.loadUnit !== null) return unreadable
+    if (row.loadMode !== 'none') return unreadable
+    // A band set that cannot say WHICH band has no variant to belong to. It is
+    // real history and stays in the log; it simply cannot be ranked.
+    if (bandLabel === null || bandCount === null) return { status: 'non-comparable' }
+    band = { label: bandLabel, count: bandCount }
+  } else if (bandLabel !== null || bandCount !== null) {
+    // A kilogram or bodyweight row carrying a band disagrees with its own
+    // frozen modality.
+    return unreadable
+  }
+
   let loadValue: number | null = null
 
   if (row.loadMode === 'none') {
@@ -164,6 +225,8 @@ export function readSet(row: CompletedSetRow): ReadSetResult {
       resultKind: row.resultKind,
       loadMode: row.loadMode,
       perSide: row.perSide === 1,
+      inputType,
+      band,
       loadValue,
       result: row.result,
       workoutDate: row.workoutDate,
@@ -183,14 +246,36 @@ export function readSet(row: CompletedSetRow): ReadSetResult {
  * The canonical exercise id is the identity, NOT the display name: a name may
  * be edited between rounds, and history must keep grouping the same work
  * together when it is.
+ *
+ * The input type and the band setup are part of the identity, which is what
+ * makes the two Round 20 guarantees structural rather than a rule someone has
+ * to remember to apply:
+ *
+ *   - a band set and a kilogram set of the same exercise land in different
+ *     buckets, so no comparison between them can even be expressed
+ *   - Black x3 and Red x3 land in different buckets, so no code path ever has
+ *     to decide which band is "stronger"
+ *
+ * The label is compared case-insensitively and trimmed, so "black" and "Black"
+ * are one setup. That is the ONLY relation defined between labels; there is no
+ * ordering, because there is no true one.
  */
 export function variantKey(set: {
   exerciseId: string
   resultKind: WorkoutResultKind
   loadMode: WorkoutLoadMode
   perSide: boolean
+  inputType: WorkoutInputType
+  band: { label: string; count: number } | null
 }): string {
-  return [set.exerciseId, set.resultKind, set.loadMode, set.perSide ? 'side' : 'both'].join('|')
+  return [
+    set.exerciseId,
+    set.resultKind,
+    set.loadMode,
+    set.perSide ? 'side' : 'both',
+    set.inputType,
+    set.band ? `${normalizeBandLabel(set.band.label)}x${set.band.count}` : '-',
+  ].join('|')
 }
 
 /* ------------------------------------------------------------------ */
@@ -280,6 +365,10 @@ export type VariantPerformance = {
   resultKind: WorkoutResultKind
   loadMode: WorkoutLoadMode
   perSide: boolean
+  /** How this variant was loaded. Part of its identity, so it is uniform. */
+  inputType: WorkoutInputType
+  /** The exact band setup, when this variant is band work. */
+  band: { label: string; count: number } | null
   /** The best completed set in all recorded history, or null when none ranks. */
   personalBest: PerformancePoint | null
   /** One point per workout occurrence, oldest first. */
@@ -381,6 +470,10 @@ export function derivePerformance(sets: readonly EligibleSet[]): VariantPerforma
       resultKind: sample.resultKind,
       loadMode: sample.loadMode,
       perSide: sample.perSide,
+      // Taken from a member rather than recomputed: both are part of the
+      // variant key, so every member of this bucket agrees on them.
+      inputType: sample.inputType,
+      band: sample.band,
       personalBest,
       points,
       lastPerformed: points[points.length - 1].date,

@@ -36,9 +36,9 @@ import { isLocalDate } from './localDate.ts'
  *
  * Everything else, by construction: it names only three tables. Auth sessions,
  * account settings, body weight, company holidays, holiday overrides,
- * notification subscriptions and delivery history, Today completions and the
- * exercise media library are not referenced by any statement here, so they
- * cannot be touched by it.
+ * notification subscriptions and delivery history, Today completions, the
+ * exercise media library and the per-exercise input types are not referenced by
+ * any statement here, so they cannot be touched by it.
  *
  * WHAT IS NOT HAND-EDITED.
  *
@@ -310,4 +310,8 @@ export const FRESH_START_PRESERVED_TABLES = [
   'notification_deliveries',
   'today_completions',
   'exercise_media',
+  // Round 20. How an exercise is loaded is equipment configuration — a fact
+  // about the user's gym, not a record of anything they did — so wiping their
+  // training history must not also forget that Triceps Pushdown is a band.
+  'exercise_input_types',
 ] as const

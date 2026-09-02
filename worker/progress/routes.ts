@@ -197,6 +197,11 @@ async function handlePerformance(
       // and nothing here converts it to a total.
       loadMode: variant.loadMode,
       perSide: variant.perSide,
+      // The modality travels with the variant, because the browser cannot
+      // render "3 x 12" honestly without knowing whether the 3 is kilograms or
+      // a number of bands. The band setup is named, never scored.
+      inputType: variant.inputType,
+      band: variant.band,
       // `startedAt` is stripped from both: the browser needs the ORDER these
       // came in, which the server has already applied, not the clock they
       // happened on.

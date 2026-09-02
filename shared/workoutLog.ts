@@ -1,4 +1,10 @@
 import { daysBetween, isLocalDate } from './localDate'
+import {
+  isWorkoutInputType,
+  parseBandCount,
+  parseBandLabel,
+  type WorkoutInputType,
+} from './workoutInput'
 
 /**
  * Workout logging contract and validation.
@@ -495,10 +501,18 @@ export type WorkoutSetUpdate =
       action: 'complete'
       result: number
       load: { value: number; unit: WorkoutLoadUnit } | null
+      /**
+       * The band actually used, for a resistance_band set.
+       *
+       * `count` is a COUNT OF BANDS. It is never a weight and is never
+       * converted into one. A set carries a load or a band, never both — which
+       * modality applies is decided by the FROZEN snapshot, server-side.
+       */
+      band: { label: string; count: number } | null
     }
   | { action: 'skip' }
 
-export type SetField = 'body' | 'action' | 'result' | 'load' | 'unit'
+export type SetField = 'body' | 'action' | 'result' | 'load' | 'unit' | 'band'
 
 export type ParsedSetUpdate =
   | { ok: true; value: WorkoutSetUpdate }
@@ -522,8 +536,25 @@ export function parseSetUpdate(body: unknown): ParsedSetUpdate {
 
   if (!isSetResult(raw.result)) return { ok: false, field: 'result' }
 
+  // The band, if any. Shape only: WHETHER a band belongs on this set is decided
+  // against the frozen snapshot by the server, which is the only party that
+  // knows what the exercise was when the workout started.
+  let band: { label: string; count: number } | null = null
+  if (raw.band !== undefined && raw.band !== null) {
+    if (typeof raw.band !== 'object' || Array.isArray(raw.band)) {
+      return { ok: false, field: 'band' }
+    }
+    const candidate = raw.band as Record<string, unknown>
+    const label = parseBandLabel(candidate.label)
+    const count = parseBandCount(candidate.count)
+    // A band with no name, or a nonsensical quantity, is not a record of
+    // anything. Refused rather than stored as a blank.
+    if (label === null || count === null) return { ok: false, field: 'band' }
+    band = { label, count }
+  }
+
   if (raw.load === undefined || raw.load === null) {
-    return { ok: true, value: { action: 'complete', result: raw.result, load: null } }
+    return { ok: true, value: { action: 'complete', result: raw.result, load: null, band } }
   }
   if (typeof raw.load !== 'object' || Array.isArray(raw.load)) {
     return { ok: false, field: 'load' }
@@ -539,6 +570,7 @@ export function parseSetUpdate(body: unknown): ParsedSetUpdate {
       action: 'complete',
       result: raw.result,
       load: { value: load.value, unit: load.unit },
+      band,
     },
   }
 }
@@ -705,4 +737,67 @@ export function loadUnitLabel(unit: WorkoutLoadUnit): string {
 export function resultLabel(kind: WorkoutResultKind, perSide: boolean): string {
   if (kind === 'seconds') return 'Seconds'
   return perSide ? 'Reps / side' : 'Reps'
+}
+
+/* ------------------------------------------------------------------ */
+/* Input types and the older load-mode model                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The input type of a historical row that predates Round 20.
+ *
+ * Rows written before this round have no recorded input type, and inventing one
+ * from the exercise's CURRENT setting would rewrite history: a set genuinely
+ * performed with kilograms must keep saying kilograms even after the user
+ * switches that exercise to bands.
+ *
+ * So the answer comes from the row's own frozen load mode, which is a fact
+ * recorded at the time:
+ *
+ *   'none'            → bodyweight   (it recorded no load, and none was meant)
+ *   'kg' / 'kg_each'  → weight_kg    (it recorded kilograms, and meant them)
+ *
+ * This reads a legacy row. It never writes one.
+ */
+export function inputTypeForLegacyLoadMode(loadMode: WorkoutLoadMode): WorkoutInputType {
+  return loadMode === 'none' ? 'bodyweight' : 'weight_kg'
+}
+
+/**
+ * The input type in force for a stored set.
+ *
+ * `snapshot` is the value frozen at Start, present from Round 20 onwards. When
+ * it is absent the row is legacy and answers from its load mode. An
+ * unrecognised stored value is NOT quietly repaired — it fails closed, because
+ * a set whose modality cannot be read cannot be displayed or compared honestly.
+ */
+export function readInputTypeSnapshot(
+  snapshot: unknown,
+  loadMode: WorkoutLoadMode,
+): WorkoutInputType | null {
+  if (snapshot === null || snapshot === undefined) {
+    return inputTypeForLegacyLoadMode(loadMode)
+  }
+  return isWorkoutInputType(snapshot) ? snapshot : null
+}
+
+/**
+ * The load mode an input type is allowed to freeze.
+ *
+ * This is what makes an impossible hybrid unrepresentable rather than merely
+ * discouraged. A band or bodyweight exercise records no kilograms, so its load
+ * mode is 'none' whatever the caller asked for; a weight exercise keeps the
+ * kg / kg_each sense it was planned with, defaulting to the single-implement
+ * reading rather than silently claiming "per dumbbell".
+ *
+ * The server applies this when it freezes a snapshot, so a hostile client
+ * cannot post a band exercise that still carries kilogram semantics.
+ */
+export function loadModeForInputType(
+  inputType: WorkoutInputType,
+  requested: unknown,
+): WorkoutLoadMode {
+  if (inputType !== 'weight_kg') return 'none'
+  if (!isLoadMode(requested) || requested === 'none') return 'kg'
+  return requested
 }

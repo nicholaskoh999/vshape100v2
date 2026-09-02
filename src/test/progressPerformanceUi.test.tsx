@@ -48,6 +48,8 @@ function variant(over: {
   resultKind?: 'reps' | 'seconds'
   loadMode?: 'none' | 'kg' | 'kg_each'
   perSide?: boolean
+  inputType?: 'weight_kg' | 'resistance_band' | 'bodyweight'
+  band?: { label: string; count: number }
   points: PointFixture[]
   bestIndex?: number
 }) {
@@ -64,6 +66,11 @@ function variant(over: {
     resultKind: over.resultKind ?? 'reps',
     loadMode: over.loadMode ?? 'kg',
     perSide: over.perSide ?? false,
+    // Defaults follow the load mode, exactly as a pre-Round-20 row would be
+    // read: kilograms meant kilograms, and no load meant bodyweight.
+    inputType:
+      over.inputType ?? ((over.loadMode ?? 'kg') === 'none' ? 'bodyweight' : 'weight_kg'),
+    band: over.band ?? null,
     personalBest: points[over.bestIndex ?? points.length - 1] ?? null,
     points,
     lastPerformed: points[points.length - 1]?.date ?? '',
@@ -559,6 +566,8 @@ describe('2. exercise performance', () => {
           resultKind: 'reps',
           loadMode: 'kg',
           perSide: false,
+          inputType: 'weight_kg',
+          band: null,
           personalBest: { date: '2026-08-24', sessionId: 'monday', loadValue: 50, result: 8 },
           points: [
             { date: 'yesterday', sessionId: 'monday', loadValue: 45, result: 10 },
@@ -596,6 +605,8 @@ describe('2. exercise performance', () => {
           resultKind: 'reps',
           loadMode: 'kg',
           perSide: false,
+          inputType: 'weight_kg',
+          band: null,
           personalBest: { date: '2026-08-24', sessionId: 'monday', loadValue: 50, result: 8 },
           points: [
             { date: '2026-08-03', sessionId: 'monday', loadValue: 45, result: 10 },
@@ -716,5 +727,97 @@ describe('3. reporting only', () => {
     expect(text).toMatch(/foundation 100/i)
     expect(text).toMatch(/recorded training/i)
     expect(text).toMatch(/recent workouts/i)
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* 4. Round 20 — band work on the Progress page                        */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The user's Triceps Pushdown history is the shape this section defends: rows
+ * recorded before Round 20 that say "3 kg" because the count of bands went into
+ * the weight column, and rows recorded after it that say "Black x3". They are
+ * different measurements of different things, and the page must never present
+ * them as one series or claim a best across both.
+ */
+describe('4. band work', () => {
+  it('writes a band best as its band and reps, never as kilograms', async () => {
+    seed([
+      variant({
+        key: 'triceps|band',
+        exerciseId: 'triceps-pushdown',
+        exerciseName: 'Triceps Pushdown',
+        loadMode: 'none',
+        inputType: 'resistance_band',
+        band: { label: 'Black', count: 3 },
+        points: [
+          { date: '2026-09-08', result: 12 },
+          { date: '2026-09-15', result: 15 },
+        ],
+      }),
+    ])
+    await renderProgress()
+
+    const card = pbCard() as HTMLElement
+    expect(within(card).getByText('Black ×3 · 15 reps')).toBeInTheDocument()
+    // The word that must not appear anywhere near this exercise.
+    expect(card.textContent).not.toMatch(/kg/i)
+  })
+
+  it('keeps the legacy kilogram history and the band history apart on screen', async () => {
+    seed([
+      variant({
+        key: 'triceps|band',
+        exerciseId: 'triceps-pushdown',
+        exerciseName: 'Triceps Pushdown',
+        loadMode: 'none',
+        inputType: 'resistance_band',
+        band: { label: 'Black', count: 3 },
+        points: [{ date: '2026-09-08', result: 12 }],
+      }),
+      variant({
+        key: 'triceps|kg',
+        exerciseId: 'triceps-pushdown',
+        exerciseName: 'Triceps Pushdown',
+        loadMode: 'kg',
+        points: [{ date: '2026-09-01', loadValue: 3, result: 12 }],
+      }),
+    ])
+    await renderProgress()
+
+    const labels = within(screen.getByLabelText(/^exercise$/i))
+      .getAllByRole('option')
+      .map((option) => option.textContent)
+
+    // Two choices, each saying which measurement it is. Neither can be read as
+    // a continuation of the other.
+    expect(labels).toHaveLength(2)
+    expect(labels).toContain('Triceps Pushdown (Black ×3 · reps)')
+    expect(labels).toContain('Triceps Pushdown (kg · reps)')
+  })
+
+  it('drops a variant whose modality the server did not state', async () => {
+    // A build that cannot name the measurement shows nothing rather than
+    // rendering "50 kg" for something that may not have been kilograms.
+    server.setPerformance({
+      complete: true,
+      variants: [
+        {
+          key: 'unnamed',
+          exerciseId: 'triceps-pushdown',
+          exerciseName: 'Triceps Pushdown',
+          resultKind: 'reps',
+          loadMode: 'kg',
+          perSide: false,
+          personalBest: { date: '2026-09-01', sessionId: 'tuesday', loadValue: 3, result: 12 },
+          points: [{ date: '2026-09-01', sessionId: 'tuesday', loadValue: 3, result: 12 }],
+          lastPerformed: '2026-09-01',
+        },
+      ],
+    })
+    await renderProgress()
+
+    expect(screen.queryByText('Triceps Pushdown')).not.toBeInTheDocument()
   })
 })

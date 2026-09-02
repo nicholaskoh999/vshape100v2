@@ -58,6 +58,11 @@ function toRow(date: string, set: ServerSet): ProgressionSetRow {
     prescription: set.prescription,
     resultKind: set.resultKind,
     loadMode: set.loadMode,
+    // No stored snapshot: these fixtures describe rows as they were written
+    // before Round 20, which the engine resolves from the load mode.
+    inputTypeSnapshot: null,
+    bandLabel: null,
+    bandCount: null,
     perSide: set.perSide,
     status: set.status,
     loadValue: set.load?.value ?? null,

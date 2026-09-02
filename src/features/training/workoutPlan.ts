@@ -15,6 +15,7 @@
  * set count would silently invent history.
  */
 
+import type { WorkoutInputType } from '@shared/workoutInput'
 import type { WorkoutExercisePlan, WorkoutLoadMode } from '@shared/workoutLog'
 import {
   parsePrescriptionShape,
@@ -60,6 +61,24 @@ function readLoadSignal(exercise: SessionExercise): LoadSignal {
 /**
  * How load is meant for one canonical exercise identity.
  *
+ * ROUND 20 DEMOTED THIS. It used to be the last word on how an exercise was
+ * loaded, and every answer it could give was a number of kilograms — including
+ * for the band-labelled exercises, which it explicitly mapped to `kg`. So a
+ * Triceps Pushdown performed with three black bands had nowhere to record the
+ * bands, and the "3" went into the weight column.
+ *
+ * Note what the pattern-matching could NOT do, which is the deeper point:
+ * Triceps Pushdown carries no equipment text at all, so it was never even
+ * flagged as band work. It reached `kg` through the plain default below. Text
+ * describes a plan; it does not know what is in somebody's gym, and no amount
+ * of better matching would have fixed this.
+ *
+ * It is now only the REQUEST a Start sends. The server resolves the account's
+ * own saved input type for the exercise and forces the load mode to agree, so
+ * nothing derived here can make a band set carry kilogram semantics. What
+ * survives is the kg / kg_each distinction, which this is genuinely good at:
+ * a dumbbell exercise means PER DUMBBELL.
+ *
  * Resolved across EVERY appearance of the exercise, not per session. Monday
  * lists Preacher Curl with "DB + Bench Preacher setup" while Thursday lists no
  * equipment at all — but it is the same movement, so it must not be dumbbell
@@ -67,7 +86,6 @@ function readLoadSignal(exercise: SessionExercise): LoadSignal {
  * per-session; only this semantic is canonical.
  *
  *   dumbbell anywhere → kg_each (PER DUMBBELL, never the combined weight)
- *   band anywhere     → kg
  *   otherwise, when every appearance is a timed hold or per-side core work
  *                     → none, so no load field is forced onto bodyweight work
  *   otherwise         → kg, an optional single-implement load
@@ -100,8 +118,49 @@ export function resolveLoadMode(exerciseId: string): WorkoutLoadMode {
   }
 
   if (!sawAppearance) return 'kg'
+  // Kept, and no longer a claim about bands. A band-labelled exercise is often
+  // shaped like bodyweight work in the programme text, and answering 'none'
+  // here would deny a KILOGRAM version of it a load field on the strength of a
+  // word in its name. The account's configured input type is what actually
+  // decides, server-side; this only keeps the request from being needlessly
+  // narrow while the exercise is still unconfigured.
   if (sawBand) return 'kg'
   return allBodyweightShaped ? 'none' : 'kg'
+}
+
+/**
+ * A STARTING SUGGESTION for the Exercise Library, and nothing more.
+ *
+ * The programme text is evidence about what the author had in mind, which is
+ * worth offering as a default the user can accept in one tap. It is not
+ * evidence about what is in the user's gym, so it never decides anything: the
+ * Library shows it as a suggestion, the user's answer is what gets stored, and
+ * an exercise with no stored answer behaves exactly as it did before Round 20.
+ *
+ * Returns null where the text says nothing useful, rather than guessing.
+ */
+export function suggestedInputType(exerciseId: string): WorkoutInputType | null {
+  let sawAppearance = false
+  let sawBand = false
+  let allBodyweightShaped = true
+
+  for (const session of trainingSessions) {
+    for (const exercise of session.exercises) {
+      if (exercise.id !== exerciseId) continue
+      sawAppearance = true
+
+      if (readLoadSignal(exercise) === 'band') sawBand = true
+
+      const plan = parsePrescription(exercise.sets)
+      if (!plan || !(plan.resultKind === 'seconds' || plan.perSide)) {
+        allBodyweightShaped = false
+      }
+    }
+  }
+
+  if (!sawAppearance) return null
+  if (sawBand) return 'resistance_band'
+  return allBodyweightShaped ? 'bodyweight' : null
 }
 
 /* ------------------------------------------------------------------ */

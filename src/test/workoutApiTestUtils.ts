@@ -10,7 +10,12 @@
  * already exist before it can be logged against.
  */
 
-import { kindForSessionId } from '@shared/workoutLog'
+import type { WorkoutInputType } from '@shared/workoutInput'
+import {
+  inputTypeForLegacyLoadMode,
+  kindForSessionId,
+  loadModeForInputType,
+} from '@shared/workoutLog'
 import type {
   WorkoutKind,
   WorkoutLoadMode,
@@ -28,8 +33,11 @@ export type ServerSet = {
   resultKind: WorkoutResultKind
   loadMode: WorkoutLoadMode
   perSide: boolean
+  /** Frozen at Start, exactly as the real server freezes it. */
+  inputType: WorkoutInputType
   status: WorkoutSetStatus
   load: { value: number; unit: 'kg' | 'kg_each' } | null
+  band: { label: string; count: number } | null
   result: number | null
   updatedAt: number
 }
@@ -74,6 +82,13 @@ export type WorkoutServer = {
   workouts: Map<string, Stored>
   /** Every request the client made, in order. */
   calls: { method: string; url: string }[]
+  /**
+   * Configure an exercise's input type, as the Exercise Library would.
+   *
+   * Applies to the next Start only: a workout already underway keeps the
+   * modality it was started with.
+   */
+  setInputType: (exerciseId: string, inputType: WorkoutInputType) => void
   /** Seed a workout as if it had already been started. */
   seed: (date: string, sessionId: string, stored: SeedStored) => void
   /** Fail the next `count` reads. */
@@ -110,6 +125,8 @@ function summarise(sets: ServerSet[]) {
 
 export function createWorkoutServer(): WorkoutServer {
   const workouts = new Map<string, Stored>()
+  /** The account's saved input types, which a Start resolves against. */
+  const inputTypes = new Map<string, WorkoutInputType>()
   const calls: WorkoutServer['calls'] = []
 
   let readFailures = 0
@@ -274,6 +291,12 @@ export function createWorkoutServer(): WorkoutServer {
       const startedAt = clock++
       const sets: ServerSet[] = []
       body.exercises.forEach((exercise, exerciseOrder) => {
+        // Resolved server-side from the account's saved setting, never from the
+        // request. An exercise nobody has configured keeps its previous
+        // behaviour, read from the load mode the plan asked for.
+        const inputType =
+          inputTypes.get(exercise.exerciseId) ??
+          inputTypeForLegacyLoadMode(exercise.loadMode)
         for (let setIndex = 0; setIndex < exercise.setCount; setIndex += 1) {
           sets.push({
             exerciseOrder,
@@ -283,10 +306,14 @@ export function createWorkoutServer(): WorkoutServer {
             prescription: exercise.prescription,
             equipment: exercise.equipment,
             resultKind: exercise.resultKind,
-            loadMode: exercise.loadMode,
+            // Forced to agree with the modality, as the real Start does: a
+            // band or bodyweight exercise cannot carry kilogram semantics.
+            loadMode: loadModeForInputType(inputType, exercise.loadMode),
             perSide: exercise.perSide,
+            inputType,
             status: 'pending',
             load: null,
+            band: null,
             result: null,
             updatedAt: startedAt,
           })
@@ -338,6 +365,7 @@ export function createWorkoutServer(): WorkoutServer {
       set.status = 'pending'
       set.result = null
       set.load = null
+      set.band = null
       set.updatedAt = clock++
       return jsonResponse({ date, sessionId, set })
     }
@@ -347,18 +375,29 @@ export function createWorkoutServer(): WorkoutServer {
         action?: string
         result?: number
         load?: { value: number; unit: 'kg' | 'kg_each' } | null
+        band?: { label: string; count: number } | null
       }
 
       if (body.action === 'skip') {
         set.status = 'skipped'
         set.result = null
         set.load = null
+        set.band = null
         set.updatedAt = clock++
         return jsonResponse({ date, sessionId, set })
       }
 
       if (body.action !== 'complete' || typeof body.result !== 'number') {
         return jsonResponse({ error: 'invalid_set', field: 'result' }, 400)
+      }
+      // The frozen snapshot decides what may be recorded, mirroring
+      // applySetUpdate. A payload describing the other modality is refused
+      // outright rather than half-stored.
+      if (set.inputType === 'resistance_band') {
+        if (body.load) return jsonResponse({ error: 'modality_mismatch' }, 400)
+        if (!body.band) return jsonResponse({ error: 'band_required' }, 400)
+      } else if (body.band) {
+        return jsonResponse({ error: 'modality_mismatch' }, 400)
       }
       if (body.load && set.loadMode === 'none') {
         return jsonResponse({ error: 'load_not_applicable' }, 400)
@@ -370,6 +409,7 @@ export function createWorkoutServer(): WorkoutServer {
       set.status = 'completed'
       set.result = body.result
       set.load = body.load ?? null
+      set.band = body.band ?? null
       set.updatedAt = clock++
       return jsonResponse({ date, sessionId, set })
     }
@@ -380,6 +420,15 @@ export function createWorkoutServer(): WorkoutServer {
   return {
     workouts,
     calls,
+    /**
+     * Configure an exercise's input type, as the Exercise Library would.
+     *
+     * Takes effect on the next Start only — a workout already underway keeps
+     * the modality it was started with, which is the rule under test.
+     */
+    setInputType: (exerciseId: string, inputType: WorkoutInputType) => {
+      inputTypes.set(exerciseId, inputType)
+    },
     seed: (date, sessionId, stored) => {
       const kind = stored.occurrence.kind ?? kindForSessionId(sessionId)
       workouts.set(key(date, sessionId), {

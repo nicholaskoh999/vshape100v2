@@ -148,6 +148,10 @@ type SetRow = {
   result_kind_snapshot: string
   load_mode_snapshot: string
   per_side_snapshot: number
+  /** Round 20. Null on any row written before it. */
+  input_type_snapshot: string | null
+  actual_band_label: string | null
+  actual_band_count: number | null
   actual_load_value: number | null
   actual_load_unit: string | null
   actual_result: number
@@ -179,6 +183,9 @@ export function createD1ProgressHistoryStore(db: D1Database): ProgressHistorySto
                   s.result_kind_snapshot,
                   s.load_mode_snapshot,
                   s.per_side_snapshot,
+                  s.input_type_snapshot,
+                  s.actual_band_label,
+                  s.actual_band_count,
                   s.actual_load_value,
                   s.actual_load_unit,
                   s.actual_result,
@@ -213,6 +220,9 @@ export function createD1ProgressHistoryStore(db: D1Database): ProgressHistorySto
           resultKind: row.result_kind_snapshot,
           loadMode: row.load_mode_snapshot,
           perSide: row.per_side_snapshot,
+          inputTypeSnapshot: row.input_type_snapshot,
+          bandLabel: row.actual_band_label,
+          bandCount: row.actual_band_count,
           loadValue: row.actual_load_value,
           loadUnit: row.actual_load_unit,
           result: row.actual_result,

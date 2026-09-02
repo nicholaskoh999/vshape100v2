@@ -3,7 +3,7 @@ import { COMPANY_HOLIDAYS } from '../../shared/companyHolidays'
 /**
  * Minimal in-memory stand-in for D1, covering exactly the statements the
  * Worker issues against `auth_sessions`, `today_completions`,
- * `exercise_media`, `workout_occurrences`, `workout_sets`,
+ * `exercise_media`, `exercise_input_types`, `workout_occurrences`, `workout_sets`,
  * `workout_calibration`, `account_settings` and `holiday_overrides`.
  *
  * Route-level tests use this so the real handler, the real D1 mapping layer
@@ -150,6 +150,21 @@ type WorkoutSetRow = {
   actual_load_unit: string | null
   actual_result: number | null
   updated_at: number
+  // Round 20's columns. Optional because a seed that omits them is exactly a
+  // row written before Round 20 — the column exists but holds NULL — which is
+  // the legacy case the production reader must handle without being told.
+  input_type_snapshot?: string | null
+  actual_band_label?: string | null
+  actual_band_count?: number | null
+}
+
+/** One row of `exercise_input_types`. */
+type InputTypeRowShape = {
+  google_sub: string
+  exercise_id: string
+  input_type: string
+  created_at: number
+  updated_at: number
 }
 
 /** `google_sub` + `exercise_id` — the exercise_media primary key. */
@@ -202,6 +217,9 @@ export function createFakeD1() {
   const sessions = new Map<string, SessionRow>()
   const completions = new Map<string, CompletionRow>()
   const media = new Map<string, MediaRow>()
+  /** Round 20 input types, keyed the same way media is: account + exercise. */
+  const inputTypes = new Map<string, InputTypeRowShape>()
+  let inputTypesFailure: Error | null = null
   const holidays = new Map<string, HolidayRow>()
   // Seeded, because migration 0006 seeds it globally. A request path must
   // never write here, and no branch below does.
@@ -991,6 +1009,9 @@ export function createFakeD1() {
           actual_load_unit,
           actual_result,
           updated_at,
+          input_type_snapshot,
+          actual_band_label,
+          actual_band_count,
           // The WHERE EXISTS guard's own bindings.
           guard_sub,
           guard_date,
@@ -1000,6 +1021,7 @@ export function createFakeD1() {
           string, string, string, string, number, number,
           string, string, string, string | null, string, string, number,
           string, number | null, string | null, number | null, number,
+          string | null, string | null, number | null,
           string, string, string, string,
         ]
 
@@ -1036,6 +1058,9 @@ export function createFakeD1() {
             actual_load_unit,
             actual_result,
             updated_at,
+            input_type_snapshot,
+            actual_band_label,
+            actual_band_count,
           })
         }
         return null
@@ -1046,6 +1071,8 @@ export function createFakeD1() {
           status,
           actual_load_value,
           actual_load_unit,
+          actual_band_label,
+          actual_band_count,
           actual_result,
           updated_at,
           google_sub,
@@ -1057,6 +1084,8 @@ export function createFakeD1() {
           string,
           number | null,
           string | null,
+          string | null,
+          number | null,
           number | null,
           number,
           string,
@@ -1075,6 +1104,8 @@ export function createFakeD1() {
             status,
             actual_load_value,
             actual_load_unit,
+            actual_band_label,
+            actual_band_count,
             actual_result,
             updated_at,
           })
@@ -1207,6 +1238,42 @@ export function createFakeD1() {
         const id = occurrenceId(google_sub, workout_date, session_id)
         const row = occurrences.get(id)
         if (row) occurrences.set(id, { ...row, updated_at })
+        return null
+      }
+
+      throw new Error(`fakeD1 received an unexpected statement: ${sql}`)
+    }
+
+    if (sql.includes('exercise_input_types')) {
+      if (inputTypesFailure) throw inputTypesFailure
+
+      if (sql.includes('SELECT') && sql.includes('AND exercise_id = ?')) {
+        const [google_sub, exercise_id] = args as [string, string]
+        return inputTypes.get(mediaId(google_sub, exercise_id)) ?? null
+      }
+
+      if (sql.includes('SELECT')) {
+        const [google_sub] = args as [string]
+        return [...inputTypes.values()]
+          .filter((row) => row.google_sub === google_sub)
+          .sort((a, b) => a.exercise_id.localeCompare(b.exercise_id))
+      }
+
+      if (sql.includes('INSERT INTO exercise_input_types')) {
+        const [google_sub, exercise_id, input_type, created_at, updated_at] = args as [
+          string, string, string, number, number,
+        ]
+        const id = mediaId(google_sub, exercise_id)
+        const existing = inputTypes.get(id)
+        // ON CONFLICT DO UPDATE: input_type and updated_at are assignable,
+        // created_at is not — the row remembers when it was first configured.
+        inputTypes.set(id, {
+          google_sub,
+          exercise_id,
+          input_type,
+          created_at: existing ? existing.created_at : created_at,
+          updated_at,
+        })
         return null
       }
 
@@ -1460,8 +1527,13 @@ export function createFakeD1() {
     breakCompletions(error = new Error('D1 unavailable')) {
       completionsFailure = error
     },
+    inputTypes,
     breakMedia(error = new Error('D1 unavailable')) {
       mediaFailure = error
+    },
+    /** Make every `exercise_input_types` statement throw, as D1 would. */
+    breakInputTypes(error = new Error('D1 unavailable')) {
+      inputTypesFailure = error
     },
     breakSettings(error = new Error('D1 unavailable')) {
       settingsFailure = error

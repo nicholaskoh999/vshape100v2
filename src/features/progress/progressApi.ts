@@ -1,5 +1,11 @@
 import type { BodyWeightRange } from '@shared/bodyWeight'
 import { isLocalDate } from '@shared/localDate'
+import {
+  isWorkoutInputType,
+  parseBandCount,
+  parseBandLabel,
+  type WorkoutInputType,
+} from '@shared/workoutInput'
 import type { WorkoutLoadMode, WorkoutResultKind } from '@shared/workoutLog'
 
 /**
@@ -173,6 +179,10 @@ export type PerformanceVariant = {
   resultKind: WorkoutResultKind
   loadMode: WorkoutLoadMode
   perSide: boolean
+  /** How this variant was loaded. Never inferred — the server states it. */
+  inputType: WorkoutInputType
+  /** The exact band setup, when this is band work. Named, never scored. */
+  band: { label: string; count: number } | null
   personalBest: PerformancePoint | null
   points: PerformancePoint[]
   lastPerformed: string
@@ -194,6 +204,18 @@ export type Performance = {
 
 const RESULT_KINDS: readonly string[] = ['reps', 'seconds']
 const LOAD_MODES: readonly string[] = ['none', 'kg', 'kg_each']
+
+/** The band setup on a variant, or null when there is none to read. */
+function readBand(raw: unknown): { label: string; count: number } | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const row = raw as Record<string, unknown>
+  const label = parseBandLabel(row.label)
+  const count = parseBandCount(row.count)
+  // Half a band is not a band: a name with no quantity, or a quantity of
+  // something unnamed, describes no setup at all.
+  if (label === null || count === null) return null
+  return { label, count }
+}
 
 function toPerformancePoint(raw: unknown): PerformancePoint | null {
   if (typeof raw !== 'object' || raw === null) return null
@@ -217,6 +239,19 @@ function toVariant(raw: unknown): PerformanceVariant | null {
   if (typeof row.key !== 'string' || typeof row.exerciseId !== 'string') return null
   if (typeof row.resultKind !== 'string' || !RESULT_KINDS.includes(row.resultKind)) return null
   if (typeof row.loadMode !== 'string' || !LOAD_MODES.includes(row.loadMode)) return null
+  // An unreadable input type is dropped for the same reason an unreadable load
+  // mode is: showing "50 kg" for something that was not kilograms is worse than
+  // showing nothing.
+  if (!isWorkoutInputType(row.inputType)) return null
+
+  const band = readBand(row.band)
+  // Band work must say which band. A band variant that cannot is not
+  // renderable, and a non-band variant carrying one contradicts itself.
+  if (row.inputType === 'resistance_band') {
+    if (band === null) return null
+  } else if (band !== null) {
+    return null
+  }
 
   const loadedReps = row.resultKind === 'reps' && row.loadMode !== 'none'
 
@@ -242,6 +277,8 @@ function toVariant(raw: unknown): PerformanceVariant | null {
     resultKind: row.resultKind as WorkoutResultKind,
     loadMode: row.loadMode as WorkoutLoadMode,
     perSide: row.perSide === true,
+    inputType: row.inputType,
+    band,
     // Same rule for the best: a loaded best without a load is not a best.
     personalBest: personalBest && (!loadedReps || personalBest.loadValue !== null)
       ? personalBest

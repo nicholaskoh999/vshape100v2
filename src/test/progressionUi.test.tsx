@@ -71,6 +71,10 @@ function seedWorkout(
         resultKind: exercise.resultKind,
         loadMode: exercise.loadMode,
         perSide: exercise.perSide,
+        // Read the way a pre-Round-20 row is: kilograms meant kilograms.
+        inputType:
+          exercise.loadMode === 'none' ? ('bodyweight' as const) : ('weight_kg' as const),
+        band: null,
         updatedAt: startedAt,
       }
       if (outcome === null) {

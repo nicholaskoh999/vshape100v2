@@ -13,6 +13,7 @@
  * the completed set itself.
  */
 
+import { isWorkoutInputType } from '../../../shared/workoutInput'
 import { isSetLoad, isSetResult, type WorkoutLoadUnit } from '@shared/workoutLog'
 import {
   isEvidenceGap,
@@ -184,10 +185,14 @@ function toLaneIdentity(raw: unknown): ProgressionLane | null {
   // both-sides reps are different work, and a coerced flag would quietly pick
   // one of them.
   if (typeof row.perSide !== 'boolean') return null
+  // Round 20. Re-checked like every other persisted enum: an input type this
+  // build cannot name means the lane cannot be read, not that it is kilograms.
+  if (!isWorkoutInputType(row.inputType)) return null
 
   return {
     sessionId: row.sessionId,
     exerciseId: row.exerciseId,
+    inputType: row.inputType,
     setCount: row.setCount,
     lower: row.lower,
     upper: row.upper,
