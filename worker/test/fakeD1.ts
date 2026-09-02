@@ -4,6 +4,7 @@ import { COMPANY_HOLIDAYS } from '../../shared/companyHolidays'
  * Minimal in-memory stand-in for D1, covering exactly the statements the
  * Worker issues against `auth_sessions`, `today_completions`,
  * `exercise_media`, `exercise_input_types`, `workout_occurrences`, `workout_sets`,
+ * `workout_set_corrections`,
  * `workout_calibration`, `account_settings` and `holiday_overrides`.
  *
  * Route-level tests use this so the real handler, the real D1 mapping layer
@@ -101,6 +102,37 @@ type OccurrenceRow = {
   session_intensity_snapshot: string
   started_at: number
   updated_at: number
+  /**
+   * Round 21. Optional because a seed that omits it is exactly an occurrence
+   * written before Round 21 — the column exists but holds NULL — which is the
+   * case the cancel guard must handle without being told.
+   */
+  touched_at?: number | null
+}
+
+/** Round 21. One immutable correction audit event. */
+type CorrectionRow = {
+  correction_id: string
+  google_sub: string
+  workout_date: string
+  session_id: string
+  exercise_order: number
+  set_index: number
+  corrected_at: number
+  before_input_type: string | null
+  before_load_mode: string
+  before_load_value: number | null
+  before_load_unit: string | null
+  before_band_label: string | null
+  before_band_count: number | null
+  before_result: number | null
+  after_input_type: string
+  after_load_mode: string
+  after_load_value: number | null
+  after_load_unit: string | null
+  after_band_label: string | null
+  after_band_count: number | null
+  after_result: number
 }
 
 type TrainingFlexRowShape = {
@@ -238,6 +270,8 @@ export function createFakeD1() {
   let trainingFlexFailure: Error | null = null
   const occurrences = new Map<string, OccurrenceRow>()
   const workoutSets = new Map<string, WorkoutSetRow>()
+  /** Round 21 correction audit, keyed by correction_id. INSERT-ONLY. */
+  const workoutSetCorrections = new Map<string, CorrectionRow>()
   const calibrations = new Map<string, CalibrationRow>()
   const bodyWeights = new Map<string, BodyWeightRow>()
   /** Set to make every Progress statement throw, as D1 would. */
@@ -895,6 +929,90 @@ export function createFakeD1() {
 
     // The lane history read: every owned set of this session inside a
     // half-open local-date range.
+    // Round 21 — the correction audit. Placed before the workout_sets branch
+    // because these statements MENTION workout_sets in their guard; dispatch is
+    // on the statement's TARGET, not on any table it happens to name.
+    if (sql.includes('workout_set_corrections')) {
+      if (workoutFailure) throw workoutFailure
+
+      if (sql.includes('INSERT INTO workout_set_corrections')) {
+        const [
+          correction_id, google_sub, workout_date, session_id,
+          exercise_order, set_index, corrected_at,
+          before_input_type, before_load_mode, before_load_value,
+          before_load_unit, before_band_label, before_band_count, before_result,
+          after_input_type, after_load_mode, after_load_value,
+          after_load_unit, after_band_label, after_band_count, after_result,
+          // The guard's own bindings: the set, still completed, still at the
+          // version the editor read.
+          g_sub, g_date, g_session, g_order, g_index, g_updated,
+        ] = args as [
+          string, string, string, string, number, number, number,
+          string | null, string, number | null, string | null,
+          string | null, number | null, number | null,
+          string, string, number | null, string | null,
+          string | null, number | null, number,
+          string, string, string, number, number, number,
+        ]
+
+        // WHERE EXISTS (the set in its expected PRE-state). Modelled ONLY when
+        // the real statement actually carries the guard: strip it from the
+        // production SQL and this stops applying it, so the coupling tests fail.
+        if (sql.includes('WHERE EXISTS')) {
+          const target = workoutSets.get(
+            workoutSetId(g_sub, g_date, g_session, g_order, g_index),
+          )
+          const eligible =
+            target !== undefined &&
+            target.status === 'completed' &&
+            target.updated_at === g_updated
+          if (!eligible) return 0
+        }
+
+        // INSERT-ONLY, and the primary key means an event cannot be recorded
+        // twice.
+        if (workoutSetCorrections.has(correction_id)) return 0
+        workoutSetCorrections.set(correction_id, {
+          correction_id, google_sub, workout_date, session_id,
+          exercise_order, set_index, corrected_at,
+          before_input_type, before_load_mode, before_load_value,
+          before_load_unit, before_band_label, before_band_count, before_result,
+          after_input_type, after_load_mode, after_load_value,
+          after_load_unit, after_band_label, after_band_count, after_result,
+        })
+        return 1
+      }
+
+      if (sql.includes('DELETE FROM workout_set_corrections')) {
+        const [google_sub, cutoff] = args as [string, string]
+        let removed = 0
+        for (const [id, row] of [...workoutSetCorrections]) {
+          if (row.google_sub === google_sub && row.workout_date < cutoff) {
+            workoutSetCorrections.delete(id)
+            removed += 1
+          }
+        }
+        return removed
+      }
+
+      if (sql.includes('SELECT')) {
+        const [google_sub, workout_date, session_id, exercise_order, set_index] =
+          args as [string, string, string, number, number]
+        return [...workoutSetCorrections.values()]
+          .filter(
+            (row) =>
+              row.google_sub === google_sub &&
+              row.workout_date === workout_date &&
+              row.session_id === session_id &&
+              row.exercise_order === exercise_order &&
+              row.set_index === set_index,
+          )
+          .sort((a, b) => a.corrected_at - b.corrected_at)
+      }
+
+      throw new Error(`fakeD1 received an unexpected statement: ${sql}`)
+    }
+
     if (sql.includes('workout_sets') && sql.includes('s.workout_date >= ?')) {
       if (workoutFailure) throw workoutFailure
 
@@ -1066,6 +1184,72 @@ export function createFakeD1() {
         return null
       }
 
+      // Round 21 — the historical correction. A DIFFERENT statement from the
+      // ordinary set update: it is the only one that may rewrite the frozen
+      // modality, and it carries its own precondition.
+      if (sql.includes('UPDATE workout_sets') && sql.includes('input_type_snapshot')) {
+        const [
+          input_type_snapshot, load_mode_snapshot,
+          actual_load_value, actual_load_unit,
+          actual_band_label, actual_band_count,
+          actual_result, updated_at,
+          google_sub, workout_date, session_id, exercise_order, set_index,
+          expected_updated_at,
+        ] = args as [
+          string, string, number | null, string | null,
+          string | null, number | null, number, number,
+          string, string, string, number, number, number,
+        ]
+        const id = workoutSetId(google_sub, workout_date, session_id, exercise_order, set_index)
+        const row = workoutSets.get(id)
+        if (!row) return 0
+
+        // The precondition, modelled ONLY where the real statement declares it.
+        // Remove `status = 'completed'` or `updated_at = ?` from the production
+        // SQL and this stops enforcing it, so the concurrency tests fail.
+        if (sql.includes("status = 'completed'") && row.status !== 'completed') return 0
+        if (sql.includes('updated_at = ?') && row.updated_at !== expected_updated_at) return 0
+
+        // Only the factual performance columns move. Everything identifying the
+        // set - date, session, exercise, order, index, prescription, result
+        // kind, per-side, STATUS - is not in this statement at all.
+        workoutSets.set(id, {
+          ...row,
+          input_type_snapshot,
+          load_mode_snapshot,
+          actual_load_value,
+          actual_load_unit,
+          actual_band_label,
+          actual_band_count,
+          actual_result,
+          updated_at,
+        })
+        return 1
+      }
+
+      // Round 21 — cancelling an accidental Start removes the sets, gated on
+      // the occurrence having actually gone.
+      if (sql.includes('DELETE FROM workout_sets')) {
+        const [google_sub, workout_date, session_id, g_sub, g_date, g_session] =
+          args as [string, string, string, string, string, string]
+        if (sql.includes('NOT EXISTS')) {
+          // The guard is real: the children go only BECAUSE the parent went.
+          if (occurrences.has(occurrenceId(g_sub, g_date, g_session))) return 0
+        }
+        let removed = 0
+        for (const [id, row] of [...workoutSets]) {
+          if (
+            row.google_sub === google_sub &&
+            row.workout_date === workout_date &&
+            row.session_id === session_id
+          ) {
+            workoutSets.delete(id)
+            removed += 1
+          }
+        }
+        return removed
+      }
+
       if (sql.includes('UPDATE workout_sets')) {
         const [
           status,
@@ -1098,19 +1282,23 @@ export function createFakeD1() {
         const row = workoutSets.get(id)
         // Only the live logging columns are assignable — the snapshot columns
         // and the ownership token are not part of this statement at all.
-        if (row) {
-          workoutSets.set(id, {
-            ...row,
-            status,
-            actual_load_value,
-            actual_load_unit,
-            actual_band_label,
-            actual_band_count,
-            actual_result,
-            updated_at,
-          })
+        if (!row) {
+          // Round 21: the row is gone, so the UPDATE matched nothing. Reporting
+          // zero changes is what stops a set write that lost to Cancel Start
+          // from returning a ghost success.
+          return 0
         }
-        return null
+        workoutSets.set(id, {
+          ...row,
+          status,
+          actual_load_value,
+          actual_load_unit,
+          actual_band_label,
+          actual_band_count,
+          actual_result,
+          updated_at,
+        })
+        return 1
       }
 
       if (sql.includes('AND exercise_order = ?')) {
@@ -1172,9 +1360,10 @@ export function createFakeD1() {
           session_intensity_snapshot,
           started_at,
           updated_at,
+          touched_at,
         ] = args as [
           string, string, string, string, string, string | null,
-          string, string, string, number, number,
+          string, string, string, number, number, number | null,
         ]
         const id = occurrenceId(google_sub, workout_date, session_id)
 
@@ -1212,6 +1401,7 @@ export function createFakeD1() {
             session_intensity_snapshot,
             started_at,
             updated_at,
+            touched_at,
           })
           return 1
         }
@@ -1228,8 +1418,53 @@ export function createFakeD1() {
         return scheduledOnly(sql, [row])[0] ?? null
       }
 
+      // Round 21 — Cancel Start. The eligibility decision travels INSIDE the
+      // delete, and every condition below is modelled ONLY when the real
+      // statement declares it. Strip a condition from the production SQL and
+      // this stand-in stops enforcing it, so the guard's tests fail rather than
+      // passing on the stand-in's own opinion.
+      if (sql.includes('DELETE FROM workout_occurrences')) {
+        const [google_sub, workout_date, session_id] = args as [string, string, string]
+        const id = occurrenceId(google_sub, workout_date, session_id)
+        const occurrence = occurrences.get(id)
+        if (!occurrence) return 0
+
+        if (sql.includes('touched_at IS NULL')) {
+          if (occurrence.touched_at !== null && occurrence.touched_at !== undefined) return 0
+        }
+
+        if (sql.includes('NOT EXISTS')) {
+          const owned = [...workoutSets.values()].filter(
+            (row) =>
+              row.google_sub === google_sub &&
+              row.workout_date === workout_date &&
+              row.session_id === session_id,
+          )
+          const disqualified = owned.some((row) => {
+            if (sql.includes("s.status <> 'pending'") && row.status !== 'pending') return true
+            if (sql.includes('s.actual_load_value IS NOT NULL') && row.actual_load_value !== null) return true
+            if (sql.includes('s.actual_load_unit  IS NOT NULL') && row.actual_load_unit !== null) return true
+            if (sql.includes('s.actual_band_label IS NOT NULL') && (row.actual_band_label ?? null) !== null) return true
+            if (sql.includes('s.actual_band_count IS NOT NULL') && (row.actual_band_count ?? null) !== null) return true
+            if (sql.includes('s.actual_result     IS NOT NULL') && row.actual_result !== null) return true
+            if (
+              sql.includes('s.updated_at <> workout_occurrences.started_at') &&
+              row.updated_at !== occurrence.started_at
+            ) {
+              return true
+            }
+            return false
+          })
+          if (disqualified) return 0
+        }
+
+        occurrences.delete(id)
+        return 1
+      }
+
       if (sql.includes('UPDATE workout_occurrences')) {
-        const [updated_at, google_sub, workout_date, session_id] = args as [
+        const [updated_at, touched_at, google_sub, workout_date, session_id] = args as [
+          number,
           number,
           string,
           string,
@@ -1237,7 +1472,16 @@ export function createFakeD1() {
         ]
         const id = occurrenceId(google_sub, workout_date, session_id)
         const row = occurrences.get(id)
-        if (row) occurrences.set(id, { ...row, updated_at })
+        if (row) {
+          // COALESCE(touched_at, ?) — modelled only where the real statement
+          // declares it. The marker records the FIRST touch and is never moved
+          // or cleared, which is what stops a resolve-then-undo workout from
+          // looking untouched.
+          const marked = sql.includes('touched_at = COALESCE(touched_at, ?)')
+            ? { touched_at: row.touched_at ?? touched_at }
+            : {}
+          occurrences.set(id, { ...row, updated_at, ...marked })
+        }
         return null
       }
 
@@ -1517,6 +1761,7 @@ export function createFakeD1() {
     trainingFlex,
     occurrences,
     workoutSets,
+    workoutSetCorrections,
     calibrations,
     holidays,
     companyHolidays,

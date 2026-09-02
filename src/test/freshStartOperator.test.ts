@@ -14,6 +14,8 @@ import migration0009 from '../../migrations/0009_training_progression.sql?raw'
 import migration0010 from '../../migrations/0010_flexible_training.sql?raw'
 import migration0011 from '../../migrations/0011_account_settings.sql?raw'
 import migration0012 from '../../migrations/0012_training_flex.sql?raw'
+import migration0013 from '../../migrations/0013_workout_input_types.sql?raw'
+import migration0014 from '../../migrations/0014_workout_recovery_and_corrections.sql?raw'
 
 import { runFreshStart } from '../../scripts/fresh-start.mjs'
 
@@ -44,6 +46,7 @@ import { runFreshStart } from '../../scripts/fresh-start.mjs'
 const CHAIN = [
   migration0001, migration0002, migration0003, migration0004, migration0005, migration0006,
   migration0007, migration0008, migration0009, migration0010, migration0011, migration0012,
+  migration0013, migration0014,
 ]
 
 const CUTOFF = '2026-09-01'
@@ -227,7 +230,8 @@ describe('a confirmed execution', () => {
     // The after-proof the script itself reports: nothing before the cutoff
     // anywhere, everything on it intact, and no orphans.
     expect(result.after as Inventory).toEqual([0, 1, 0, 1, 0, 1])
-    expect(result.orphans).toEqual([0, 0])
+    // Three checks now: sets, calibration, and Round 21's correction audit.
+    expect(result.orphans).toEqual([0, 0, 0])
   })
 
   it('sends the destructive phase as exactly ONE command', async () => {

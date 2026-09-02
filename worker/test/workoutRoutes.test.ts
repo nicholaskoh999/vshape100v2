@@ -144,10 +144,14 @@ describe('routing', () => {
   })
 
   it('rejects the wrong method on the occurrence route', async () => {
+    // Round 21 gave DELETE a meaning here — it cancels an accidental Start —
+    // so the unsupported methods are the ones asserted now.
     const { db } = createFakeD1()
-    const { response, body } = await call(db, { method: 'DELETE' })
-    expect(response.status).toBe(405)
-    expect(body.error).toBe('method_not_allowed')
+    for (const method of ['POST', 'PUT', 'PATCH']) {
+      const { response, body } = await call(db, { method })
+      expect(response.status, method).toBe(405)
+      expect(body.error, method).toBe('method_not_allowed')
+    }
   })
 
   it('rejects the wrong method on start', async () => {

@@ -27,7 +27,8 @@ import { isLocalDate } from './localDate.ts'
  *
  * For ONE named account only, every workout occurrence — scheduled and Extra
  * alike — whose local workout date is strictly BEFORE the cutoff, together with
- * the rows those occurrences own: their sets, and their progression calibration.
+ * the rows those occurrences own: their sets, their progression calibration,
+ * and their Round 21 correction audit.
  *
  * `< cutoff` is strict. A workout dated exactly on the cutoff is the first day of
  * the new Foundation and must survive, so the boundary is never `<=`.
@@ -238,6 +239,16 @@ export function freshStartStatements(target: FreshStartTarget): FreshStartStatem
   const { googleSub, cutoff } = target
   return [
     {
+      // Round 21. A correction audit is a record of training history, not a
+      // user setting, so it goes with the workout it describes rather than
+      // surviving as an orphan account of sets that no longer exist. Deleted
+      // explicitly, like every other child here, so this does not depend on
+      // foreign keys being enforced.
+      sql: `DELETE FROM workout_set_corrections
+             WHERE google_sub = ? AND workout_date < ?`,
+      params: [googleSub, cutoff],
+    },
+    {
       sql: `DELETE FROM workout_calibration
              WHERE google_sub = ? AND workout_date < ?`,
       params: [googleSub, cutoff],
@@ -284,11 +295,25 @@ export function freshStartOrphanChecks(): FreshStartStatement[] {
              )`,
       params: [],
     },
+    {
+      sql: `SELECT COUNT(*) AS n FROM workout_set_corrections x
+             WHERE NOT EXISTS (
+               SELECT 1 FROM workout_occurrences o
+                WHERE o.google_sub   = x.google_sub
+                  AND o.workout_date = x.workout_date
+                  AND o.session_id   = x.session_id
+             )`,
+      params: [],
+    },
   ]
 }
 
 /** The labels the orphan checks come back in, in order. */
-export const FRESH_START_ORPHAN_LABELS = ['orphan_sets', 'orphan_calibration'] as const
+export const FRESH_START_ORPHAN_LABELS = [
+  'orphan_sets',
+  'orphan_calibration',
+  'orphan_corrections',
+] as const
 
 /**
  * Tables a Fresh Start must never write to.

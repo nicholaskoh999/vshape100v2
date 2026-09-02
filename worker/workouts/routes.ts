@@ -29,8 +29,12 @@ import {
 import { createD1ExerciseInputTypeStore } from '../exerciseInput/d1Store'
 import { resolveInputTypes, type ExerciseInputTypeStore } from '../exerciseInput/exerciseInput'
 import { createD1WorkoutStore } from './d1Store'
+import { parseSetCorrection } from '../../shared/workoutCorrection'
 import {
   applySetUpdate,
+  cancelWorkoutStart,
+  correctSet,
+  isCancelable,
   isValidStartProvenance,
   parseExerciseOrder,
   parseHistoryLimit,
@@ -46,6 +50,8 @@ import {
   startWorkout,
   summariseSets,
   undoSet,
+  type CorrectionOutcome,
+  type CorrectionTime,
   type SetOutcome,
   type WorkoutLog,
   type WorkoutOccurrenceRecord,
@@ -75,7 +81,7 @@ function toPublicOccurrence(record: WorkoutOccurrenceRecord) {
   }
 }
 
-function toPublicSet(record: WorkoutSetRecord) {
+function toPublicSet(record: WorkoutSetRecord, correctedAt: number | null = null) {
   return {
     exerciseOrder: record.exerciseOrder,
     setIndex: record.setIndex,
@@ -101,14 +107,27 @@ function toPublicSet(record: WorkoutSetRecord) {
         : { label: record.bandLabel, count: record.bandCount },
     result: record.result,
     updatedAt: record.updatedAt,
+    // When this set was last corrected, or null if it never was. Read from the
+    // immutable audit, so the indicator says something true rather than
+    // inferring "edited" from a timestamp that moves for other reasons.
+    correctedAt,
   }
 }
 
-function toPublicLog(log: WorkoutLog) {
+function toPublicLog(log: WorkoutLog, corrections: CorrectionTime[] = []) {
+  const correctedAt = new Map(
+    corrections.map((row) => [`${row.exerciseOrder}|${row.setIndex}`, row.correctedAt]),
+  )
   return {
     occurrence: toPublicOccurrence(log.occurrence),
-    sets: log.sets.map(toPublicSet),
+    sets: log.sets.map((set) =>
+      toPublicSet(set, correctedAt.get(`${set.exerciseOrder}|${set.setIndex}`) ?? null),
+    ),
     progress: summariseSets(log.sets),
+    // So the UI does not offer Cancel on a workout the server will refuse.
+    // Advisory only - the conditional DELETE remains the authority, and a
+    // client that asks anyway gets a controlled refusal.
+    cancelable: isCancelable(log),
   }
 }
 
@@ -160,11 +179,13 @@ async function handleRead(
   // A workout that has not been started is an honest null, not a 404: the
   // session exists, the account simply has not begun it. This is what lets the
   // client tell "not started" from "still loading" without guessing.
-  return json(
-    log === null
-      ? { date, sessionId, occurrence: null, sets: [], progress: null }
-      : { date, sessionId, ...toPublicLog(log) },
-  )
+  if (log === null) {
+    return json({ date, sessionId, occurrence: null, sets: [], progress: null })
+  }
+  // Read only for a workout that exists, so a never-started session still
+  // costs one query.
+  const corrections = await store.listCorrectionTimes(googleSub, date, sessionId)
+  return json({ date, sessionId, ...toPublicLog(log, corrections) })
 }
 
 /** POST /api/workouts/:date/:sessionId/start */
@@ -252,6 +273,103 @@ async function handleStart(
     { date, sessionId, created: result.created, ...toPublicLog(result) },
     { status: result.created ? 201 : 200 },
   )
+}
+
+/**
+ * DELETE /api/workouts/:date/:sessionId
+ *
+ * Cancel an accidental Start. Pressing Start creates durable history; until
+ * Round 21 a mis-tap could not be taken back, and the user is carrying several
+ * such workouts. This removes ONLY an occurrence that was never worked in.
+ *
+ * There is no request body and nothing in the request influences the decision.
+ * Eligibility is decided inside the store's conditional DELETE, against
+ * committed state, at the moment it commits.
+ */
+async function handleCancel(
+  store: WorkoutStore,
+  googleSub: string,
+  date: string,
+  sessionId: string,
+): Promise<Response> {
+  const outcome = await cancelWorkoutStart(store, googleSub, date, sessionId)
+
+  if (!outcome.ok) {
+    // A workout that has been worked in is not an error the client can fix by
+    // retrying - it is a refusal with a reason, so the UI can say why and show
+    // the truthful workout again.
+    if (outcome.reason === 'workout_touched') {
+      return json({ error: outcome.reason }, { status: 409 })
+    }
+    // Nothing to cancel. A second Cancel lands here, and so does a Cancel on a
+    // workout that was never started.
+    return json({ error: outcome.reason }, { status: 404 })
+  }
+
+  // The workout is gone. The same shape a never-started workout reads as, so
+  // the Training page returns to "Workout not started" with no special case.
+  return json({ date, sessionId, occurrence: null, sets: [], progress: null })
+}
+
+/** Map a correction refusal onto a controlled response. */
+type CorrectionFailure = Extract<CorrectionOutcome, { ok: false }>['reason']
+
+function correctionFailure(reason: CorrectionFailure) {
+  if (reason === 'not_found') return json({ error: 'set_not_found' }, { status: 404 })
+  // Somebody changed the set between the editor reading it and saving. Refused
+  // rather than overwritten: silently winning that race is how a correction
+  // would destroy a change the user cannot see.
+  if (reason === 'stale') return json({ error: reason }, { status: 409 })
+  return json({ error: reason }, { status: 400 })
+}
+
+/**
+ * PUT /api/workouts/:date/:sessionId/sets/:exerciseOrder/:setIndex/correction
+ *
+ * Correct what one completed set actually recorded.
+ *
+ * This is the single audited exception to snapshot immutability, and it is
+ * deliberately its own route: the ordinary set-update path does not gain the
+ * power to rewrite a frozen modality, so no accidental call can reach it.
+ */
+async function handleSetCorrection(
+  request: Request,
+  store: WorkoutStore,
+  googleSub: string,
+  date: string,
+  sessionId: string,
+  exerciseOrder: number,
+  setIndex: number,
+): Promise<Response> {
+  let body: unknown
+  try {
+    body = await request.json()
+  } catch {
+    return json({ error: 'invalid_json' }, { status: 400 })
+  }
+
+  const parsed = parseSetCorrection(body)
+  if (!parsed.ok) {
+    return json({ error: 'invalid_correction', field: parsed.field }, { status: 400 })
+  }
+
+  const outcome = await correctSet(
+    store,
+    { googleSub, workoutDate: date, sessionId, exerciseOrder, setIndex },
+    parsed.value,
+    parsed.expectedUpdatedAt,
+    crypto.randomUUID(),
+  )
+  if (!outcome.ok) return correctionFailure(outcome.reason)
+
+  return json({
+    date,
+    sessionId,
+    // False when the asserted facts were already the stored facts. Nothing was
+    // written and no audit event exists, because no correction happened.
+    corrected: outcome.corrected,
+    set: toPublicSet(outcome.record),
+  })
 }
 
 /**
@@ -366,23 +484,32 @@ export async function handleWorkoutRequest(
     // A single segment was never a route before, so `history` cannot collide
     // with the date + session shape below.
     const isHistory = segments.length === 1 && segments[0] === 'history'
-    const isRead = segments.length === 2
+    // Round 21: DELETE on the workout itself cancels an accidental Start. It
+    // shares the read's shape, so the method separates them.
+    const isOccurrence = segments.length === 2
+    const isRead = isOccurrence && method === 'GET'
+    const isCancel = isOccurrence && method === 'DELETE'
     const isStart = segments.length === 3 && segments[2] === 'start'
     const isSet = segments.length === 5 && segments[2] === 'sets'
-    if (!isHistory && !isRead && !isStart && !isSet) {
+    // Round 21: correcting one recorded set's factual performance.
+    const isCorrection = segments.length === 6 && segments[2] === 'sets' && segments[5] === 'correction'
+    if (!isHistory && !isOccurrence && !isStart && !isSet && !isCorrection) {
       return json({ error: 'not_found' }, { status: 404 })
     }
 
     if (isHistory && method !== 'GET') {
       return json({ error: 'method_not_allowed' }, { status: 405 })
     }
-    if (isRead && method !== 'GET') {
+    if (isOccurrence && method !== 'GET' && method !== 'DELETE') {
       return json({ error: 'method_not_allowed' }, { status: 405 })
     }
     if (isStart && method !== 'POST') {
       return json({ error: 'method_not_allowed' }, { status: 405 })
     }
     if (isSet && method !== 'PUT' && method !== 'DELETE') {
+      return json({ error: 'method_not_allowed' }, { status: 405 })
+    }
+    if (isCorrection && method !== 'PUT') {
       return json({ error: 'method_not_allowed' }, { status: 405 })
     }
 
@@ -433,6 +560,13 @@ export async function handleWorkoutRequest(
       )
     }
 
+    if (isCancel) {
+      return withSessionHeaders(
+        await handleCancel(store, account.googleSub, date, sessionId),
+        sessionHeaders,
+      )
+    }
+
     if (isStart) {
       return withSessionHeaders(
         await handleStart(
@@ -459,6 +593,21 @@ export async function handleWorkoutRequest(
     if (setIndex === null) {
       return withSessionHeaders(
         json({ error: 'invalid_set_index' }, { status: 400 }),
+        sessionHeaders,
+      )
+    }
+
+    if (isCorrection) {
+      return withSessionHeaders(
+        await handleSetCorrection(
+          request,
+          store,
+          account.googleSub,
+          date,
+          sessionId,
+          exerciseOrder,
+          setIndex,
+        ),
         sessionHeaders,
       )
     }

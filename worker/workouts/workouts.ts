@@ -25,6 +25,11 @@
  */
 
 import type { ResolvedInputType } from '../exerciseInput/exerciseInput'
+import {
+  isNoOpCorrection,
+  type CorrectableFacts,
+  type WorkoutSetCorrection,
+} from '../../shared/workoutCorrection'
 import type { WorkoutInputType } from '../../shared/workoutInput'
 import {
   inputTypeForLegacyLoadMode,
@@ -85,6 +90,14 @@ export type WorkoutOccurrenceRecord = {
   intensity: string
   startedAt: number
   updatedAt: number
+  /**
+   * When any set of this workout was FIRST resolved, or null if none ever was.
+   *
+   * Null on every occurrence that predates Round 21, because the migration
+   * back-fills nothing. That is safe: the cancel guard also refuses on the
+   * set-level facts, which is what protects older workouts.
+   */
+  touchedAt: number | null
 }
 
 export type WorkoutSetRecord = {
@@ -122,6 +135,31 @@ export type WorkoutSetRecord = {
   bandCount: number | null
   result: number | null
   updatedAt: number
+}
+
+/**
+ * May this workout be cancelled?
+ *
+ * A convenience for the UI, so it does not offer a button that the server will
+ * refuse. It deliberately mirrors the store's conditional DELETE rather than
+ * replacing it: the WRITE is the authority, and this can be stale the instant
+ * it is computed. A client that asks anyway simply gets a controlled refusal.
+ */
+export function isCancelable(log: WorkoutLog): boolean {
+  if (log.occurrence.touchedAt !== null) return false
+  return log.sets.every(
+    (set) =>
+      set.status === 'pending' &&
+      set.loadValue === null &&
+      set.loadUnit === null &&
+      set.bandLabel === null &&
+      set.bandCount === null &&
+      set.result === null &&
+      // A resolve-then-undo moves the set's own clock away from the moment the
+      // workout was started. This is what covers occurrences older than
+      // `touchedAt`.
+      set.updatedAt === log.occurrence.startedAt,
+  )
 }
 
 /** An occurrence together with its sets, in performance order. */
@@ -170,16 +208,72 @@ export interface WorkoutStore {
     setIndex: number,
   ): Promise<WorkoutSetRecord | null>
 
-  /** Update only the live logging columns of an existing set. */
-  updateSet(record: WorkoutSetRecord): Promise<void>
+  /**
+   * Update only the live logging columns of an existing set.
+   *
+   * Answers whether a row was ACTUALLY changed. That matters because a set can
+   * cease to exist between a caller reading it and writing it — Cancel Start
+   * removes the whole occurrence — and an update that quietly matched nothing
+   * would otherwise report success for a row that is gone, inventing a
+   * completed set out of a workout the user just cancelled.
+   */
+  updateSet(record: WorkoutSetRecord): Promise<boolean>
 
-  /** Bump the occurrence's updated_at when its sets change. */
+  /**
+   * Bump the occurrence's updated_at when its sets change, and record that the
+   * workout has now been TOUCHED.
+   *
+   * The touch marker is written once and never cleared. It is what stops a
+   * workout that was completed and then undone from looking disposable: the
+   * sets are pending again, but the workout was genuinely worked in, and Cancel
+   * Start must refuse it.
+   */
   touchOccurrence(
     googleSub: string,
     workoutDate: string,
     sessionId: string,
     updatedAt: number,
   ): Promise<void>
+
+  /**
+   * Remove an occurrence that should never have existed, with its sets and its
+   * calibration — but ONLY while it is genuinely untouched.
+   *
+   * The eligibility decision travels INSIDE the write. Reading "all pending"
+   * and then deleting would be the same stale-read race earlier rounds already
+   * had to correct: a set completion committing in between would be erased by a
+   * decision made before it existed.
+   *
+   * Answers whether an occurrence was actually removed.
+   */
+  deleteUntouchedOccurrence(
+    googleSub: string,
+    workoutDate: string,
+    sessionId: string,
+  ): Promise<boolean>
+
+  /**
+   * Rewrite one completed set's recorded performance AND record the audit
+   * event, as a single atomic write.
+   *
+   * Both statements carry the same precondition, so either the set is corrected
+   * and the event exists, or neither happened. A correction with no audit, or
+   * an audit with no correction, is not a state this can reach.
+   *
+   * Answers whether the write landed. False means the precondition failed —
+   * the set was changed by somebody else since it was read.
+   */
+  correctSet(write: CorrectionWrite): Promise<boolean>
+
+  /**
+   * When each set of one workout was last corrected, for the sets that ever
+   * were. Read-only: the audit is INSERT-only and nothing here can change it.
+   */
+  listCorrectionTimes(
+    googleSub: string,
+    workoutDate: string,
+    sessionId: string,
+  ): Promise<CorrectionTime[]>
 
   /**
    * Recent recorded workouts, newest first, with their set summary.
@@ -257,6 +351,8 @@ export function buildSnapshot(
     intensity: input.intensity,
     startedAt: now,
     updatedAt: now,
+    // A brand-new workout has never been worked in.
+    touchedAt: null,
   }
 
   const sets: WorkoutSetRecord[] = []
@@ -493,7 +589,7 @@ export async function applySetUpdate(
       status: 'skipped',
       updatedAt: now,
     }
-    await store.updateSet(record)
+    if (!(await store.updateSet(record))) return { ok: false, reason: 'not_found' }
     await store.touchOccurrence(googleSub, workoutDate, sessionId, now)
     return { ok: true, record }
   }
@@ -540,7 +636,13 @@ export async function applySetUpdate(
     result: update.result,
     updatedAt: now,
   }
-  await store.updateSet(record)
+  // THE WRITE DECIDES, NOT THE READ ABOVE.
+  //
+  // `existing` was read a moment ago. Cancel Start can have removed the whole
+  // occurrence since — atomically, and legitimately. If this update matched no
+  // row, the set is gone, and reporting success would manufacture a completed
+  // set inside a workout that no longer exists.
+  if (!(await store.updateSet(record))) return { ok: false, reason: 'not_found' }
   await store.touchOccurrence(googleSub, workoutDate, sessionId, now)
   return { ok: true, record }
 }
@@ -580,7 +682,9 @@ export async function undoSet(
     status: 'pending',
     updatedAt: now,
   }
-  await store.updateSet(record)
+  if (!(await store.updateSet(record))) return { ok: false, reason: 'not_found' }
+  // Undo still TOUCHES the workout. Putting the sets back does not put back the
+  // fact that they were resolved, and Cancel Start must keep refusing.
   await store.touchOccurrence(googleSub, workoutDate, sessionId, now)
   return { ok: true, record }
 }
@@ -635,4 +739,183 @@ export async function readHistoryRange(
 
   const complete = found.length <= MAX_HISTORY_RANGE_ROWS
   return { workouts: complete ? found : found.slice(0, MAX_HISTORY_RANGE_ROWS), totals, complete }
+}
+
+/* ------------------------------------------------------------------ */
+/* Cancelling a Start that should never have happened                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * What a Cancel attempt did.
+ *
+ * `workout_touched` and `not_started` are kept apart because they mean
+ * different things to the person: one is "there is nothing here to cancel", the
+ * other is "this workout has real training in it, and it is staying".
+ */
+export type CancelOutcome =
+  | { ok: true }
+  | { ok: false; reason: 'not_started' }
+  | { ok: false; reason: 'workout_touched' }
+
+/**
+ * Cancel an accidental Start.
+ *
+ * Pressing Start creates a durable occurrence and a full set of pending rows.
+ * Until now there was no way back from that, so a mis-tap became permanent
+ * history. This is the way back — and it is deliberately narrow: it removes
+ * only an occurrence that was never actually worked in.
+ *
+ * THE DECISION IS MADE BY THE WRITE.
+ *
+ * Nothing here reads the sets and then deletes. The store's conditional DELETE
+ * carries the whole eligibility test, evaluated against committed state at the
+ * moment it commits, so a set completion racing this cannot be erased by a
+ * judgement formed before it existed.
+ *
+ * The read below happens only AFTER the write has already decided, and only to
+ * say something true about why. It never grants permission.
+ */
+export async function cancelWorkoutStart(
+  store: WorkoutStore,
+  googleSub: string,
+  workoutDate: string,
+  sessionId: string,
+): Promise<CancelOutcome> {
+  const removed = await store.deleteUntouchedOccurrence(googleSub, workoutDate, sessionId)
+  if (removed) return { ok: true }
+
+  // Explaining a refusal, not making one. If the occurrence is still there, it
+  // failed the untouched test; if it is not, there was nothing to cancel —
+  // which is also what a second Cancel gets.
+  const occurrence = await store.findOccurrence(googleSub, workoutDate, sessionId)
+  return { ok: false, reason: occurrence ? 'workout_touched' : 'not_started' }
+}
+
+/* ------------------------------------------------------------------ */
+/* Correcting a set that recorded the wrong thing                      */
+/* ------------------------------------------------------------------ */
+
+/** When one set was last corrected. */
+export type CorrectionTime = {
+  exerciseOrder: number
+  setIndex: number
+  correctedAt: number
+}
+
+/** Identity of one recorded set. */
+export type SetAddress = {
+  googleSub: string
+  workoutDate: string
+  sessionId: string
+  exerciseOrder: number
+  setIndex: number
+}
+
+/**
+ * One correction, as the store must write it.
+ *
+ * `expectedUpdatedAt` is the version the editor read. It travels into the write
+ * as a condition, which is what makes this optimistic concurrency rather than
+ * last-write-wins: if anything changed the set in between, nothing happens.
+ */
+export type CorrectionWrite = {
+  address: SetAddress
+  correctionId: string
+  correctedAt: number
+  expectedUpdatedAt: number
+  before: CorrectableFacts
+  after: WorkoutSetCorrection
+}
+
+export type CorrectionOutcome =
+  | { ok: true; record: WorkoutSetRecord; corrected: true }
+  /** The asserted facts are already the stored facts; nothing was written. */
+  | { ok: true; record: WorkoutSetRecord; corrected: false }
+  | { ok: false; reason: 'not_found' }
+  /** Only a completed set records a performance that can be wrong. */
+  | { ok: false; reason: 'not_completed' }
+  /** Somebody changed the set between the read and the Save. */
+  | { ok: false; reason: 'stale' }
+
+/**
+ * Apply a historical correction to one completed set.
+ *
+ * WHAT THIS MAY CHANGE: the modality, the load, the band, the result — the
+ * factual performance, which is the part that can be wrong.
+ *
+ * WHAT IT MAY NOT: anything that says which set this is or whether it happened.
+ * The date, session, provenance, exercise, order, index, prescription, result
+ * kind, per-side semantics and STATUS are all carried through untouched. A
+ * correction never converts a skipped set into a completed one, and never the
+ * reverse. The store's UPDATE does not mention those columns at all, so this is
+ * a property of the statement rather than of this function remembering.
+ *
+ * EVERY CORRECTION IS RECORDED. The mutation and its audit event are one
+ * atomic write. There is no path that produces a rewritten set with no record
+ * of the rewrite, and none that records a rewrite that did not happen.
+ */
+export async function correctSet(
+  store: WorkoutStore,
+  address: SetAddress,
+  after: WorkoutSetCorrection,
+  expectedUpdatedAt: number,
+  correctionId: string,
+  now: number = Date.now(),
+): Promise<CorrectionOutcome> {
+  const existing = await store.findSet(
+    address.googleSub,
+    address.workoutDate,
+    address.sessionId,
+    address.exerciseOrder,
+    address.setIndex,
+  )
+  if (!existing) return { ok: false, reason: 'not_found' }
+
+  // Only a completed set has a recorded performance to be wrong about. A
+  // pending or skipped set is refused rather than being completed by the back
+  // door — that would change what happened, not how it was measured.
+  if (existing.status !== 'completed') return { ok: false, reason: 'not_completed' }
+
+  // Reported before the version check, because "you are looking at an old
+  // version" is less useful than "this is already what it says".
+  const before: CorrectableFacts = {
+    inputType: existing.inputType,
+    loadMode: existing.loadMode,
+    loadValue: existing.loadValue,
+    loadUnit: existing.loadUnit,
+    bandLabel: existing.bandLabel,
+    bandCount: existing.bandCount,
+    result: existing.result,
+  }
+  if (isNoOpCorrection(before, after)) {
+    return { ok: true, record: existing, corrected: false }
+  }
+
+  if (existing.updatedAt !== expectedUpdatedAt) return { ok: false, reason: 'stale' }
+
+  const written = await store.correctSet({
+    address,
+    correctionId,
+    correctedAt: now,
+    expectedUpdatedAt,
+    before,
+    after,
+  })
+  // The pre-read above is an optimisation and a source of good error messages.
+  // The version condition inside the write is what actually decides, so losing
+  // the race here is reported as stale rather than silently overwriting.
+  if (!written) return { ok: false, reason: 'stale' }
+
+  const record: WorkoutSetRecord = {
+    ...existing,
+    inputType: after.inputType,
+    loadMode: after.loadMode,
+    loadValue: after.load ? after.load.value : null,
+    loadUnit: after.load ? after.load.unit : null,
+    bandLabel: after.band ? after.band.label : null,
+    bandCount: after.band ? after.band.count : null,
+    result: after.result,
+    updatedAt: now,
+  }
+  return { ok: true, record, corrected: true }
 }

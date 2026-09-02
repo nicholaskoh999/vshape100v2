@@ -65,6 +65,8 @@ type OccurrenceRow = {
   session_intensity_snapshot: string
   started_at: number
   updated_at: number
+  /** Round 21. Null on every occurrence written before it. */
+  touched_at: number | null
 }
 
 type SetRow = {
@@ -128,6 +130,7 @@ function toOccurrence(row: OccurrenceRow): WorkoutOccurrenceRecord {
     intensity: row.session_intensity_snapshot,
     startedAt: row.started_at,
     updatedAt: row.updated_at,
+    touchedAt: typeof row.touched_at === 'number' ? row.touched_at : null,
   }
 }
 
@@ -176,7 +179,7 @@ function toSet(row: SetRow): WorkoutSetRecord {
 const OCCURRENCE_COLUMNS = `google_sub, workout_date, session_id, snapshot_id,
   kind, source_session_id,
   session_day_snapshot, session_focus_snapshot, session_intensity_snapshot,
-  started_at, updated_at`
+  started_at, updated_at, touched_at`
 
 const SET_COLUMN_NAMES = [
   'google_sub',
@@ -329,7 +332,7 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
             // the guard applies to a scheduled Start and is inert for an Extra —
             // Extra is voluntary and was never the day's obligation.
             `INSERT INTO workout_occurrences (${OCCURRENCE_COLUMNS})
-             SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+             SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
               WHERE NOT EXISTS (
                     SELECT 1 FROM training_flex
                      WHERE google_sub = ? AND local_date = ? AND ? = 'scheduled'
@@ -348,6 +351,8 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
             occurrence.intensity,
             occurrence.startedAt,
             occurrence.updatedAt,
+            // Always null at Start: a new workout has never been worked in.
+            occurrence.touchedAt,
             // The flex guard's own bindings.
             occurrence.googleSub,
             occurrence.workoutDate,
@@ -425,7 +430,7 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
       // Only the live logging columns are assignable. The snapshot columns and
       // the ownership token are not in this statement at all, so no code path
       // can rewrite history or re-home a set.
-      await db
+      const result = await db
         .prepare(
           `UPDATE workout_sets
               SET status = ?,
@@ -453,6 +458,11 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
           record.setIndex,
         )
         .run()
+
+      // Did it land? A set can be gone by now - Cancel Start removes the whole
+      // occurrence atomically - and a caller that assumed success would report
+      // a completed set inside a workout that no longer exists.
+      return (result.meta?.changes ?? 0) > 0
     },
 
     async listRecent(googleSub, limit) {
@@ -548,12 +558,203 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
     async touchOccurrence(googleSub, workoutDate, sessionId, updatedAt) {
       await db
         .prepare(
+          // COALESCE, so the marker records the FIRST touch and is never moved
+          // or cleared. Undo touches the workout too: putting the sets back
+          // does not put back the fact that they were resolved.
           `UPDATE workout_occurrences
-              SET updated_at = ?
+              SET updated_at = ?,
+                  touched_at = COALESCE(touched_at, ?)
             WHERE google_sub = ? AND workout_date = ? AND session_id = ?`,
         )
-        .bind(updatedAt, googleSub, workoutDate, sessionId)
+        .bind(updatedAt, updatedAt, googleSub, workoutDate, sessionId)
         .run()
+    },
+
+    async deleteUntouchedOccurrence(googleSub, workoutDate, sessionId) {
+      // THE WHOLE ELIGIBILITY DECISION LIVES IN THIS STATEMENT.
+      //
+      // Not read-then-delete. The conditions are evaluated against committed
+      // state at the instant the delete commits, so a set completion that lands
+      // first is seen by this guard and stops it - rather than being erased by
+      // a judgement formed before it existed.
+      //
+      // A workout is untouched only when ALL of these hold:
+      //
+      //   touched_at IS NULL   no set has ever been resolved. Exact for every
+      //                        workout started from Round 21 onwards.
+      //
+      //   and no set that
+      //     is not pending          it was completed or skipped
+      //     carries any evidence    a load, a unit, a band, a count, a result
+      //     has moved on its own    updated_at differs from the occurrence's
+      //                             started_at, which is what a resolve-then-
+      //                             undo leaves behind. This is what protects
+      //                             workouts that predate touched_at, since the
+      //                             migration deliberately back-fills nothing.
+      const result = await db
+        .prepare(
+          `DELETE FROM workout_occurrences
+            WHERE google_sub = ? AND workout_date = ? AND session_id = ?
+              AND touched_at IS NULL
+              AND NOT EXISTS (
+                    SELECT 1 FROM workout_sets s
+                     WHERE s.google_sub   = workout_occurrences.google_sub
+                       AND s.workout_date = workout_occurrences.workout_date
+                       AND s.session_id   = workout_occurrences.session_id
+                       AND ( s.status <> 'pending'
+                          OR s.actual_load_value IS NOT NULL
+                          OR s.actual_load_unit  IS NOT NULL
+                          OR s.actual_band_label IS NOT NULL
+                          OR s.actual_band_count IS NOT NULL
+                          OR s.actual_result     IS NOT NULL
+                          OR s.updated_at <> workout_occurrences.started_at )
+              )`,
+        )
+        .bind(googleSub, workoutDate, sessionId)
+        .run()
+
+      const removed = (result.meta?.changes ?? 0) > 0
+      if (!removed) return false
+
+      // The children go only BECAUSE the parent went, each gated on the
+      // occurrence being absent. The same guarded-child idiom the Start insert
+      // uses, and it does not depend on foreign keys being enforced - Fresh
+      // Start deletes its children explicitly for the same reason.
+      const gone = `NOT EXISTS (
+              SELECT 1 FROM workout_occurrences o
+               WHERE o.google_sub = ? AND o.workout_date = ? AND o.session_id = ?
+            )`
+      await db.batch([
+        db
+          .prepare(
+            `DELETE FROM workout_sets
+              WHERE google_sub = ? AND workout_date = ? AND session_id = ?
+                AND ${gone}`,
+          )
+          .bind(googleSub, workoutDate, sessionId, googleSub, workoutDate, sessionId),
+        db
+          .prepare(
+            `DELETE FROM workout_calibration
+              WHERE google_sub = ? AND workout_date = ? AND session_id = ?
+                AND ${gone}`,
+          )
+          .bind(googleSub, workoutDate, sessionId, googleSub, workoutDate, sessionId),
+      ])
+
+      return true
+    },
+
+    async listCorrectionTimes(googleSub, workoutDate, sessionId) {
+      const result = await db
+        .prepare(
+          `SELECT exercise_order, set_index, MAX(corrected_at) AS corrected_at
+             FROM workout_set_corrections
+            WHERE google_sub = ? AND workout_date = ? AND session_id = ?
+            GROUP BY exercise_order, set_index`,
+        )
+        .bind(googleSub, workoutDate, sessionId)
+        .all<{ exercise_order: number; set_index: number; corrected_at: number }>()
+
+      return (result.results ?? []).map((row) => ({
+        exerciseOrder: row.exercise_order,
+        setIndex: row.set_index,
+        correctedAt: row.corrected_at,
+      }))
+    },
+
+    async correctSet(write) {
+      const { address: at, before, after } = write
+      // The precondition, shared by both statements: this exact set, still
+      // completed, still at the version the editor read.
+      const precondition = `google_sub = ? AND workout_date = ? AND session_id = ?
+             AND exercise_order = ? AND set_index = ?
+             AND status = 'completed' AND updated_at = ?`
+      const key = [
+        at.googleSub,
+        at.workoutDate,
+        at.sessionId,
+        at.exerciseOrder,
+        at.setIndex,
+        write.expectedUpdatedAt,
+      ]
+
+      // AUDIT FIRST, deliberately. It is guarded on the set's PRE-state, which
+      // only exists before the update runs. Inside one batch the two cannot be
+      // separated, so either both land or neither does - there is no reachable
+      // state with a rewritten set and no record of the rewrite, nor a record
+      // of a rewrite that did not happen.
+      const statements = [
+        db
+          .prepare(
+            `INSERT INTO workout_set_corrections
+               (correction_id, google_sub, workout_date, session_id,
+                exercise_order, set_index, corrected_at,
+                before_input_type, before_load_mode, before_load_value,
+                before_load_unit, before_band_label, before_band_count,
+                before_result,
+                after_input_type, after_load_mode, after_load_value,
+                after_load_unit, after_band_label, after_band_count,
+                after_result)
+             SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+              WHERE EXISTS (SELECT 1 FROM workout_sets WHERE ${precondition})`,
+          )
+          .bind(
+            write.correctionId,
+            at.googleSub,
+            at.workoutDate,
+            at.sessionId,
+            at.exerciseOrder,
+            at.setIndex,
+            write.correctedAt,
+            before.inputType,
+            before.loadMode,
+            before.loadValue,
+            before.loadUnit,
+            before.bandLabel,
+            before.bandCount,
+            before.result,
+            after.inputType,
+            after.loadMode,
+            after.load ? after.load.value : null,
+            after.load ? after.load.unit : null,
+            after.band ? after.band.label : null,
+            after.band ? after.band.count : null,
+            after.result,
+            ...key,
+          ),
+        // Only the factual performance columns are assignable. The date, the
+        // session, the provenance, the exercise, its order, the set index, the
+        // prescription, the result kind, the per-side flag and the STATUS are
+        // not in this statement at all - so a correction cannot reach them.
+        db
+          .prepare(
+            `UPDATE workout_sets
+                SET input_type_snapshot = ?,
+                    load_mode_snapshot  = ?,
+                    actual_load_value   = ?,
+                    actual_load_unit    = ?,
+                    actual_band_label   = ?,
+                    actual_band_count   = ?,
+                    actual_result       = ?,
+                    updated_at          = ?
+              WHERE ${precondition}`,
+          )
+          .bind(
+            after.inputType,
+            after.loadMode,
+            after.load ? after.load.value : null,
+            after.load ? after.load.unit : null,
+            after.band ? after.band.label : null,
+            after.band ? after.band.count : null,
+            after.result,
+            write.correctedAt,
+            ...key,
+          ),
+      ]
+
+      const results = await db.batch(statements)
+      // The UPDATE is the authority on whether the correction happened.
+      return ((results[1]?.meta?.changes ?? 0) as number) > 0
     },
   }
 }

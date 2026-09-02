@@ -15,6 +15,7 @@ import migration0010 from '../../migrations/0010_flexible_training.sql?raw'
 import migration0011 from '../../migrations/0011_account_settings.sql?raw'
 import migration0012 from '../../migrations/0012_training_flex.sql?raw'
 import migration0013 from '../../migrations/0013_workout_input_types.sql?raw'
+import migration0014 from '../../migrations/0014_workout_recovery_and_corrections.sql?raw'
 
 import {
   FRESH_START_PRESERVED_TABLES,
@@ -38,7 +39,7 @@ import {
 const CHAIN = [
   migration0001, migration0002, migration0003, migration0004, migration0005, migration0006,
   migration0007, migration0008, migration0009, migration0010, migration0011, migration0012,
-  migration0013,
+  migration0013, migration0014,
 ]
 
 const CUTOFF = '2026-09-01'
@@ -342,7 +343,14 @@ describe('20. non-training data is preserved', () => {
     const tables = freshStartStatements({ googleSub: MINE, cutoff: CUTOFF }).map(
       (statement) => /DELETE FROM (\w+)/.exec(statement.sql)![1],
     )
-    expect(tables).toEqual(['workout_calibration', 'workout_sets', 'workout_occurrences'])
+    expect(tables).toEqual([
+      // Round 21's correction audit is a child too, and goes first for the
+      // same reason the others do.
+      'workout_set_corrections',
+      'workout_calibration',
+      'workout_sets',
+      'workout_occurrences',
+    ])
   })
 })
 
