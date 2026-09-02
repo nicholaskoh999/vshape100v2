@@ -155,7 +155,7 @@ describe('reading', () => {
     ])
   })
 
-  it('drops a stored value it cannot name rather than reporting it as kilograms', async () => {
+  it('reports a stored value it cannot name, rather than hiding it or guessing', async () => {
     const fake = createFakeD1()
     const token = await seedToken(fake.db, 'sub-alice', 'alice@example.com')
     await save(fake.db, token, EXERCISE, 'resistance_band')
@@ -164,8 +164,29 @@ describe('reading', () => {
     // prevent — the reader must not assume the shape of data it did not write.
     for (const row of fake.inputTypes.values()) row.input_type = 'elastic_vibes'
 
-    expect((await call(fake.db, { token })).body.inputTypes).toEqual([])
-    expect((await call(fake.db, { token, id: EXERCISE })).body.inputType).toBeNull()
+    // Not kilograms, and not silently gone either. The collection NAMES it, so
+    // the Library can say the setting could not be read instead of showing it
+    // as an exercise nobody has answered for.
+    const list = await call(fake.db, { token })
+    expect(list.body.inputTypes).toEqual([])
+    expect(list.body.unreadable).toEqual([EXERCISE])
+
+    // And the item read refuses outright: `null` here would mean "never
+    // answered", which is a different fact from "answered, unreadably".
+    const item = await call(fake.db, { token, id: EXERCISE })
+    expect(item.response.status).toBe(500)
+    expect(item.body).toEqual({ error: 'input_type_unreadable' })
+  })
+
+  it('reports nothing as unreadable when every stored row is fine', async () => {
+    // NON-VACUITY for the report above.
+    const { db } = createFakeD1()
+    const token = await seedToken(db, 'sub-alice', 'alice@example.com')
+    await save(db, token, EXERCISE, 'resistance_band')
+
+    const { body } = await call(db, { token })
+    expect(body.unreadable).toEqual([])
+    expect(body.inputTypes).toHaveLength(1)
   })
 })
 

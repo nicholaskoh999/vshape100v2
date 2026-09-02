@@ -40,14 +40,51 @@ export type ExerciseInputTypeRecord = {
 }
 
 /**
+ * THREE STATES, AND THE MIDDLE ONE IS THE POINT.
+ *
+ *   absent      no row exists. The account has never answered for this
+ *               exercise, which is legitimate, and the exercise keeps behaving
+ *               exactly as it did before Round 20.
+ *
+ *   readable    a row exists and this build understands it.
+ *
+ *   unreadable  a row EXISTS but its stored value cannot be understood — a
+ *               corrupt write, or a modality written by a newer build.
+ *
+ * Collapsing `unreadable` into `absent` would be the same class of bug this
+ * whole round exists to remove: persisted truth exists, we cannot read it, and
+ * we quietly proceed as though the user had never said anything. The user DID
+ * say something. We just cannot tell what.
+ *
+ * So it is a distinct state everywhere, and callers must fail closed on it.
+ */
+export type StoredInputType =
+  | { state: 'absent' }
+  | { state: 'readable'; record: ExerciseInputTypeRecord }
+  | { state: 'unreadable' }
+
+/** Every stored setting for one account, with the unreadable ones named. */
+export type ExerciseInputTypeLibrary = {
+  records: ExerciseInputTypeRecord[]
+  /**
+   * Exercise ids whose stored setting exists but could not be read.
+   *
+   * Reported rather than dropped. A dropped row is indistinguishable from one
+   * that was never written, and the difference decides whether a Start may
+   * proceed.
+   */
+  unreadable: string[]
+}
+
+/**
  * Storage boundary. An interface so the rules can be tested directly and the
  * D1 implementation can stay thin.
  */
 export interface ExerciseInputTypeStore {
-  /** Every configured exercise for one account. Unconfigured ones are absent. */
-  list(googleSub: string): Promise<ExerciseInputTypeRecord[]>
+  /** Every stored setting for one account, readable and not. */
+  list(googleSub: string): Promise<ExerciseInputTypeLibrary>
 
-  read(googleSub: string, exerciseId: string): Promise<ExerciseInputTypeRecord | null>
+  read(googleSub: string, exerciseId: string): Promise<StoredInputType>
 
   /** Insert or replace. One current truth per account per exercise. */
   save(record: ExerciseInputTypeRecord): Promise<void>
@@ -79,7 +116,7 @@ export function parseInputTypeInput(body: unknown): ParsedInputType {
 export async function listInputTypes(
   store: ExerciseInputTypeStore,
   googleSub: string,
-): Promise<ExerciseInputTypeRecord[]> {
+): Promise<ExerciseInputTypeLibrary> {
   return store.list(googleSub)
 }
 
@@ -87,7 +124,7 @@ export async function readInputType(
   store: ExerciseInputTypeStore,
   googleSub: string,
   exerciseId: string,
-): Promise<ExerciseInputTypeRecord | null> {
+): Promise<StoredInputType> {
   return store.read(googleSub, exerciseId)
 }
 
@@ -109,16 +146,36 @@ export async function saveInputType(
 }
 
 /**
+ * One exercise's setting, as a Start sees it.
+ *
+ * The unreadable case is carried rather than dropped so a Start can refuse for
+ * the exercises it actually touches, instead of either refusing the whole
+ * account's workouts or silently proceeding on a guess.
+ */
+export type ResolvedInputType =
+  | { readable: true; inputType: WorkoutInputType }
+  | { readable: false }
+
+/**
  * The account's settings as the map a Start needs.
  *
- * Exercises the account has never configured are simply absent, and a Start
- * treats absence as "carry on exactly as before" rather than as a default
- * opinion about equipment.
+ * An exercise the account has never configured is ABSENT from this map, and a
+ * Start treats absence as "carry on exactly as before" rather than as a default
+ * opinion about equipment. An exercise whose stored setting could not be read is
+ * PRESENT and marked unreadable — the one thing it must never do is look like
+ * an exercise nobody has answered for.
  */
 export async function resolveInputTypes(
   store: ExerciseInputTypeStore,
   googleSub: string,
-): Promise<Map<string, WorkoutInputType>> {
-  const records = await store.list(googleSub)
-  return new Map(records.map((record) => [record.exerciseId, record.inputType]))
+): Promise<Map<string, ResolvedInputType>> {
+  const library = await store.list(googleSub)
+  const resolved = new Map<string, ResolvedInputType>()
+  for (const record of library.records) {
+    resolved.set(record.exerciseId, { readable: true, inputType: record.inputType })
+  }
+  for (const exerciseId of library.unreadable) {
+    resolved.set(exerciseId, { readable: false })
+  }
+  return resolved
 }

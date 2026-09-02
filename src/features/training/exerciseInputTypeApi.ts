@@ -68,19 +68,43 @@ function toRecord(raw: unknown): ExerciseInputTypeRecord | null {
   }
 }
 
-/** Every configured exercise for this account. Unconfigured ones are absent. */
-export async function fetchExerciseInputTypes(
-  signal?: AbortSignal,
-): Promise<ExerciseInputTypeRecord[]> {
-  const response = await fetch(BASE, { ...REQUEST_INIT, signal })
-  await ensureOk(response)
-  const body = (await response.json()) as { inputTypes?: unknown[] }
-  return (body.inputTypes ?? [])
-    .map(toRecord)
-    .filter((row): row is ExerciseInputTypeRecord => row !== null)
+/**
+ * Every stored setting for this account.
+ *
+ * `unreadable` names the exercises whose setting EXISTS but could not be read.
+ * They are kept separate from the ones nobody has answered for, because the
+ * page must not offer "not set" for a question the user has already answered —
+ * and because those exercises' workouts are currently being refused.
+ */
+export type ExerciseInputTypeLibraryPayload = {
+  records: ExerciseInputTypeRecord[]
+  unreadable: string[]
 }
 
-/** The setting for one exercise, or null when it has never been answered. */
+export async function fetchExerciseInputTypes(
+  signal?: AbortSignal,
+): Promise<ExerciseInputTypeLibraryPayload> {
+  const response = await fetch(BASE, { ...REQUEST_INIT, signal })
+  await ensureOk(response)
+  const body = (await response.json()) as { inputTypes?: unknown[]; unreadable?: unknown }
+  return {
+    records: (body.inputTypes ?? [])
+      .map(toRecord)
+      .filter((row): row is ExerciseInputTypeRecord => row !== null),
+    unreadable: Array.isArray(body.unreadable)
+      ? body.unreadable.filter((id): id is string => typeof id === 'string')
+      : [],
+  }
+}
+
+/**
+ * The setting for one exercise, or null when it has never been answered.
+ *
+ * A setting that exists but cannot be read answers 500, which surfaces here as
+ * a thrown error rather than as null. That is deliberate: null means "never
+ * answered", and reporting an unreadable setting that way would invite the user
+ * to re-answer a question they have already answered.
+ */
 export async function fetchExerciseInputType(
   exerciseId: string,
   signal?: AbortSignal,

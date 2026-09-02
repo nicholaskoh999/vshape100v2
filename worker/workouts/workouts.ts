@@ -24,6 +24,7 @@
  * exerciseMedia/media.ts.
  */
 
+import type { ResolvedInputType } from '../exerciseInput/exerciseInput'
 import type { WorkoutInputType } from '../../shared/workoutInput'
 import {
   inputTypeForLegacyLoadMode,
@@ -51,9 +52,19 @@ export * from '../../shared/workoutLog'
  *
  * Passed in already resolved so this module keeps its storage boundary: it
  * decides what a Start freezes, and never reaches for a second store to find
- * out. An exercise absent from the map has simply never been configured.
+ * out.
+ *
+ * ABSENT and UNREADABLE are different, and the difference is load-bearing:
+ *
+ *   absent      the exercise has never been configured. The backward-compatible
+ *               fallback applies and the exercise behaves as it always has.
+ *
+ *   unreadable  a setting EXISTS and could not be understood. The user has
+ *               answered; we cannot tell what they said. Falling back here
+ *               would apply a default to an exercise that was deliberately
+ *               configured — so the Start refuses instead.
  */
-export type ExerciseInputTypes = ReadonlyMap<string, WorkoutInputType>
+export type ExerciseInputTypes = ReadonlyMap<string, ResolvedInputType>
 
 export type WorkoutOccurrenceRecord = {
   googleSub: string
@@ -209,6 +220,17 @@ export function newSnapshotId(): string {
   return crypto.randomUUID()
 }
 
+/**
+ * What building a snapshot produced.
+ *
+ * A refusal is a first-class outcome rather than an exception, and it is
+ * returned from the PURE builder deliberately: making the unreadable case
+ * unrepresentable in a `WorkoutLog` means no caller can accidentally store one.
+ */
+export type SnapshotOutcome =
+  | { ok: true; log: WorkoutLog }
+  | { ok: false; reason: 'input_type_unreadable'; exerciseId: string }
+
 /** Build the rows a first Start would store. Pure: nothing is written here. */
 export function buildSnapshot(
   googleSub: string,
@@ -218,7 +240,7 @@ export function buildSnapshot(
   input: WorkoutStartInput,
   now: number,
   inputTypes: ExerciseInputTypes = new Map(),
-): WorkoutLog {
+): SnapshotOutcome {
   const occurrence: WorkoutOccurrenceRecord = {
     googleSub,
     workoutDate,
@@ -238,16 +260,28 @@ export function buildSnapshot(
   }
 
   const sets: WorkoutSetRecord[] = []
-  input.exercises.forEach((exercise, exerciseOrder) => {
+
+  for (const [exerciseOrder, exercise] of input.exercises.entries()) {
     // THE SERVER DECIDES THE MODALITY, NOT THE CLIENT.
     //
     // The request supplies a load mode, so an input type taken from the body
     // would let any caller declare a band exercise to be kilograms. Instead the
-    // account's own saved setting is used; an exercise never configured keeps
-    // exactly its previous behaviour, read from the load mode the plan asked
-    // for ('none' meant bodyweight, kilograms meant kilograms).
-    const inputType =
-      inputTypes.get(exercise.exerciseId) ?? inputTypeForLegacyLoadMode(exercise.loadMode)
+    // account's own saved setting is used.
+    const stored = inputTypes.get(exercise.exerciseId)
+
+    // A setting exists and cannot be read. The whole Start refuses: freezing a
+    // guessed modality into an immutable snapshot would bake the wrong answer
+    // into history, which is the one thing that cannot be undone later.
+    if (stored && !stored.readable) {
+      return { ok: false, reason: 'input_type_unreadable', exerciseId: exercise.exerciseId }
+    }
+
+    // Absent is the ordinary case for an exercise nobody has configured, and it
+    // keeps exactly its previous behaviour, read from the load mode the plan
+    // asked for ('none' meant bodyweight, kilograms meant kilograms).
+    const inputType = stored
+      ? stored.inputType
+      : inputTypeForLegacyLoadMode(exercise.loadMode)
     // And the frozen load mode is then forced to agree, which is what makes a
     // band set carrying kilogram semantics unrepresentable rather than merely
     // unlikely.
@@ -280,9 +314,9 @@ export function buildSnapshot(
         updatedAt: now,
       })
     }
-  })
+  }
 
-  return { occurrence, sets }
+  return { ok: true, log: { occurrence, sets } }
 }
 
 /* ------------------------------------------------------------------ */
@@ -313,6 +347,12 @@ export type StartResult = WorkoutLog & { created: boolean }
 export type StartOutcome =
   | { ok: true; result: StartResult }
   | { ok: false; reason: 'training_flex_active' }
+  /**
+   * One of this workout's exercises has a stored input type that could not be
+   * read. Nothing was written — no occurrence, no sets — because the refusal
+   * happens while building, before any statement is issued.
+   */
+  | { ok: false; reason: 'input_type_unreadable' }
 
 /**
  * Start, or resume, one workout occurrence.
@@ -352,7 +392,11 @@ export async function startWorkout(
     now,
     inputTypes,
   )
-  await store.insertOccurrence(snapshot.occurrence, snapshot.sets)
+  // Refused BEFORE anything is written, so "zero occurrence, zero sets" is a
+  // property of the control flow rather than of a cleanup path.
+  if (!snapshot.ok) return { ok: false, reason: 'input_type_unreadable' }
+
+  await store.insertOccurrence(snapshot.log.occurrence, snapshot.log.sets)
 
   // Re-read rather than trusting the values just sent: if another request won
   // the race, the stored snapshot is theirs and that is the truthful answer.
@@ -374,6 +418,31 @@ export async function startWorkout(
   return {
     ok: true,
     result: { ...stored, created: stored.occurrence.snapshotId === snapshotId },
+  }
+}
+
+/**
+ * THE LIVE PERFORMANCE EVIDENCE OF A SET.
+ *
+ * Everything the user recorded about what they actually did — as opposed to the
+ * frozen snapshot columns, which describe what the workout WAS and are never
+ * rewritten.
+ *
+ * This exists as one definition because it previously did not. Skip cleared the
+ * band; Undo, written separately, cleared the load and the result and did not.
+ * A completed "Black x3 · 12 reps" could therefore be undone into a PENDING set
+ * still carrying `Black x3` — stale evidence that the store then persisted. Any
+ * future field recording what happened must be added HERE, and both callers get
+ * it.
+ */
+function withoutEvidence(record: WorkoutSetRecord): WorkoutSetRecord {
+  return {
+    ...record,
+    loadValue: null,
+    loadUnit: null,
+    bandLabel: null,
+    bandCount: null,
+    result: null,
   }
 }
 
@@ -420,13 +489,8 @@ export async function applySetUpdate(
     // A skipped set records no result and no load. It must never read as a
     // completed working set.
     const record: WorkoutSetRecord = {
-      ...existing,
+      ...withoutEvidence(existing),
       status: 'skipped',
-      loadValue: null,
-      loadUnit: null,
-      bandLabel: null,
-      bandCount: null,
-      result: null,
       updatedAt: now,
     }
     await store.updateSet(record)
@@ -487,6 +551,11 @@ export async function applySetUpdate(
  * The expected set stays — it is part of the workout's shape, which is
  * history. Only what was logged against it is cleared. The occurrence and its
  * snapshot are never touched.
+ *
+ * "What was logged" means ALL of it, through `withoutEvidence`: a pending set
+ * that still knew which band had been used would be a set claiming a
+ * performance nobody performed, and it is the stored row that says so, not
+ * merely the screen.
  */
 export async function undoSet(
   store: WorkoutStore,
@@ -507,11 +576,8 @@ export async function undoSet(
   if (!existing) return { ok: false, reason: 'not_found' }
 
   const record: WorkoutSetRecord = {
-    ...existing,
+    ...withoutEvidence(existing),
     status: 'pending',
-    loadValue: null,
-    loadUnit: null,
-    result: null,
     updatedAt: now,
   }
   await store.updateSet(record)

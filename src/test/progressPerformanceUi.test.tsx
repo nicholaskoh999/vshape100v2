@@ -225,7 +225,7 @@ describe('1. personal best', () => {
     const card = pbCard() as HTMLElement
     expect(within(card).queryByText('Lift 8')).toBeNull()
 
-    const expander = within(card).getByRole('button', { name: /show all 9 exercises/i })
+    const expander = within(card).getByRole('button', { name: /show all 9 results/i })
     expect(expander).toHaveAttribute('aria-expanded', 'false')
     await user.click(expander)
 
@@ -819,5 +819,62 @@ describe('4. band work', () => {
     await renderProgress()
 
     expect(screen.queryByText('Triceps Pushdown')).not.toBeInTheDocument()
+  })
+
+  it('describes a Personal Best in modality-neutral terms', async () => {
+    seed([
+      variant({
+        key: 'triceps|band',
+        exerciseId: 'triceps-pushdown',
+        exerciseName: 'Triceps Pushdown',
+        loadMode: 'none',
+        inputType: 'resistance_band',
+        band: { label: 'Black', count: 3 },
+        points: [{ date: '2026-09-08', result: 12 }],
+      }),
+    ])
+    await renderProgress()
+
+    const card = pbCard() as HTMLElement
+    // "The heaviest set you have completed" was true when kilograms were the
+    // only thing the app could store. A band best is the most REPS within one
+    // exact setup, and a bodyweight best likewise.
+    expect(within(card).getByText(/best completed set in each comparable measurement/i))
+      .toBeInTheDocument()
+    expect(card.textContent).not.toMatch(/heaviest/i)
+  })
+
+  it('counts RESULTS rather than claiming a false number of exercises', async () => {
+    // One canonical exercise, three comparable variants. Calling this "3
+    // exercises" would misstate what the user actually trains.
+    seed([
+      variant({
+        key: 'triceps|kg', exerciseId: 'triceps-pushdown', exerciseName: 'Triceps Pushdown',
+        points: [{ date: '2026-09-01', loadValue: 3, result: 12 }],
+      }),
+      variant({
+        key: 'triceps|black', exerciseId: 'triceps-pushdown', exerciseName: 'Triceps Pushdown',
+        loadMode: 'none', inputType: 'resistance_band', band: { label: 'Black', count: 3 },
+        points: [{ date: '2026-09-08', result: 12 }],
+      }),
+      variant({
+        key: 'triceps|red', exerciseId: 'triceps-pushdown', exerciseName: 'Triceps Pushdown',
+        loadMode: 'none', inputType: 'resistance_band', band: { label: 'Red', count: 2 },
+        points: [{ date: '2026-09-15', result: 14 }],
+      }),
+      ...Array.from({ length: 4 }, (_unused, index) =>
+        variant({
+          key: `other-${index}`,
+          exerciseId: `other-${index}`,
+          exerciseName: `Other ${index}`,
+          points: [{ date: '2026-09-01', loadValue: 20, result: 10 }],
+        }),
+      ),
+    ])
+    await renderProgress()
+
+    const card = pbCard() as HTMLElement
+    expect(within(card).getByRole('button', { name: /show all 7 results/i })).toBeInTheDocument()
+    expect(card.textContent).not.toMatch(/7 exercises/i)
   })
 })

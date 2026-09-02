@@ -50,7 +50,7 @@
  */
 
 import type { WorkoutInputType } from '../workoutInput'
-import { loadUnitLabel, readInputTypeSnapshot } from '../workoutLog'
+import { loadUnitLabel, readSetModality } from '../workoutLog'
 import type {
   WorkoutLoadMode,
   WorkoutLoadUnit,
@@ -361,7 +361,7 @@ function readSlot(sessionId: string, rows: readonly ProgressionSetRow[]): ReadSl
   // The modality is part of the slot's identity. A row with no snapshot is
   // legacy and answers from its own frozen load mode; one this build cannot
   // name fails the slot closed rather than being assumed to be kilograms.
-  const inputType = readInputTypeSnapshot(first.inputTypeSnapshot, first.loadMode)
+  const inputType = readSetModality(first.inputTypeSnapshot, first.loadMode)
   if (inputType === null) return { ok: false }
 
   const identity: SlotIdentity = {
@@ -388,7 +388,7 @@ function readSlot(sessionId: string, rows: readonly ProgressionSetRow[]): ReadSl
       (row.perSide === true || row.perSide === 1) !== identity.perSide ||
       // One position in one workout was performed one way. Rows disagreeing
       // about the modality cannot be reconciled either.
-      readInputTypeSnapshot(row.inputTypeSnapshot, identity.loadMode) !== identity.inputType
+      readSetModality(row.inputTypeSnapshot, identity.loadMode) !== identity.inputType
     ) {
       return { ok: false }
     }

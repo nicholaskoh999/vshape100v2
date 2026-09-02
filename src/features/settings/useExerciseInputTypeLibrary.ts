@@ -21,12 +21,24 @@ export type ExerciseInputTypeLibrary = {
   status: InputTypeLibraryStatus
   /** Exercise id → the stated input type. Empty until status is 'ready'. */
   byExercise: ReadonlyMap<string, WorkoutInputType>
+  /**
+   * Exercises whose stored setting exists but could not be read.
+   *
+   * Held apart from `byExercise` so a row can say so, rather than joining the
+   * exercises nobody has answered for.
+   */
+  unreadable: ReadonlySet<string>
   reload: () => void
 }
 
 const EMPTY: ReadonlyMap<string, WorkoutInputType> = new Map()
+const NONE: ReadonlySet<string> = new Set<string>()
 
-type Loaded = { id: number; byExercise: ReadonlyMap<string, WorkoutInputType> }
+type Loaded = {
+  id: number
+  byExercise: ReadonlyMap<string, WorkoutInputType>
+  unreadable: ReadonlySet<string>
+}
 
 export function useExerciseInputTypeLibrary(): ExerciseInputTypeLibrary {
   const [attempt, setAttempt] = useState(0)
@@ -46,16 +58,22 @@ export function useExerciseInputTypeLibrary(): ExerciseInputTypeLibrary {
     [matched, loaded],
   )
 
+  const unreadable = useMemo(
+    () => (matched ? (loaded as Loaded).unreadable : NONE),
+    [matched, loaded],
+  )
+
   useEffect(() => {
     const controller = new AbortController()
     let active = true
 
     fetchExerciseInputTypes(controller.signal)
-      .then((records) => {
+      .then((library) => {
         if (!active) return
         setLoaded({
           id: attempt,
-          byExercise: new Map(records.map((row) => [row.exerciseId, row.inputType])),
+          byExercise: new Map(library.records.map((row) => [row.exerciseId, row.inputType])),
+          unreadable: new Set(library.unreadable),
         })
       })
       .catch((error: unknown) => {
@@ -72,5 +90,5 @@ export function useExerciseInputTypeLibrary(): ExerciseInputTypeLibrary {
 
   const reload = useCallback(() => setAttempt((n) => n + 1), [])
 
-  return { status, byExercise, reload }
+  return { status, byExercise, unreadable, reload }
 }

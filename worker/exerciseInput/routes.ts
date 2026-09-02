@@ -53,8 +53,14 @@ async function handleList(
   store: ExerciseInputTypeStore,
   googleSub: string,
 ): Promise<Response> {
-  const records = await listInputTypes(store, googleSub)
-  return json({ inputTypes: records.map(toPublicInputType) })
+  const library = await listInputTypes(store, googleSub)
+  return json({
+    inputTypes: library.records.map(toPublicInputType),
+    // Reported, not omitted. A corrupt setting left out of this list would show
+    // in the Library as "not set", inviting the user to answer a question they
+    // have already answered — and hiding that their workouts are being refused.
+    unreadable: library.unreadable,
+  })
 }
 
 /** GET /api/exercise-input-types/:exerciseId */
@@ -63,11 +69,22 @@ async function handleRead(
   googleSub: string,
   exerciseId: string,
 ): Promise<Response> {
-  const record = await readInputType(store, googleSub, exerciseId)
+  const stored = await readInputType(store, googleSub, exerciseId)
+
+  // A stored setting that cannot be read is a 500, not a null. The client did
+  // nothing wrong, and answering `null` would tell it this exercise is simply
+  // unanswered — which is a different fact, and the wrong one to act on.
+  if (stored.state === 'unreadable') {
+    return json({ error: 'input_type_unreadable' }, { status: 500 })
+  }
+
   // An exercise nobody has configured is an honest null, not a 404: the
   // exercise exists, its modality has simply never been stated. The client
   // must not read null as "kilograms" — it means "not yet answered".
-  return json({ exerciseId, inputType: record ? toPublicInputType(record) : null })
+  return json({
+    exerciseId,
+    inputType: stored.state === 'readable' ? toPublicInputType(stored.record) : null,
+  })
 }
 
 /** PUT /api/exercise-input-types/:exerciseId */

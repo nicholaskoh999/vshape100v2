@@ -233,10 +233,16 @@ async function handleStart(
     undefined,
     inputTypes,
   )
-  // The authoritative refusal: the conditional insert itself declined, because
-  // the day carried a flex choice at the moment the write committed. Nothing
-  // was created — no occurrence, and no sets.
   if (!outcome.ok) {
+    // A stored input type that cannot be read is a server-side data problem,
+    // not a bad request: the caller did nothing wrong and retrying the same
+    // call will not help. Nothing was created either way — no occurrence, and
+    // no sets.
+    if (outcome.reason === 'input_type_unreadable') {
+      return json({ error: outcome.reason }, { status: 500 })
+    }
+    // The authoritative refusal: the conditional insert itself declined,
+    // because the day carried a flex choice at the moment the write committed.
     return json({ error: outcome.reason }, { status: 409 })
   }
 

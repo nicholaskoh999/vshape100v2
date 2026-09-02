@@ -6,7 +6,7 @@ import {
 } from '../../shared/workoutInput'
 import {
   LOAD_MODES,
-  readInputTypeSnapshot,
+  readSetModality,
   RESULT_KINDS,
   type WorkoutLoadMode,
   type WorkoutResultKind,
@@ -164,11 +164,13 @@ export function readSet(row: CompletedSetRow): ReadSetResult {
 
   // THE MODALITY, AND WHAT IT MAKES POSSIBLE.
   //
-  // A row with no snapshot predates Round 20 and answers from its own frozen
-  // load mode. A snapshot this build cannot name is unreadable — never assumed
-  // to be kilograms, because filing band work into a kilogram series is exactly
-  // the fiction this round removes.
-  const inputType = readInputTypeSnapshot(row.inputTypeSnapshot, row.loadMode)
+  // Through the one shared read boundary, so this file, the workout log and the
+  // progression engine cannot disagree about which rows are coherent. A row
+  // with no snapshot predates Round 20 and answers from its own frozen load
+  // mode; a snapshot this build cannot name, or one that contradicts its own
+  // load mode, is unreadable — never assumed to be kilograms, because filing
+  // band work into a kilogram series is exactly the fiction this round removes.
+  const inputType = readSetModality(row.inputTypeSnapshot, row.loadMode)
   if (inputType === null) return unreadable
 
   const bandLabel = parseBandLabel(row.bandLabel)
@@ -180,10 +182,10 @@ export function readSet(row: CompletedSetRow): ReadSetResult {
   let band: { label: string; count: number } | null = null
 
   if (inputType === 'resistance_band') {
-    // Bands and kilograms are mutually exclusive by construction. A row
-    // carrying both contradicts itself and neither half can be trusted.
+    // Bands and kilograms are mutually exclusive. The load MODE was already
+    // checked against the modality by `readSetModality`; this checks the
+    // recorded VALUE, which that rule says nothing about.
     if (row.loadValue !== null || row.loadUnit !== null) return unreadable
-    if (row.loadMode !== 'none') return unreadable
     // A band set that cannot say WHICH band has no variant to belong to. It is
     // real history and stays in the log; it simply cannot be ranked.
     if (bandLabel === null || bandCount === null) return { status: 'non-comparable' }

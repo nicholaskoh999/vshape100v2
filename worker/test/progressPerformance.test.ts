@@ -53,15 +53,18 @@ function set(over: Partial<EligibleSet> = {}): EligibleSet {
 }
 
 function row(over: Partial<CompletedSetRow> = {}): CompletedSetRow {
+  const loadMode = over.loadMode ?? 'kg'
   return {
     exerciseId: 'lat-pulldown',
     exerciseName: 'Lat Pulldown',
     resultKind: 'reps',
     loadMode: 'kg',
     perSide: 0,
-    // A Round 20 kilogram row. The legacy shape — no snapshot at all — is
-    // covered by its own tests rather than being the default here.
-    inputTypeSnapshot: 'weight_kg',
+    // A Round 20 row whose snapshot AGREES with its load mode, because that is
+    // the only combination the application can write. An incompatible pair is a
+    // corrupt row and has its own tests; it is not the default here. The legacy
+    // shape — no snapshot at all — likewise has its own.
+    inputTypeSnapshot: loadMode === 'none' ? 'bodyweight' : 'weight_kg',
     bandLabel: null,
     bandCount: null,
     loadValue: 50,

@@ -3,6 +3,7 @@ import { motion } from 'motion/react'
 import { Link } from 'react-router'
 
 import { Card } from '@/components/ui/Card'
+import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { listItemVariants, listVariants, press } from '@/design/motion'
 import {
@@ -95,6 +96,7 @@ export function ExerciseLibraryPage() {
               known={library.status === 'ready'}
               inputType={inputTypes.byExercise.get(entry.id) ?? null}
               inputTypeKnown={inputTypes.status === 'ready'}
+              inputTypeUnreadable={inputTypes.unreadable.has(entry.id)}
             />
           </motion.li>
         ))}
@@ -109,6 +111,7 @@ function ExerciseRow({
   known,
   inputType,
   inputTypeKnown,
+  inputTypeUnreadable,
 }: {
   entry: CatalogExercise
   hasMedia: boolean
@@ -116,6 +119,8 @@ function ExerciseRow({
   /** The stated input type, or null when this exercise has never been answered for. */
   inputType: WorkoutInputType | null
   inputTypeKnown: boolean
+  /** A setting EXISTS for this exercise but could not be read. */
+  inputTypeUnreadable: boolean
 }) {
   return (
     <Link
@@ -139,12 +144,21 @@ function ExerciseRow({
             <p className="mt-0.5 truncate text-[13px] text-ink-faint">
               Used in {usedInSummary(entry)}
             </p>
-            <p className="mt-0.5 truncate text-[12px] font-semibold text-ink-faint">
-              {inputTypeKnown
-                ? inputType
-                  ? WORKOUT_INPUT_TYPE_LABELS[inputType]
-                  : 'Input type not set'
-                : 'Checking input type'}
+            <p
+              className={cn(
+                'mt-0.5 truncate text-[12px] font-semibold',
+                // An unreadable setting is a problem, not a blank. Saying "not
+                // set" would hide that this exercise's workouts are refused.
+                inputTypeUnreadable ? 'text-coral' : 'text-ink-faint',
+              )}
+            >
+              {!inputTypeKnown
+                ? 'Checking input type'
+                : inputTypeUnreadable
+                  ? 'Input type could not be read — set it again'
+                  : inputType
+                    ? WORKOUT_INPUT_TYPE_LABELS[inputType]
+                    : 'Input type not set'}
             </p>
           </div>
 

@@ -39,7 +39,7 @@
  */
 
 import { parseBandCount, parseBandLabel } from '../../shared/workoutInput'
-import { readInputTypeSnapshot } from '../../shared/workoutLog'
+import { readSetModality } from '../../shared/workoutLog'
 import {
   isLoadMode,
   isLoadUnit,
@@ -156,11 +156,12 @@ function toSet(row: SetRow): WorkoutSetRecord {
     status: isSetStatus(row.status) ? row.status : 'pending',
     loadValue: row.actual_load_value,
     loadUnit: isLoadUnit(row.actual_load_unit) ? row.actual_load_unit : null,
-    // A row with no stored input type predates Round 20 and is read through
-    // its own frozen load mode — a fact recorded at the time, not a guess from
-    // the exercise's current setting. An unrecognised value resolves to null so
-    // every caller fails closed instead of assuming kilograms.
-    inputType: readInputTypeSnapshot(
+    // Through the one shared read boundary. A row with no stored input type
+    // predates Round 20 and is read through its own frozen load mode — a fact
+    // recorded at the time, not a guess from the exercise's current setting.
+    // An unrecognised value, or one contradicting its own load mode, resolves
+    // to null so every caller fails closed instead of assuming kilograms.
+    inputType: readSetModality(
       row.input_type_snapshot,
       isLoadMode(row.load_mode_snapshot) ? row.load_mode_snapshot : 'none',
     ),

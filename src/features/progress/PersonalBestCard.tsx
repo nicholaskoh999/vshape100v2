@@ -19,6 +19,13 @@ import type { PerformanceVariant } from "./progressApi";
  * Loaded sets are ordered by load first and reps only as the tie-break, so
  * 50 kg × 6 outranks 45 kg × 15. No estimated 1RM is used to trade the two
  * off, and nothing here suggests what to lift next.
+ *
+ * ROUND 20 CHANGED WHAT "BEST" CAN MEAN, so the copy here had to change too.
+ * A best is only ever within one COMPARABLE VARIANT, and different variants
+ * rank on different axes: kilogram work by load, band work by reps within one
+ * exact band setup, bodyweight by reps or seconds. "The heaviest set you have
+ * completed" was true when kilograms were the only thing the app could store,
+ * and is now simply wrong for two of the three modalities.
  */
 
 const INITIAL_VISIBLE = 6;
@@ -40,7 +47,7 @@ export function PersonalBestCard({ state }: { state: PerformanceState }) {
               Personal best
             </p>
             <p className="mt-0.5 text-[13px] text-ink-faint">
-              The heaviest or longest set you have completed.
+              Your best completed set in each comparable measurement.
             </p>
           </div>
           <span
@@ -108,7 +115,13 @@ export function PersonalBestCard({ state }: { state: PerformanceState }) {
               >
                 {expanded
                   ? "Show fewer"
-                  : `Show all ${variants.length} exercises`}
+                  : /*
+                     * RESULTS, not exercises. One canonical exercise can hold
+                     * several comparable variants — legacy kilograms, Black ×3,
+                     * Red ×2 — and calling three variants "three exercises"
+                     * would be a false count of what the user trains.
+                     */
+                    `Show all ${variants.length} results`}
               </button>
             )}
           </>

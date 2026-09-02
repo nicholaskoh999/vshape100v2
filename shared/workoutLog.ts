@@ -764,6 +764,27 @@ export function inputTypeForLegacyLoadMode(loadMode: WorkoutLoadMode): WorkoutIn
 }
 
 /**
+ * Can an input type and a load mode describe the same set?
+ *
+ *   weight_kg        kg or kg_each — it records a numeric weight
+ *   resistance_band  none — bands are named and counted, never weighed
+ *   bodyweight       none — there is no external resistance at all
+ *
+ * `loadModeForInputType` already forces this on every write, so a combination
+ * that fails here cannot be produced by the application. That is exactly why
+ * the READ boundary checks it rather than trusting it: a row saying it is band
+ * work while also claiming kilogram semantics is corrupt, and the two halves
+ * cannot both be believed. One rule, used by every reader, so the log, Progress
+ * and progression can never disagree about which rows are coherent.
+ */
+export function isCompatibleSnapshot(
+  inputType: WorkoutInputType,
+  loadMode: WorkoutLoadMode,
+): boolean {
+  return inputType === 'weight_kg' ? loadMode !== 'none' : loadMode === 'none'
+}
+
+/**
  * The input type in force for a stored set.
  *
  * `snapshot` is the value frozen at Start, present from Round 20 onwards. When
@@ -779,6 +800,29 @@ export function readInputTypeSnapshot(
     return inputTypeForLegacyLoadMode(loadMode)
   }
   return isWorkoutInputType(snapshot) ? snapshot : null
+}
+
+/**
+ * THE ONE READ BOUNDARY for a stored set's modality.
+ *
+ * Every consumer of a persisted set goes through this: the workout log, the
+ * Progress derivation and the Round 16 progression engine. Null means the row
+ * cannot be understood, for either of the two reasons a row can fail:
+ *
+ *   - its stored input type is not a value this build knows
+ *   - its stored input type and load mode contradict each other
+ *
+ * Null is never "assume kilograms". A legacy row — no snapshot at all — always
+ * derives a compatible pair from its own frozen load mode, so this changes
+ * nothing for the history that already exists.
+ */
+export function readSetModality(
+  snapshot: unknown,
+  loadMode: WorkoutLoadMode,
+): WorkoutInputType | null {
+  const inputType = readInputTypeSnapshot(snapshot, loadMode)
+  if (inputType === null) return null
+  return isCompatibleSnapshot(inputType, loadMode) ? inputType : null
 }
 
 /**

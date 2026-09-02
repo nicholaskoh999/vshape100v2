@@ -10,6 +10,7 @@ import { isWorkoutInputType } from '../../shared/workoutInput'
 import type {
   ExerciseInputTypeRecord,
   ExerciseInputTypeStore,
+  StoredInputType,
 } from './exerciseInput'
 
 type InputTypeRow = {
@@ -24,10 +25,15 @@ type InputTypeRow = {
  * type this build understands.
  *
  * Re-checked rather than cast even though the column carries a CHECK
- * constraint. A value that cannot be read is dropped rather than repaired to
- * weight_kg: silently treating an unreadable setting as kilograms is precisely
- * the failure this round exists to eliminate, and an absent setting at least
- * leaves the exercise behaving as it did before.
+ * constraint: the reader should not assume the shape of data it did not write
+ * in this process.
+ *
+ * A value that cannot be read is NOT repaired to weight_kg, and — just as
+ * importantly — it is not silently discarded either. Discarding it would make a
+ * corrupt setting indistinguishable from one that was never written, and the
+ * caller would then apply the backward-compatible fallback to an exercise the
+ * user HAS answered for. The callers below turn this null into an explicit
+ * `unreadable` state instead.
  */
 function toRecord(row: InputTypeRow): ExerciseInputTypeRecord | null {
   if (!isWorkoutInputType(row.input_type)) return null
@@ -55,11 +61,15 @@ export function createD1ExerciseInputTypeStore(db: D1Database): ExerciseInputTyp
         .all<InputTypeRow>()
 
       const records: ExerciseInputTypeRecord[] = []
+      const unreadable: string[] = []
       for (const row of result.results ?? []) {
         const record = toRecord(row)
         if (record) records.push(record)
+        // Named, not dropped. Which exercise is corrupt is what lets a Start
+        // refuse for that exercise alone.
+        else unreadable.push(row.exercise_id)
       }
-      return records
+      return { records, unreadable }
     },
 
     async read(googleSub, exerciseId) {
@@ -72,7 +82,11 @@ export function createD1ExerciseInputTypeStore(db: D1Database): ExerciseInputTyp
         .bind(googleSub, exerciseId)
         .first<InputTypeRow>()
 
-      return row ? toRecord(row) : null
+      // Three states, kept apart: no row at all, a row this build understands,
+      // and a row that exists but does not mean anything to it.
+      if (!row) return { state: 'absent' } as StoredInputType
+      const record = toRecord(row)
+      return record ? { state: 'readable', record } : { state: 'unreadable' }
     },
 
     async save(record) {

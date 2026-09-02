@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import type { WorkoutInputType } from '../../shared/workoutInput'
+import type { ResolvedInputType } from '../exerciseInput/exerciseInput'
 import { createD1WorkoutStore } from '../workouts/d1Store'
 import {
   applySetUpdate,
   parseSetUpdate,
   readWorkout,
   startWorkout,
+  undoSet,
   type SetOutcome,
   type StartOutcome,
   type StartResult,
@@ -93,13 +94,13 @@ const TUESDAY: WorkoutStartInput = {
   ],
 }
 
-const TRICEPS_BAND = new Map<string, WorkoutInputType>([
-  ['triceps-pushdown', 'resistance_band'],
+const TRICEPS_BAND = new Map<string, ResolvedInputType>([
+  ['triceps-pushdown', { readable: true, inputType: 'resistance_band' }],
 ])
 
 async function start(
   store: WorkoutStore,
-  inputTypes: Map<string, WorkoutInputType> = new Map(),
+  inputTypes: Map<string, ResolvedInputType> = new Map(),
 ): Promise<StartResult> {
   return unwrap(
     await startWorkout(store, ACCOUNT_A, DATE, 'tuesday', TUESDAY, 1, 'token-1', inputTypes),
@@ -429,5 +430,291 @@ describe('D. a row written before Round 20 is read, never rewritten', () => {
       5,
     )
     expect(outcome.ok).toBe(true)
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* J. Undo and Skip clear ALL live evidence                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Correction 1, Blocker 1 — a real production defect.
+ *
+ * `applySetUpdate`'s skip branch cleared the band. `undoSet`, written
+ * separately with its own literal, cleared the load and the result and did NOT
+ * clear the band. So a completed "Black x3 · 12 reps" could be undone into a
+ * PENDING set that still said `Black x3` — and `updateSet` persisted it, so the
+ * stale evidence survived a re-read.
+ *
+ * These run against the real rules and the real D1 mapping layer, and they
+ * re-read through `readWorkout` rather than trusting the returned record: the
+ * bug was in what was WRITTEN, and a test that only inspected the return value
+ * would have missed it.
+ */
+describe('J. resolving a set back to pending removes every trace of the performance', () => {
+  const BAND_SET = { order: 1, index: 0 }
+
+  async function bandWorkout() {
+    const store = makeStore()
+    await start(store, TRICEPS_BAND)
+    return store
+  }
+
+  async function completeBand(store: WorkoutStore) {
+    const outcome = await applySetUpdate(
+      store,
+      ACCOUNT_A,
+      DATE,
+      'tuesday',
+      BAND_SET.order,
+      BAND_SET.index,
+      complete(12, { band: { label: 'Black', count: 3 } }),
+      5,
+    )
+    expect(outcome.ok).toBe(true)
+  }
+
+  /** The set as the STORE holds it, not as a call happened to return it. */
+  async function stored(store: WorkoutStore): Promise<WorkoutSetRecord> {
+    const log = await readWorkout(store, ACCOUNT_A, DATE, 'tuesday')
+    const found = log?.sets.find(
+      (row) => row.exerciseOrder === BAND_SET.order && row.setIndex === BAND_SET.index,
+    )
+    if (!found) throw new Error('the band set was not stored')
+    return found
+  }
+
+  it('stores the band while the set is completed', async () => {
+    // NON-VACUITY for this whole group: there is genuinely something to clear.
+    const store = await bandWorkout()
+    await completeBand(store)
+
+    const set = await stored(store)
+    expect(set.status).toBe('completed')
+    expect(set.bandLabel).toBe('Black')
+    expect(set.bandCount).toBe(3)
+    expect(set.result).toBe(12)
+  })
+
+  it('clears the band, the load and the result on UNDO', async () => {
+    const store = await bandWorkout()
+    await completeBand(store)
+
+    const outcome = await undoSet(store, ACCOUNT_A, DATE, 'tuesday', BAND_SET.order, BAND_SET.index, 6)
+    expect(outcome.ok).toBe(true)
+
+    const set = await stored(store)
+    expect(set.status).toBe('pending')
+    expect(set.loadValue).toBeNull()
+    expect(set.loadUnit).toBeNull()
+    expect(set.bandLabel).toBeNull()
+    expect(set.bandCount).toBeNull()
+    expect(set.result).toBeNull()
+  })
+
+  it('clears the band, the load and the result on SKIP', async () => {
+    const store = await bandWorkout()
+    await completeBand(store)
+
+    const outcome = await applySetUpdate(
+      store,
+      ACCOUNT_A,
+      DATE,
+      'tuesday',
+      BAND_SET.order,
+      BAND_SET.index,
+      { action: 'skip' },
+      6,
+    )
+    expect(outcome.ok).toBe(true)
+
+    const set = await stored(store)
+    expect(set.status).toBe('skipped')
+    expect(set.bandLabel).toBeNull()
+    expect(set.bandCount).toBeNull()
+    expect(set.result).toBeNull()
+  })
+
+  it('does not let the band reappear on a later read or resume', async () => {
+    const store = await bandWorkout()
+    await completeBand(store)
+    await undoSet(store, ACCOUNT_A, DATE, 'tuesday', BAND_SET.order, BAND_SET.index, 6)
+
+    // A second read of the same store.
+    expect((await stored(store)).bandLabel).toBeNull()
+
+    // And a resume, which returns the stored snapshot rather than re-deriving.
+    const resumed = unwrap(
+      await startWorkout(store, ACCOUNT_A, DATE, 'tuesday', TUESDAY, 9, 'token-2', TRICEPS_BAND),
+    )
+    expect(resumed.created).toBe(false)
+    const set = setAt(resumed, BAND_SET.order)
+    expect(set.status).toBe('pending')
+    expect(set.bandLabel).toBeNull()
+    expect(set.bandCount).toBeNull()
+  })
+
+  it('keeps the frozen snapshot untouched while clearing the evidence', async () => {
+    // Undo removes what was logged. It must not disturb what the workout IS.
+    const store = await bandWorkout()
+    const before = setAt(await start(store, TRICEPS_BAND), BAND_SET.order)
+    await completeBand(store)
+    await undoSet(store, ACCOUNT_A, DATE, 'tuesday', BAND_SET.order, BAND_SET.index, 6)
+
+    const after = await stored(store)
+    expect(after.inputType).toBe(before.inputType)
+    expect(after.loadMode).toBe(before.loadMode)
+    expect(after.resultKind).toBe(before.resultKind)
+    expect(after.prescription).toBe(before.prescription)
+    expect(after.snapshotId).toBe(before.snapshotId)
+  })
+
+  it('clears a KILOGRAM set the same way', async () => {
+    const store = await bandWorkout()
+    await applySetUpdate(
+      store,
+      ACCOUNT_A,
+      DATE,
+      'tuesday',
+      0,
+      0,
+      complete(10, { load: { value: 20, unit: 'kg_each' } }),
+      5,
+    )
+    await undoSet(store, ACCOUNT_A, DATE, 'tuesday', 0, 0, 6)
+
+    const log = await readWorkout(store, ACCOUNT_A, DATE, 'tuesday')
+    const set = log?.sets.find((row) => row.exerciseOrder === 0 && row.setIndex === 0)
+    expect(set?.status).toBe('pending')
+    expect(set?.loadValue).toBeNull()
+    expect(set?.loadUnit).toBeNull()
+    expect(set?.result).toBeNull()
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* K. Absent, readable, unreadable — three states, not two             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Correction 1, Blocker 2.
+ *
+ * The store used to DROP a setting whose stored value it could not read. The
+ * resolver therefore saw the exercise as absent, and `buildSnapshot` applied
+ * the backward-compatible fallback — so a corrupt or future-written setting
+ * silently became legacy kilograms or bodyweight.
+ *
+ * That is not fail-closed. These are different facts:
+ *
+ *   absent      the user has never answered. Falling back is correct.
+ *   unreadable  the user HAS answered and we cannot tell what they said.
+ *               Falling back would apply a default to a deliberate choice.
+ *
+ * A Start touching an unreadable exercise refuses, and because the refusal
+ * happens while BUILDING — before any statement is issued — zero occurrence and
+ * zero sets is a property of the control flow, not of a cleanup path.
+ */
+describe('K. a Start distinguishes an unanswered exercise from an unreadable one', () => {
+  const UNREADABLE = new Map<string, ResolvedInputType>([
+    ['triceps-pushdown', { readable: false }],
+  ])
+
+  it('applies the backward-compatible fallback when the setting is truly ABSENT', async () => {
+    const store = makeStore()
+    const result = await start(store, new Map())
+
+    // Unchanged from before Round 20: the plan's own load mode decides.
+    expect(setAt(result, 0).inputType).toBe('weight_kg')
+    expect(setAt(result, 1).inputType).toBe('weight_kg')
+    expect(result.sets).toHaveLength(4)
+  })
+
+  it('freezes the stated modality when the setting is READABLE', async () => {
+    const store = makeStore()
+    const result = await start(store, TRICEPS_BAND)
+
+    expect(setAt(result, 1).inputType).toBe('resistance_band')
+    expect(setAt(result, 1).loadMode).toBe('none')
+  })
+
+  it('REFUSES when the setting exists but cannot be read', async () => {
+    const store = makeStore()
+    const outcome = await startWorkout(
+      store, ACCOUNT_A, DATE, 'tuesday', TUESDAY, 1, 'token-1', UNREADABLE,
+    )
+
+    expect(outcome).toEqual({ ok: false, reason: 'input_type_unreadable' })
+  })
+
+  it('writes ZERO occurrence and ZERO sets when it refuses', async () => {
+    const fake = createFakeD1()
+    const store = createD1WorkoutStore(fake.db)
+
+    await startWorkout(store, ACCOUNT_A, DATE, 'tuesday', TUESDAY, 1, 'token-1', UNREADABLE)
+
+    // Nothing at all, in the storage the real SQL writes to.
+    expect(fake.occurrences.size).toBe(0)
+    expect(fake.workoutSets.size).toBe(0)
+    expect(await readWorkout(store, ACCOUNT_A, DATE, 'tuesday')).toBeNull()
+  })
+
+  it('never falls back to weight_kg, and never infers from the load mode', async () => {
+    const fake = createFakeD1()
+    const store = createD1WorkoutStore(fake.db)
+
+    // The plan asks for 'kg', which is exactly what the old fallback would
+    // have turned into weight_kg. It does not get the chance.
+    expect(TUESDAY.exercises[1].loadMode).toBe('kg')
+    await startWorkout(store, ACCOUNT_A, DATE, 'tuesday', TUESDAY, 1, 'token-1', UNREADABLE)
+
+    expect([...fake.workoutSets.values()]).toEqual([])
+  })
+
+  it('refuses the whole workout, not merely the affected exercise', async () => {
+    // A partly-written workout would be worse than none: the user would be
+    // logging a session that is missing the exercise they configured.
+    const fake = createFakeD1()
+    const store = createD1WorkoutStore(fake.db)
+
+    await startWorkout(store, ACCOUNT_A, DATE, 'tuesday', TUESDAY, 1, 'token-1', UNREADABLE)
+
+    // Incline DB Press was perfectly readable and is still not written.
+    expect(fake.workoutSets.size).toBe(0)
+  })
+
+  it('does not repair or delete the setting it could not read', async () => {
+    const fake = createFakeD1()
+    const store = createD1WorkoutStore(fake.db)
+    fake.inputTypes.set(['sub', 'triceps-pushdown'].join('\u0000'), {
+      google_sub: 'sub',
+      exercise_id: 'triceps-pushdown',
+      input_type: 'elastic_vibes',
+      created_at: 1,
+      updated_at: 1,
+    })
+
+    await startWorkout(store, ACCOUNT_A, DATE, 'tuesday', TUESDAY, 1, 'token-1', UNREADABLE)
+
+    // Still there, still exactly as stored. Repairing it automatically would
+    // overwrite the user's real answer with a guess.
+    expect(fake.inputTypes.size).toBe(1)
+    expect([...fake.inputTypes.values()][0].input_type).toBe('elastic_vibes')
+  })
+
+  it('does not let one account’s corrupt setting affect another account', async () => {
+    const store = makeStore()
+
+    // A's setting is unreadable; B has never configured anything.
+    const refused = await startWorkout(
+      store, ACCOUNT_A, DATE, 'tuesday', TUESDAY, 1, 'token-a', UNREADABLE,
+    )
+    const allowed = await startWorkout(
+      store, ACCOUNT_B, DATE, 'tuesday', TUESDAY, 1, 'token-b', new Map(),
+    )
+
+    expect(refused).toEqual({ ok: false, reason: 'input_type_unreadable' })
+    expect(allowed.ok).toBe(true)
+    expect(await readWorkout(store, ACCOUNT_A, DATE, 'tuesday')).toBeNull()
+    expect((await readWorkout(store, ACCOUNT_B, DATE, 'tuesday'))?.sets).toHaveLength(4)
   })
 })

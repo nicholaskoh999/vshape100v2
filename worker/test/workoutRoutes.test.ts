@@ -973,3 +973,98 @@ describe('trusted session rolling cookie', () => {
     expect(maxAgeOf(setCookie)).toBe(0)
   })
 })
+
+/* ------------------------------------------------------------------ */
+/* Round 20 Correction 1 — the API refuses an unreadable setting       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The DIRECT API proof for Blocker 2, with no UI and no test double standing in
+ * for the decision.
+ *
+ * The corrupt value is written into the `exercise_input_types` row itself, and
+ * the PRODUCTION reader — `createD1ExerciseInputTypeStore.list` → `toRecord` →
+ * `resolveInputTypes` → `buildSnapshot` — is what decides it cannot be read.
+ * The fake supplies storage, not the verdict.
+ */
+describe('Round 20 — a stored input type that cannot be read', () => {
+  /** Write a setting straight into storage, so any value can be tried. */
+  function seedInputType(fake: ReturnType<typeof createFakeD1>, googleSub: string, value: string) {
+    fake.inputTypes.set([googleSub, 'lat-pulldown'].join('\u0000'), {
+      google_sub: googleSub,
+      exercise_id: 'lat-pulldown',
+      input_type: value,
+      created_at: 1,
+      updated_at: 1,
+    })
+  }
+
+  it('refuses the Start, writing no occurrence and no sets', async () => {
+    const fake = createFakeD1()
+    const token = await seedToken(fake.db, 'google-sub-a', 'a@example.com')
+    seedInputType(fake, 'google-sub-a', 'elastic_vibes')
+
+    const { response, body } = await start(fake.db, token)
+
+    expect(response.status).toBe(500)
+    expect(body).toEqual({ error: 'input_type_unreadable' })
+    expect(fake.occurrences.size).toBe(0)
+    expect(fake.workoutSets.size).toBe(0)
+  })
+
+  it('leaves the workout genuinely unstarted, so a later read says so', async () => {
+    const fake = createFakeD1()
+    const token = await seedToken(fake.db, 'google-sub-a', 'a@example.com')
+    seedInputType(fake, 'google-sub-a', 'elastic_vibes')
+    await start(fake.db, token)
+
+    const { response, body } = await call(fake.db, { token })
+    expect(response.status).toBe(200)
+    expect(body.occurrence).toBeNull()
+  })
+
+  it('starts normally once the stored value is one this build understands', async () => {
+    // NON-VACUITY. Identical request, identical account, identical row —
+    // only the stored VALUE differs, and the production reader decides.
+    const fake = createFakeD1()
+    const token = await seedToken(fake.db, 'google-sub-a', 'a@example.com')
+    seedInputType(fake, 'google-sub-a', 'resistance_band')
+
+    const { response } = await start(fake.db, token)
+    expect(response.status).toBe(201)
+    expect(fake.occurrences.size).toBe(1)
+    expect(fake.workoutSets.size).toBe(7)
+
+    // And it froze what the row actually said, forcing the load mode to agree.
+    const latPulldown = [...fake.workoutSets.values()].filter(
+      (row) => row.exercise_id_snapshot === 'lat-pulldown',
+    )
+    expect(latPulldown).toHaveLength(4)
+    expect(latPulldown.every((row) => row.input_type_snapshot === 'resistance_band')).toBe(true)
+    expect(latPulldown.every((row) => row.load_mode_snapshot === 'none')).toBe(true)
+  })
+
+  it('starts normally when no setting exists at all', async () => {
+    // The other NON-VACUITY control: absence is not unreadability.
+    const fake = createFakeD1()
+    const token = await seedToken(fake.db, 'google-sub-a', 'a@example.com')
+
+    const { response } = await start(fake.db, token)
+    expect(response.status).toBe(201)
+    expect(fake.workoutSets.size).toBe(7)
+  })
+
+  it('refuses only the account whose setting is corrupt', async () => {
+    const fake = createFakeD1()
+    const corrupt = await seedToken(fake.db, 'google-sub-a', 'a@example.com')
+    const fine = await seedToken(fake.db, 'google-sub-b', 'b@example.com')
+    seedInputType(fake, 'google-sub-a', 'elastic_vibes')
+
+    expect((await start(fake.db, corrupt)).response.status).toBe(500)
+    expect((await start(fake.db, fine)).response.status).toBe(201)
+
+    // Exactly one account's workout exists, and it is the other one's.
+    expect(fake.occurrences.size).toBe(1)
+    expect([...fake.occurrences.values()][0].google_sub).toBe('google-sub-b')
+  })
+})
