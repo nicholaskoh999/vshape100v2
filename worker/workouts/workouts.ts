@@ -301,6 +301,23 @@ export interface WorkoutStore {
   ): Promise<CorrectionTime[]>
 
   /**
+   * The commit timestamp of ONE correction event, by its own id, or null when
+   * no such event exists.
+   *
+   * ROUND 23. This exists to answer one question, and only after a write has
+   * already reported failure: "did MY write actually land?" The correction id
+   * is minted per request and is the primary key of the audit, so its presence
+   * is proof that this specific attempt committed — not a similar one, and not
+   * somebody else's.
+   *
+   * Read-only. The audit is INSERT-only and nothing here can change it.
+   */
+  findCorrectionCommit(
+    googleSub: string,
+    correctionId: string,
+  ): Promise<number | null>
+
+  /**
    * Recent recorded workouts, newest first, with their set summary.
    *
    * Read-only: history never writes, never backfills and never invents a
@@ -935,6 +952,52 @@ export type CorrectionOutcome =
   | { ok: false; reason: 'stale' }
 
 /**
+ * The set as it stands once `after` has been applied.
+ *
+ * Shared by the ordinary success path and the Round 23 reconciliation, so the
+ * two can never describe a committed correction differently.
+ */
+function correctedRecord(
+  existing: WorkoutSetRecord,
+  after: WorkoutSetCorrection,
+  correctedAt: number,
+): WorkoutSetRecord {
+  return {
+    ...existing,
+    inputType: after.inputType,
+    loadMode: after.loadMode,
+    loadValue: after.load ? after.load.value : null,
+    loadUnit: after.load ? after.load.unit : null,
+    bandLabel: after.band ? after.band.label : null,
+    bandCount: after.band ? after.band.count : null,
+    result: after.result,
+    updatedAt: correctedAt,
+  }
+}
+
+/**
+ * When this correction committed, or null when it did not — or cannot be shown
+ * to have done.
+ *
+ * Called only after a write has already reported failure, so this read is
+ * itself running against a store that may be unwell. Its own failure is NOT
+ * allowed to become a second exception: it collapses to null, which sends the
+ * caller the ORIGINAL write error. Reporting the real failure is always
+ * available; claiming a success we cannot demonstrate never is.
+ */
+async function commitTimeOf(
+  store: WorkoutStore,
+  googleSub: string,
+  correctionId: string,
+): Promise<number | null> {
+  try {
+    return await store.findCorrectionCommit(googleSub, correctionId)
+  } catch {
+    return null
+  }
+}
+
+/**
  * Apply a historical correction to one completed set.
  *
  * WHAT THIS MAY CHANGE: the modality, the load, the band, the result — the
@@ -1018,30 +1081,59 @@ export async function correctSet(
   // other editor is holding.
   const correctedAt = nextSetVersion(existing.updatedAt, now)
 
-  const written = await store.correctSet({
-    address,
-    correctionId,
-    correctedAt,
-    expectedUpdatedAt,
-    before,
-    after,
-  })
+  /*
+   * ROUND 23 — A REJECTED WRITE IS NOT PROOF THAT NOTHING WAS WRITTEN.
+   *
+   * This await is the ONLY operation in the whole correction path that sits at
+   * or after the commit point. Everything before it is a read or a pure check;
+   * everything after it is synchronous and total. So if a correction is ever
+   * observed to have committed while the caller was told it failed, the failure
+   * came through here — there is nowhere else it could come from.
+   *
+   * And it can. D1 is a network round trip around a transaction: the batch can
+   * commit and the acknowledgement can still be lost, at which point this
+   * promise rejects for a write that durably happened. Letting that rejection
+   * propagate is what produced the observed production behaviour — HTTP 500
+   * over a committed, correctly audited correction. A caller told "failed" then
+   * reasonably retries something that already succeeded.
+   *
+   * So a rejection here is treated as UNKNOWN rather than as failure, and the
+   * question is settled by asking the durable truth. The correction id is
+   * minted per request and is the audit's primary key, so its presence proves
+   * that THIS attempt committed. Nothing is rewritten, retried or repaired:
+   * this is a single read, and the outcome it reports is whatever actually
+   * happened.
+   *
+   * If the audit says the write did not land, the original error is rethrown
+   * untouched and the route answers exactly as it always did.
+   */
+  let written: boolean
+  try {
+    written = await store.correctSet({
+      address,
+      correctionId,
+      correctedAt,
+      expectedUpdatedAt,
+      before,
+      after,
+    })
+  } catch (error) {
+    const committedAt = await commitTimeOf(store, address.googleSub, correctionId)
+    // Genuinely did not commit — or we could not find out, which is not a
+    // licence to claim success. Either way the caller gets the real failure.
+    if (committedAt === null) throw error
+    // It did commit. The batch is atomic and both statements carry the same
+    // precondition, so an audit event for this id means the set was rewritten
+    // with exactly these facts.
+    return { ok: true, record: correctedRecord(existing, after, committedAt), corrected: true, correctedAt: committedAt }
+  }
+
   // The pre-read above is an optimisation and a source of good error messages.
   // The version condition inside the write is what actually decides, so losing
   // the race here is reported as stale rather than silently overwriting.
   if (!written) return { ok: false, reason: 'stale' }
 
-  const record: WorkoutSetRecord = {
-    ...existing,
-    inputType: after.inputType,
-    loadMode: after.loadMode,
-    loadValue: after.load ? after.load.value : null,
-    loadUnit: after.load ? after.load.unit : null,
-    bandLabel: after.band ? after.band.label : null,
-    bandCount: after.band ? after.band.count : null,
-    result: after.result,
-    updatedAt: correctedAt,
-  }
+  const record = correctedRecord(existing, after, correctedAt)
   // The audit event's own `corrected_at`: the same value written into the row
   // in the batch above, not a second clock reading and not the client's idea of
   // the time. It is also the set's new version.

@@ -342,6 +342,14 @@ export function createFakeD1() {
   let mediaFailure: Error | null = null
   /** Set to make every workout statement throw, as D1 would. */
   let workoutFailure: Error | null = null
+  /**
+   * Set to let the NEXT batch commit in full and THEN reject.
+   *
+   * This is the failure D1 can really produce and that `breakWorkouts` cannot
+   * express: the transaction lands, the acknowledgement does not. Everything
+   * the batch wrote is durable, and the caller is told the write failed.
+   */
+  let batchFailureAfterCommit: Error | null = null
   /** Set to make every `holiday_overrides` statement throw, as D1 would. */
   let holidayFailure: Error | null = null
   /** Set to hold every Holiday write, so a race can be forced. */
@@ -1082,6 +1090,18 @@ export function createFakeD1() {
           }
         }
         return removed
+      }
+
+      // ROUND 23. One event by its own id — the read that settles whether a
+      // write that reported failure actually committed. Matched before the
+      // workout-scoped SELECT below because it binds a correction_id, not a
+      // date and session.
+      if (sql.includes('SELECT') && sql.includes('correction_id = ?')) {
+        const [google_sub, correction_id] = args as [string, string]
+        const row = workoutSetCorrections.get(correction_id)
+        return row && row.google_sub === google_sub
+          ? { corrected_at: row.corrected_at }
+          : null
       }
 
       if (sql.includes('SELECT')) {
@@ -1991,6 +2011,14 @@ export function createFakeD1() {
     try {
       const results = []
       for (const statement of statements) results.push(await statement.run())
+      // Everything above has already been applied to the stores. Rejecting
+      // HERE, and only here, is what makes this a committed-but-unacknowledged
+      // batch rather than a failed one.
+      if (batchFailureAfterCommit) {
+        const error = batchFailureAfterCommit
+        batchFailureAfterCommit = null
+        throw error
+      }
       return results
     } finally {
       for (const statement of statements) statement.inBatch = false
@@ -2085,6 +2113,16 @@ export function createFakeD1() {
     },
     breakWorkouts(error = new Error('D1 unavailable')) {
       workoutFailure = error
+    },
+    /**
+     * Let the NEXT batch commit completely, then reject — one shot.
+     *
+     * Models the one failure that can leave durable state behind: D1 commits
+     * the transaction and the reply is lost, so the promise rejects over a
+     * write that happened.
+     */
+    failBatchAfterCommit(error = new Error('Network connection lost.')) {
+      batchFailureAfterCommit = error
     },
     breakHolidays(error = new Error('D1 unavailable')) {
       holidayFailure = error

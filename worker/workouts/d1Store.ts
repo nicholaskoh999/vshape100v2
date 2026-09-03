@@ -692,6 +692,24 @@ export function createD1WorkoutStore(db: D1Database): WorkoutStore {
       }))
     },
 
+    /*
+     * ROUND 23. One audit event, by its own id. Used only to settle whether a
+     * write that REPORTED failure actually committed, so it must be the
+     * narrowest possible read: one primary-key lookup, scoped to the account.
+     */
+    async findCorrectionCommit(googleSub, correctionId) {
+      const row = await db
+        .prepare(
+          `SELECT corrected_at
+             FROM workout_set_corrections
+            WHERE google_sub = ? AND correction_id = ?`,
+        )
+        .bind(googleSub, correctionId)
+        .first<{ corrected_at: number }>()
+
+      return row ? row.corrected_at : null
+    },
+
     async correctSet(write) {
       const { address: at, before, after } = write
       // The precondition, shared by both statements: this exact set, still
