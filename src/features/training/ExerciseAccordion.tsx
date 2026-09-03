@@ -15,7 +15,7 @@ import type { WorkoutSet } from './workoutApi'
 import { WorkoutSetList, type WorkoutSetListProps } from './WorkoutSetList'
 import type { CalibrationFeedback } from '@shared/progression/lane'
 import { WORKOUT_INPUT_TYPE_LABELS, type WorkoutInputType } from '@shared/workoutInput'
-import type { ModalityMismatch } from './inputTypeMismatch'
+import type { ModalityVerdict } from './inputTypeMismatch'
 
 /**
  * Everything the expanded panel needs to log sets. Absent until the workout
@@ -44,12 +44,12 @@ export type AccordionLogging = Pick<
  * now stands.
  */
 /**
- * Per-position modality disagreement, when there is one.
+ * Per-position modality verdict: a disagreement, an unverified answer, or null.
  *
  * Supplied by the page because it is the page that knows both halves: the
- * stored snapshot and the account's current settings.
+ * stored snapshot and how far the account's current settings have been read.
  */
-export type AccordionMismatch = (exerciseOrder: number) => ModalityMismatch | null
+export type AccordionModality = (exerciseOrder: number) => ModalityVerdict | null
 
 export type AccordionGuidance = {
   laneFor: (exerciseOrder: number) => LaneRecommendation | null
@@ -95,12 +95,12 @@ export function ExerciseAccordion({
   session,
   logging,
   guidance,
-  mismatchAt,
+  modalityAt,
 }: {
   session: AccordionSession
   logging?: AccordionLogging
   guidance?: AccordionGuidance
-  mismatchAt?: AccordionMismatch
+  modalityAt?: AccordionModality
 }) {
   // Local, deliberately ephemeral: nothing here needs to survive a refresh,
   // so there is no URL state and no storage.
@@ -125,7 +125,7 @@ export function ExerciseAccordion({
           }
           logging={logging}
           guidance={guidance}
-          mismatchAt={mismatchAt}
+          modalityAt={modalityAt}
         />
       ))}
     </motion.ol>
@@ -140,7 +140,7 @@ function ExerciseRow({
   onToggle,
   logging,
   guidance,
-  mismatchAt,
+  modalityAt,
 }: {
   exercise: SessionExercise
   index: number
@@ -149,7 +149,7 @@ function ExerciseRow({
   onToggle: () => void
   logging?: AccordionLogging
   guidance?: AccordionGuidance
-  mismatchAt?: AccordionMismatch
+  modalityAt?: AccordionModality
 }) {
   const reduceMotion = useReducedMotion()
   // Unique per row: only one session renders at a time and `index` is unique
@@ -169,14 +169,24 @@ function ExerciseRow({
   const lane = guidance?.laneFor(index) ?? null
 
   /*
-   * Does this exercise's CURRENT setting disagree with what the workout froze?
+   * What can be said about this exercise's modality right now?
    *
-   * When it does, the frozen controls stay — they are what the logged sets
-   * mean — but the actionable guidance is withdrawn. Confirming a kilogram
-   * load on an exercise the user has just declared to be band work writes
-   * evidence they will have to undo.
+   * When the current setting DISAGREES with what the workout froze, the frozen
+   * controls stay — they are what the logged sets mean — but the actionable
+   * guidance is withdrawn. Confirming a kilogram load on an exercise the user
+   * has just declared to be band work writes evidence they will have to undo.
+   *
+   * ROUND 22 CORRECTION 2. The same is withdrawn while the current setting is
+   * merely UNVERIFIED — still loading, or unreadable. The disagreement above
+   * cannot be ruled out until the library has actually answered, and offering
+   * a kilogram judgement in the meantime is the same bad evidence arrived at
+   * by assumption rather than by a stale setting.
    */
-  const mismatch = logging ? (mismatchAt?.(index) ?? null) : null
+  const verdict = logging ? (modalityAt?.(index) ?? null) : null
+  const mismatch = verdict?.kind === 'mismatch' ? verdict : null
+  const unverified = verdict?.kind === 'unverified' ? verdict : null
+  // Anything the panel OFFERS needs a modality that is both known and agreed.
+  const actionable = verdict === null
 
   return (
     <motion.li variants={listItemVariants}>
@@ -279,7 +289,27 @@ function ExerciseRow({
                   </div>
                 )}
 
-                {logging && lane && guidance && !mismatch && (
+                {unverified && guidance && (
+                  <div
+                    role="status"
+                    data-modality-unverified
+                    data-unverified-reason={unverified.reason}
+                    className="mt-4 rounded-control border border-edge-strong bg-surface-overlay/60 p-3"
+                  >
+                    <p className="text-[12px] font-bold text-offwhite">
+                      {unverified.reason === 'error'
+                        ? 'Current input type could not be verified. Load guidance is paused.'
+                        : 'Checking this exercise’s current input type. Load guidance is paused.'}
+                    </p>
+                    <p className="mt-1 text-[12px] text-ink-faint">
+                      Logging is unaffected — this workout keeps the controls it
+                      was started with, and nothing you have recorded has
+                      changed.
+                    </p>
+                  </div>
+                )}
+
+                {logging && lane && guidance && actionable && (
                   <ExerciseGuidance
                     lane={lane}
                     confirmed={guidance.confirmed}
@@ -301,7 +331,7 @@ function ExerciseRow({
                     sets={sets}
                     busySet={logging.busySet}
                     // Offered to the draft field only; nothing is pre-filled.
-                    suggestedLoad={mismatch ? null : (lane?.suggestedLoad ?? null)}
+                    suggestedLoad={actionable ? (lane?.suggestedLoad ?? null) : null}
                     // Unconfirmed guidance may be READ but not acted on: the
                     // set it was derived from may already have changed.
                     suggestionLocked={guidance ? !guidance.confirmed : false}

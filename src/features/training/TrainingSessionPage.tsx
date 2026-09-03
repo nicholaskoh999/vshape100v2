@@ -8,7 +8,7 @@ import { PageHeader } from '@/components/ui/PageHeader'
 import { useLocalToday } from '@/features/progress/useLocalToday'
 import { ExerciseAccordion } from './ExerciseAccordion'
 import { useExerciseInputTypeLibrary } from '@/features/settings/useExerciseInputTypeLibrary'
-import { modalityMismatchAt } from './inputTypeMismatch'
+import { modalityVerdictAt } from './inputTypeMismatch'
 import { workoutSessionFromSnapshot } from './extra'
 
 /** Does this stored intensity have a chip in this build? */
@@ -149,12 +149,20 @@ function SessionView({
   /*
    * ROUND 22 CORRECTION 1 (C3). The account's CURRENT input types, so a
    * started workout can say when its frozen modality no longer matches.
+   *
+   * CORRECTION 2. The STATUS travels with the map, because the map alone
+   * cannot be told apart from an account that has configured nothing: it is
+   * empty while loading and empty after a failed read. The verdict fails
+   * closed on both, rather than reporting a modality it has not checked.
    */
-  const inputTypes = useExerciseInputTypeLibrary()
-  const mismatchAt = useCallback(
+  const { status: inputTypeStatus, byExercise } = useExerciseInputTypeLibrary()
+  const modalityAt = useCallback(
     (exerciseOrder: number) =>
-      modalityMismatchAt(workout.sets, exerciseOrder, inputTypes.byExercise),
-    [workout.sets, inputTypes.byExercise],
+      modalityVerdictAt(workout.sets, exerciseOrder, {
+        status: inputTypeStatus,
+        byExercise,
+      }),
+    [workout.sets, inputTypeStatus, byExercise],
   )
 
   const header = workout.occurrence
@@ -206,7 +214,7 @@ function SessionView({
               }
             : undefined
         }
-        mismatchAt={mismatchAt}
+        modalityAt={modalityAt}
         guidance={
           workout.started && guidance.status === 'ready'
             ? {

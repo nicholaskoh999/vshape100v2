@@ -89,6 +89,17 @@ async function openMonday() {
 }
 
 const warning = () => document.querySelector('[data-modality-mismatch]')
+const unverified = () => document.querySelector('[data-modality-unverified]')
+
+/** Everything the panel OFFERS, which is exactly what must fail closed. */
+function actionableControls() {
+  return {
+    tooLight: screen.queryByRole('button', { name: 'Too light' }),
+    good: screen.queryByRole('button', { name: 'Good' }),
+    tooHeavy: screen.queryByRole('button', { name: 'Too heavy' }),
+    useSuggestion: screen.queryByRole('button', { name: /^Use / }),
+  }
+}
 
 /**
  * Start the workout under `frozen`, then move the setting to `current`.
@@ -207,5 +218,206 @@ describe('when there is nothing to disagree about', () => {
 
     // Nothing is frozen yet, so the current setting simply applies.
     expect(warning()).toBeNull()
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* ROUND 22 CORRECTION 2 — the verdict must FAIL CLOSED                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * WHY THIS BLOCK EXISTS.
+ *
+ * Correction 1 detects the disagreement only once the input-type library has
+ * been read. While that read is in flight — or after it has failed — the
+ * library is EMPTY, and an empty library used to look exactly like "this
+ * account has configured nothing", which is the accepted, quiet, guidance-on
+ * case.
+ *
+ * So the kilogram calibration prompt and the kilogram suggestion rendered
+ * before anything had been verified. On a slow or broken read that is the
+ * whole Round 20 problem back again, reached by assumption instead of by a
+ * stale setting: the user confirms "20kg felt right" on an exercise that may
+ * already be band work.
+ *
+ * Everything below is about that window. Logging is never touched: the frozen
+ * controls stay, because they are what the recorded sets mean.
+ */
+
+/**
+ * A started kg workout with its first set completed AND judged.
+ *
+ * The judgement matters. Until a first set is judged there is no suggested
+ * load, so "no suggested load" would pass for the wrong reason; after it there
+ * is a stored `Use 20kg` the panel would offer on every later mount. That is
+ * what the assertions below are actually withholding.
+ *
+ * `configured: false` states no input type at all, which is the genuinely
+ * unconfigured account — the workout still freezes kilograms, from the load
+ * mode the plan asked for, exactly as a pre-Round-20 account does.
+ */
+async function startedKgWorkoutWithGuidance(options: { configured: boolean }) {
+  if (options.configured) stateInputType('weight_kg')
+
+  const u = await openMonday()
+  await u.click(await screen.findByRole('button', { name: 'Start workout' }))
+  await screen.findByText('Resume workout')
+  await u.click(screen.getByRole('button', { name: /Lat Pulldown/ }))
+
+  await u.type(screen.getAllByLabelText(/^Load \(kg\)$/i)[0], '20')
+  await u.type(screen.getAllByLabelText('Reps')[0], '12')
+  await u.click(screen.getAllByRole('button', { name: /^Complete$/ })[0])
+  await screen.findByText(/Completed · 12 reps/)
+
+  await u.click(await screen.findByRole('button', { name: 'Good' }))
+  await screen.findByText(/20kg felt right/)
+  // The setup is only useful if it really did leave something to withhold.
+  expect(screen.getAllByRole('button', { name: 'Use 20kg' }).length).toBeGreaterThan(0)
+
+  cleanup()
+}
+
+/**
+ * Reopen the page with the row expanded, WITHOUT waiting for guidance.
+ *
+ * Waiting for the guidance panel would beg the question — the point is what is
+ * on screen while the modality is still unknown.
+ */
+async function remountWithRowOpen() {
+  const u = await openMonday()
+  await screen.findByText('Resume workout')
+  await u.click(screen.getByRole('button', { name: /Lat Pulldown/ }))
+  return u
+}
+
+/** The note's own machine-readable reason, so the two cases stay distinct. */
+function unverifiedReason(): string | null {
+  const node = unverified()
+  return node ? node.getAttribute('data-unverified-reason') : null
+}
+
+describe('Correction 2 — nothing actionable before the current input type is verified', () => {
+  it('1. pauses guidance and the suggestion while the input-type read is still in flight', async () => {
+    await startedKgWorkoutWithGuidance({ configured: true })
+
+    // Progression will answer. The input-type library will not.
+    const release = inputTypes.holdReads()
+    try {
+      await remountWithRowOpen()
+
+      /*
+       * The note renders only where there IS guidance to pause, so its
+       * presence is the proof of the exact state this test is about:
+       * progression READY, current input type NOT.
+       */
+      await waitFor(() => expect(unverified()).not.toBeNull())
+      expect(unverifiedReason()).toBe('loading')
+      expect((unverified() as HTMLElement).textContent).toContain(
+        'Load guidance is paused',
+      )
+
+      const controls = actionableControls()
+      expect(controls.tooLight, 'Too light').toBeNull()
+      expect(controls.good, 'Good').toBeNull()
+      expect(controls.tooHeavy, 'Too heavy').toBeNull()
+      // A stored 20kg suggestion exists and is still withheld.
+      expect(controls.useSuggestion, 'Use 20kg').toBeNull()
+
+      // No mismatch has been MANUFACTURED either: an unread library is not a
+      // disagreement, and saying so would be a different lie.
+      expect(warning()).toBeNull()
+
+      // Logging is untouched. Failing closed withdraws what is OFFERED, never
+      // the controls the recorded sets are written against.
+      expect(screen.getAllByLabelText(/^Load \(kg\)$/i).length).toBeGreaterThan(0)
+      expect(
+        screen.getAllByRole('button', { name: /^Complete$/ }).length,
+      ).toBeGreaterThan(0)
+    } finally {
+      release()
+    }
+  })
+
+  it('2. and when it resolves to Resistance band, the warning appears and guidance stays paused', async () => {
+    await startedKgWorkoutWithGuidance({ configured: true })
+
+    const release = inputTypes.holdReads()
+    await remountWithRowOpen()
+    await waitFor(() => expect(unverified()).not.toBeNull())
+
+    // The answer that was in flight all along: this exercise is band work now.
+    stateInputType('resistance_band')
+    release()
+
+    await waitFor(() => expect(warning()).not.toBeNull())
+    // The placeholder gives way to the real finding — one statement, not two.
+    expect(unverified()).toBeNull()
+    expect((warning() as HTMLElement).textContent).toContain('Resistance band')
+
+    const controls = actionableControls()
+    expect(controls.tooLight, 'Too light').toBeNull()
+    expect(controls.good, 'Good').toBeNull()
+    expect(controls.tooHeavy, 'Too heavy').toBeNull()
+    expect(controls.useSuggestion, 'Use 20kg').toBeNull()
+  })
+
+  it('3. and when it resolves to Weight (kg), there is no mismatch and guidance returns', async () => {
+    await startedKgWorkoutWithGuidance({ configured: true })
+
+    const release = inputTypes.holdReads()
+    await remountWithRowOpen()
+    await waitFor(() => expect(unverified()).not.toBeNull())
+    expect(actionableControls().good, 'paused while unverified').toBeNull()
+
+    release()
+
+    // Verified AND agreeing: the accepted panel comes back in full.
+    expect(await screen.findByRole('button', { name: 'Good' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Too light' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Too heavy' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Use 20kg' }).length).toBeGreaterThan(0)
+    expect(warning()).toBeNull()
+    expect(unverified()).toBeNull()
+  })
+
+  it('4. keeps guidance paused when the input-type read FAILS', async () => {
+    await startedKgWorkoutWithGuidance({ configured: true })
+
+    // Every read, so a retry cannot quietly rescue the assertion.
+    inputTypes.failReads(50)
+    await remountWithRowOpen()
+
+    await waitFor(() => expect(unverified()).not.toBeNull())
+    expect(unverifiedReason()).toBe('error')
+    expect((unverified() as HTMLElement).textContent).toContain('could not be verified')
+
+    const controls = actionableControls()
+    expect(controls.tooLight, 'Too light').toBeNull()
+    expect(controls.good, 'Good').toBeNull()
+    expect(controls.tooHeavy, 'Too heavy').toBeNull()
+    expect(controls.useSuggestion, 'Use 20kg').toBeNull()
+
+    // A failed read is not evidence of a change, so none is claimed.
+    expect(warning()).toBeNull()
+    // And the workout is still fully loggable.
+    expect(screen.getAllByLabelText(/^Load \(kg\)$/i).length).toBeGreaterThan(0)
+  })
+
+  it('5. READY with nothing configured keeps the accepted unconfigured semantics', async () => {
+    await startedKgWorkoutWithGuidance({ configured: false })
+
+    await remountWithRowOpen()
+
+    // Unanswered is not a disagreement, and — once the read has SUCCEEDED —
+    // it is not an unverified answer either. Round 20's accepted behaviour.
+    expect(await screen.findByRole('button', { name: 'Good' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Use 20kg' }).length).toBeGreaterThan(0)
+    expect(warning()).toBeNull()
+    expect(unverified()).toBeNull()
+
+    // The library was genuinely read: this is READY-and-empty, not still loading.
+    expect(
+      inputTypes.calls.some((call) => call.method === 'GET' && call.exerciseId === null),
+    ).toBe(true)
   })
 })

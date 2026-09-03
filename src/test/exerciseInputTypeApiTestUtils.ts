@@ -35,6 +35,14 @@ export type InputTypeServer = {
   failReads: (count?: number) => void
   /** Fail the next `count` writes. */
   failMutations: (count?: number) => void
+  /**
+   * Hold every read open until the returned function is called.
+   *
+   * The library read is what tells a started workout whether its frozen
+   * modality is still the account's; holding it is how a test occupies the
+   * window in which nothing has been verified yet.
+   */
+  holdReads: () => () => void
   handle: (url: string, init?: RequestInit) => Promise<Response>
 }
 
@@ -53,6 +61,7 @@ export function createInputTypeServer(initial: InputTypeRow[] = []): InputTypeSe
 
   let readFailures = 0
   let mutationFailures = 0
+  let readGate: Promise<void> | null = null
   let clock = 1
 
   async function handle(url: string, init?: RequestInit): Promise<Response> {
@@ -63,6 +72,9 @@ export function createInputTypeServer(initial: InputTypeRow[] = []): InputTypeSe
     calls.push({ method, exerciseId, url })
 
     if (method === 'GET') {
+      // Awaited before the failure check so a held read can be released into
+      // either answer, exactly as a slow server would.
+      if (readGate) await readGate
       if (readFailures > 0) {
         readFailures -= 1
         return jsonResponse({ error: 'server_error' }, 500)
@@ -125,6 +137,16 @@ export function createInputTypeServer(initial: InputTypeRow[] = []): InputTypeSe
     },
     failMutations: (count = 1) => {
       mutationFailures = count
+    },
+    holdReads: () => {
+      let release!: () => void
+      readGate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      return () => {
+        readGate = null
+        release()
+      }
     },
     handle,
   }

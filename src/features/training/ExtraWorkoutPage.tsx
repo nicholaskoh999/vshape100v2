@@ -20,7 +20,7 @@ import {
   toExtraStartPayload,
 } from './extra'
 import { useExerciseInputTypeLibrary } from '@/features/settings/useExerciseInputTypeLibrary'
-import { modalityMismatchAt } from './inputTypeMismatch'
+import { modalityVerdictAt } from './inputTypeMismatch'
 import { useProgramme } from '@/features/programme/programmeContext'
 import { toTrainingSessions, type TrainingSessionView } from '@/features/programme/programmeApi'
 import { useWorkoutLog } from './useWorkoutLog'
@@ -80,12 +80,17 @@ export function ExtraWorkoutPage() {
   const { status, occurrence, sets } = workout
 
   // The account's CURRENT input types, so a started Extra can say when its
-  // frozen modality no longer matches the setting.
-  const inputTypes = useExerciseInputTypeLibrary()
-  const mismatchAt = useCallback(
+  // frozen modality no longer matches the setting. The STATUS travels too: an
+  // empty map means "not read yet" as often as it means "nothing configured",
+  // and Correction 2 refuses to treat the first as the second.
+  const { status: inputTypeStatus, byExercise } = useExerciseInputTypeLibrary()
+  const modalityAt = useCallback(
     (exerciseOrder: number) =>
-      modalityMismatchAt(workout.sets, exerciseOrder, inputTypes.byExercise),
-    [workout.sets, inputTypes.byExercise],
+      modalityVerdictAt(workout.sets, exerciseOrder, {
+        status: inputTypeStatus,
+        byExercise,
+      }),
+    [workout.sets, inputTypeStatus, byExercise],
   )
 
   // Read from PERSISTED provenance, not from the route that got us here. If a
@@ -200,7 +205,7 @@ export function ExtraWorkoutPage() {
            * prop, ever — see the note at the top of this file — so there is no
            * calibration action here to suppress.
            */
-          mismatchAt={mismatchAt}
+          modalityAt={modalityAt}
         />
       )}
     </>

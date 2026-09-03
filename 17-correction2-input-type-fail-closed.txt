@@ -1,0 +1,329 @@
+================================================================================
+ROUND 22 — CORRECTION 2
+INPUT-TYPE MISMATCH SAFETY NOW FAILS CLOSED
+================================================================================
+
+Branch      claude/round-22-programme-builder
+Old SHA     06368352d1a4f96f637c52a94230836ff269e397   (Round 22 correction 1)
+Main        d0b62e5832388835d3b0650d6306ca4a7fe4792e   (unchanged, not touched)
+
+Not touched, as instructed: migrations (no 0016), UI redesign, merge, deploy,
+production. C1 and C2 were not changed — they did not need to be, and the
+compiler did not force it.
+
+================================================================================
+1. THE BLOCKER
+================================================================================
+
+C3 (Correction 1) compared a started workout's FROZEN input type against the
+account's CURRENT one, read through useExerciseInputTypeLibrary().
+
+That hook keeps `byExercise` deliberately EMPTY until status === 'ready'. So
+while the read was in flight, and again after it had failed, every lookup
+missed — and `modalityMismatchAt()` returned null.
+
+Null meant "nothing to say", which the accordion read as "the modality is
+settled and agrees". The consequence:
+
+  - the calibration prompt rendered ("first set recorded at 20kg — how did
+    that feel?")
+  - Too light / Good / Too heavy were live
+  - the stored suggested load was offered ("Use 20kg")
+
+...before the current modality had been verified at all. An absent record was
+being read as "weight", which is precisely the assumption Round 20 exists to
+remove. That is FAIL-OPEN. On a slow or broken read it reproduces the original
+Round 20 defect by assumption rather than by a stale setting.
+
+================================================================================
+2. THE RULE NOW IMPLEMENTED
+================================================================================
+
+For a STARTED workout exercise that has a frozen inputType, until the current
+input-type library is successfully READY:
+
+  - no actionable progression/calibration feedback
+  - no suggested load
+  - no inference that "no record" means weight
+  - no manufactured mismatch
+
+Once READY:
+
+  A) current record exists and differs  -> existing mismatch warning,
+                                           guidance paused, suggestion paused
+  B) current record exists and agrees   -> normal accepted guidance
+  C) no current record exists           -> genuinely unconfigured;
+                                           no mismatch, normal semantics resume
+
+If the read ERRORS: fail closed, with a truthful note —
+  "Current input type could not be verified. Load guidance is paused."
+
+Frozen workout controls are UNCHANGED in all cases. Failing closed withdraws
+what the panel OFFERS; it never withdraws the controls the recorded sets are
+written against. No UX redesign.
+
+================================================================================
+3. EXACT FILES CHANGED
+================================================================================
+
+ src/features/training/inputTypeMismatch.ts     |  93 ++++++++--   source
+ src/features/training/ExerciseAccordion.tsx    |  64 +++++---     source
+ src/features/training/TrainingSessionPage.tsx  |  20 ++-          source
+ src/features/training/ExtraWorkoutPage.tsx     |  19 ++-          source
+ src/test/exerciseInputTypeApiTestUtils.ts      |  22 +++          test double
+ src/test/inputTypeMismatchUi.test.tsx          | 212 ++++++       tests
+ 17-correction2-input-type-fail-closed.txt      |  new             evidence
+ 6 source/test files changed, 385 insertions(+), 45 deletions(-)
+
+WHAT EACH CHANGE IS
+
+inputTypeMismatch.ts
+  modalityMismatchAt(sets, order, Map)  ->  modalityVerdictAt(sets, order,
+                                            { status, byExercise })
+  New ModalityVerdict:
+      { kind: 'mismatch', frozen, current }
+      { kind: 'unverified', reason: 'loading' | 'error' }
+      null  (settled, nothing to say)
+  THE GATE, before any map lookup:
+      if (current.status !== 'ready') {
+        return { kind: 'unverified', reason: current.status }
+      }
+  The status is taken structurally (CurrentInputTypes), so a caller cannot
+  drop it without the compiler noticing — the old signature accepted the bare
+  Map, which is exactly how the fail-open path was reachable.
+
+ExerciseAccordion.tsx
+  Prop mismatchAt -> modalityAt (AccordionMismatch -> AccordionModality).
+  const verdict    = logging ? (modalityAt?.(index) ?? null) : null
+  const mismatch   = verdict?.kind === 'mismatch'   ? verdict : null
+  const unverified = verdict?.kind === 'unverified' ? verdict : null
+  const actionable = verdict === null
+  ExerciseGuidance renders only when `actionable`.
+  suggestedLoad = actionable ? (lane?.suggestedLoad ?? null) : null
+  New small note, [data-modality-unverified], carrying
+  data-unverified-reason="loading" | "error". Rendered only where guidance
+  exists to pause, so the Extra page — which never offers guidance — is not
+  told something is paused that was never on offer.
+
+TrainingSessionPage.tsx / ExtraWorkoutPage.tsx
+  Both now destructure { status, byExercise } from the library hook and pass
+  both halves to modalityVerdictAt.
+
+exerciseInputTypeApiTestUtils.ts
+  holdReads(): () => void — holds every GET open until released, mirroring the
+  progression stand-in. This is how a test occupies the unverified window.
+
+================================================================================
+4. PROOFS
+================================================================================
+
+--------------------------------------------------------------------------------
+4.1 LOADING PROOF  (test 1)
+--------------------------------------------------------------------------------
+"1. pauses guidance and the suggestion while the input-type read is still in
+ flight"
+
+Setup: Monday, one exercise (lat-pulldown), input type stated as weight_kg.
+Workout started; Set 1 completed at 20kg; judged "Good" — which PERSISTS a
+calibration, so the account genuinely owns a `Use 20kg` suggestion. The setup
+asserts that suggestion exists before tearing down, so the later "no suggested
+load" assertion cannot pass for the wrong reason.
+
+Then: inputTypes.holdReads() — the library read never answers. Remount.
+Progression answers normally.
+
+Asserted:
+  [data-modality-unverified] present, data-unverified-reason="loading"
+  text contains "Load guidance is paused"
+  Too light   -> null
+  Good        -> null
+  Too heavy   -> null
+  /^Use /     -> null          (the stored 20kg suggestion is withheld)
+  [data-modality-mismatch] -> null   (no mismatch MANUFACTURED)
+  Load (kg) fields still present, Complete buttons still present
+                                     (frozen controls untouched)
+
+The note renders only where guidance exists to pause, so its presence is
+itself the proof of the exact state under test: progression READY, current
+input type NOT.
+
+--------------------------------------------------------------------------------
+4.2 THEN RESOLVES TO resistance_band  (test 2)
+--------------------------------------------------------------------------------
+"2. and when it resolves to Resistance band, the warning appears and guidance
+ stays paused"
+
+Held read released with the row set to resistance_band.
+
+Asserted:
+  [data-modality-mismatch] appears, text contains "Resistance band"
+  [data-modality-unverified] gone (one statement, not two)
+  Too light / Good / Too heavy / ^Use  -> all null (still paused)
+
+--------------------------------------------------------------------------------
+4.3 READY / MATCH PROOF  (test 3)
+--------------------------------------------------------------------------------
+"3. and when it resolves to Weight (kg), there is no mismatch and guidance
+ returns"
+
+Held read released with the row still weight_kg.
+
+Asserted while held:   Good -> null
+Asserted after release:
+  Good, Too light, Too heavy  all present
+  "Use 20kg" present (>= 1)
+  [data-modality-mismatch]   -> null
+  [data-modality-unverified] -> null
+
+--------------------------------------------------------------------------------
+4.4 ERROR PROOF  (test 4)
+--------------------------------------------------------------------------------
+"4. keeps guidance paused when the input-type read FAILS"
+
+inputTypes.failReads(50) — every read fails, so a retry cannot quietly rescue
+the assertion.
+
+Asserted:
+  [data-modality-unverified] present, data-unverified-reason="error"
+  text contains "could not be verified"
+  Too light / Good / Too heavy / ^Use  -> all null
+  [data-modality-mismatch] -> null   (a failed read is not evidence of change)
+  Load (kg) fields still present     (workout still fully loggable)
+
+--------------------------------------------------------------------------------
+4.5 READY / UNCONFIGURED PROOF  (test 5)
+--------------------------------------------------------------------------------
+"5. READY with nothing configured keeps the accepted unconfigured semantics"
+
+No input type stated at all. The workout still freezes weight_kg from the load
+mode the plan asked for, exactly as a pre-Round-20 account does. The library
+read SUCCEEDS and is empty.
+
+Asserted:
+  Good present, "Use 20kg" present (>= 1)   -> normal semantics resumed
+  [data-modality-mismatch]   -> null
+  [data-modality-unverified] -> null
+  a collection GET was actually made         -> READY-and-empty, not loading
+
+================================================================================
+5. NON-VACUITY
+================================================================================
+
+Probe: the fail-closed gate was removed from modalityVerdictAt —
+
+    -  if (current.status !== 'ready') {
+    -    return { kind: 'unverified', reason: current.status }
+    -  }
+
+Result with the gate removed:
+
+     x 1. pauses guidance and the suggestion while the input-type read is still in flight
+     x 2. and when it resolves to Resistance band, the warning appears and guidance stays paused
+     x 3. and when it resolves to Weight (kg), there is no mismatch and guidance returns
+     x 4. keeps guidance paused when the input-type read FAILS
+     Test Files  1 failed (1)
+          Tests  4 failed | 9 passed (13)
+
+Tests 1 and 4 fail, as required. Tests 2 and 3 also fail, because each asserts
+the paused state before its transition. Test 5 correctly still PASSES — it is
+about READY semantics, which the gate does not govern; a gate that broke it
+would have been over-reaching.
+
+Gate restored; 13/13 pass again.
+
+================================================================================
+6. FULL GATE
+================================================================================
+
+Node v26.5.0.  See section 7 for the NODE_OPTIONS note.
+
+  focused inputTypeMismatch UI          Test Files 1 passed (1)
+                                        Tests     13 passed (13)
+
+  scheduled Training                    Test Files 9 passed (9)
+    trainingAccordion, trainingNavigation, trainingFlexUi, trainingFlex,
+    workoutLogging, workoutBandLogging, cancelWorkoutUi, startedSnapshotUi,
+    programmeBuilderUi                  Tests    235 passed (235)
+
+  progression / calibration             Test Files 6 passed (6)
+    progressionUi, progressionEngine, progressionBandExclusion,
+    progressionHoliday, progressionMigration, progressionWire
+                                        Tests    149 passed (149)
+
+  Extra                                 Test Files 5 passed (5)
+    extraWorkoutUi, extraDateRollover, extraIsolation, extraMigration,
+    extraProvenanceFailClosed           Tests     67 passed (67)
+
+  exercise input type UI + library      Test Files 3 passed (3)
+    exerciseInputTypeUi, exerciseLibrary, workoutInputMigration
+                                        Tests     63 passed (63)
+
+  FULL SUITE                            Test Files 112 passed (112)
+                                        Tests   2670 passed (2670)
+                                        (2665 at the old SHA; +5 new)
+
+  typecheck    tsc -b --noEmit                 clean
+  lint         eslint .                        clean
+  build        tsc -b && vite build            built (worker + client)
+  npm run check  typecheck && lint && test && build   passed
+
+================================================================================
+7. TWO ENVIRONMENT FACTS, REPORTED HONESTLY
+================================================================================
+
+7.1  jsdom localStorage on Node 26
+
+Under Node v26.5.0 the plain `npm test` reports 3 failures:
+
+  progressionUi.test.tsx    > mirrors nothing into browser storage
+  today.test.tsx            > never uses browser storage — the server is the only store
+  todayPersistence.test.tsx > never uses browser storage
+
+All three are the same TypeError: `window.localStorage` is undefined, with
+Node emitting "localStorage is not available because --localstorage-file was
+not provided". Node's own global shadows the jsdom one.
+
+PROVEN PRE-EXISTING: the same 3 tests fail identically at the OLD SHA
+(06368352) with the Correction 2 changes stashed. They are unrelated to this
+work and were not "fixed" here — no repo config was changed for them.
+
+The gate above was therefore run with
+
+  NODE_OPTIONS=--localstorage-file=<scratch>/ls.db
+
+which restores a real localStorage and turns all three green. Nothing else was
+altered to make the suite pass.
+
+7.2  Two flaky tests under full-suite parallel load
+
+  calendar.test.tsx > 9. company Holidays > turns training on and keeps it
+  trainingNavigation.test.tsx > leaves normal Back working through the whole trail
+
+Both pass in isolation and both flake under parallel load. Measured:
+
+  calendar            baseline (old SHA, changes stashed): FAILED 3 of 3
+                      with Correction 2:                   failed 2 of 4
+  trainingNavigation  baseline (old SHA, changes stashed): failed 1 of 6
+                      with Correction 2:                   failed 1 of 5
+
+Pre-existing timing races on this machine, at the same or a lower rate with
+the change than without it. Not caused by Correction 2, and deliberately not
+touched — fixing them is outside this correction's scope.
+
+Three consecutive clean full runs with Correction 2 in place:
+  run 1  112 files / 2670 tests passed
+  run 2  112 files / 2670 tests passed
+  run 3  2 flaky failures above (both also flaky at baseline)
+
+================================================================================
+8. WHAT DID NOT CHANGE
+================================================================================
+
+  - no migration touched; no 0016
+  - no UI redesign; one small note added, nothing restyled or moved
+  - frozen workout controls identical in every state — loading, error,
+    mismatch, agreement, unconfigured
+  - no set rewritten, no modality converted, no band ordering introduced
+  - C1 and C2 untouched
+  - main untouched
+  - nothing merged, nothing deployed, production untouched
