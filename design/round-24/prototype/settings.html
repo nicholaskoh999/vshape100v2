@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Settings · VShape100 Round 24 prototype</title>
+    <link rel="stylesheet" href="vs.css" />
+    <script defer src="vs.js"></script>
+  </head>
+  <body data-nav="settings">
+    <main class="main">
+      <div class="container">
+        <header class="pagehead">
+          <div>
+            <p class="eyebrow">Personal setup</p>
+            <h1>Settings</h1>
+            <p class="sub">Configuration, kept out of the way of training</p>
+          </div>
+        </header>
+
+        <div class="cols even">
+          <div class="stack">
+            <!-- ============ Account ============ -->
+            <section class="card" aria-labelledby="acc-t">
+              <h2 id="acc-t" class="sr-only">Account</h2>
+              <div class="row">
+                <span class="lead" style="width: 48px; height: 48px; border-radius: 16px; background: var(--vs-ink); color: var(--vs-accent); display: grid; place-items: center; font-weight: 800; font-size: 18px; flex: none">
+                  N
+                </span>
+                <span class="grow">
+                  <span class="rowtitle">Nicholas Koh</span>
+                  <span class="rowsub">kohmingwei@outlook.com</span>
+                </span>
+                <span class="badge done"><span data-icon="check"></span>Signed in</span>
+              </div>
+            </section>
+
+            <!-- ============ Training ============ -->
+            <section aria-labelledby="tr-t">
+              <div class="sectionhead" style="margin-top: 0">
+                <h2 id="tr-t">Training</h2>
+              </div>
+              <ul class="list divided card flush">
+                <li>
+                  <a class="listrow" href="programme.html">
+                    <span class="lead" aria-hidden="true">
+                      <span data-icon="list" style="display: block; width: 19px; height: 19px"></span>
+                    </span>
+                    <span class="grow">
+                      <span class="rowtitle">Programme</span>
+                      <span class="rowsub">Arrange your Monday–Friday training week</span>
+                    </span>
+                    <span class="chev" data-icon="right"></span>
+                  </a>
+                </li>
+                <li>
+                  <a class="listrow" href="library.html">
+                    <span class="lead" aria-hidden="true">
+                      <span data-icon="library" style="display: block; width: 19px; height: 19px"></span>
+                    </span>
+                    <span class="grow">
+                      <span class="rowtitle">Exercise Library</span>
+                      <span class="rowsub">Names, input types, demo media, archive</span>
+                    </span>
+                    <span class="chev" data-icon="right"></span>
+                  </a>
+                </li>
+              </ul>
+            </section>
+
+            <!-- ============ Foundation start ============ -->
+            <section class="card" aria-labelledby="fs-t">
+              <h2 id="fs-t" style="margin-bottom: 4px">Foundation start date</h2>
+              <p class="sub" style="margin-bottom: 16px">
+                Day 1 of your Foundation 100. Changing it renumbers Foundation days and
+                milestones. It touches nothing else — no workout, no logged set.
+              </p>
+              <div class="field" style="max-width: 240px">
+                <label for="fdate">Start date</label>
+                <input id="fdate" type="date" value="2026-08-31" />
+              </div>
+              <div class="wrap" style="margin-top: 16px">
+                <button class="btn btn-primary" type="button"><span data-icon="check"></span>Save</button>
+                <button class="btn btn-ghost" type="button">Cancel</button>
+              </div>
+              <p class="small" role="status" style="margin: 12px 0 0; color: var(--vs-success-ink); font-weight: 650">
+                Saved. Today is Foundation Day 9.
+              </p>
+            </section>
+          </div>
+
+          <div class="stack">
+            <!-- ============ Reminders ============ -->
+            <section class="card" aria-labelledby="rem-t">
+              <div class="spread" style="margin-bottom: 6px">
+                <h2 id="rem-t">Reminders</h2>
+                <span class="badge done"><span data-icon="check"></span>On for this device</span>
+              </div>
+              <p class="sub" style="margin-bottom: 16px">
+                A push notification shortly before each item in your day. This is a
+                per-device setting, not an account-wide one.
+              </p>
+              <ul class="list divided" style="border-top: 1px solid var(--vs-line)">
+                <li class="listrow" style="padding-left: 0; padding-right: 0">
+                  <span class="lead" aria-hidden="true">
+                    <span data-icon="bell" style="display: block; width: 18px; height: 18px"></span>
+                  </span>
+                  <span class="grow">
+                    <span class="rowtitle">This device</span>
+                    <span class="rowsub">Asia/Kuala_Lumpur · enabled 2 Sep</span>
+                  </span>
+                  <button class="btn btn-secondary btn-sm" type="button">Turn off</button>
+                </li>
+              </ul>
+              <div class="banner info" style="margin-top: 14px">
+                <span data-icon="info"></span>
+                <span class="grow">
+                  On iOS, reminders need VShape100 installed to the Home Screen. Safari alone
+                  cannot deliver them.
+                </span>
+              </div>
+            </section>
+
+            <!-- ============ App ============ -->
+            <section aria-labelledby="app-t">
+              <div class="sectionhead" style="margin-top: 0">
+                <h2 id="app-t">App</h2>
+              </div>
+              <ul class="list divided card flush">
+                <li>
+                  <div class="listrow">
+                    <span class="lead" aria-hidden="true">
+                      <span data-icon="home" style="display: block; width: 19px; height: 19px"></span>
+                    </span>
+                    <span class="grow">
+                      <span class="rowtitle">Mode</span>
+                      <span class="rowsub">Holiday Mode is set from the Calendar</span>
+                    </span>
+                    <span class="badge neutral">Home</span>
+                  </div>
+                </li>
+                <li>
+                  <div class="listrow">
+                    <span class="lead" aria-hidden="true">
+                      <span data-icon="info" style="display: block; width: 19px; height: 19px"></span>
+                    </span>
+                    <span class="grow">
+                      <span class="rowtitle">Version</span>
+                      <span class="rowsub">Foundation · vshapev2.nkmwei.de</span>
+                    </span>
+                    <span class="badge neutral">v2</span>
+                  </div>
+                </li>
+              </ul>
+            </section>
+
+            <!-- ============ Sign out ============ -->
+            <section>
+              <button class="btn btn-secondary btn-block" type="button" style="color: var(--vs-danger-ink)">
+                <span data-icon="logout"></span>Sign out
+              </button>
+              <p class="tiny muted" style="margin: 8px 0 0; text-align: center">
+                Signs out this device only.
+              </p>
+            </section>
+
+            <!-- ============ States ============ -->
+            <section aria-labelledby="sst-t">
+              <div class="sectionhead">
+                <h2 id="sst-t">Other states</h2>
+                <span class="small muted">Design evidence</span>
+              </div>
+              <div class="stack" style="gap: 12px">
+                <div class="banner danger" role="alert">
+                  <span data-icon="alert"></span>
+                  <span class="grow">
+                    <b>Your settings could not be read</b>
+                    The Foundation start date is not being guessed at, so nothing on this
+                    screen falls back to a default that may not be yours.
+                    <span class="actions">
+                      <button class="btn btn-secondary btn-sm" type="button">
+                        <span data-icon="refresh"></span>Try again
+                      </button>
+                    </span>
+                  </span>
+                </div>
+                <div class="banner warn">
+                  <span data-icon="alert"></span>
+                  <span class="grow">
+                    <b>2026-02-30 is not a real date</b>
+                    Nothing was saved. Choose a date that exists.
+                  </span>
+                </div>
+                <div class="card">
+                  <p class="label" style="margin: 0 0 10px">Saving</p>
+                  <button class="btn btn-primary" type="button" disabled aria-disabled="true">
+                    <span data-icon="refresh"></span>Saving…
+                  </button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

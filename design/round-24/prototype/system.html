@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Design system · VShape100 Round 24 prototype</title>
+    <link rel="stylesheet" href="vs.css" />
+    <script defer src="vs.js"></script>
+    <style>
+      .sw {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 10px;
+      }
+      .sw figure {
+        margin: 0;
+        border: 1px solid var(--vs-line);
+        border-radius: var(--vs-r-md);
+        overflow: hidden;
+        background: var(--vs-surface);
+      }
+      .sw .chip {
+        height: 58px;
+        display: grid;
+        place-items: center;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .sw figcaption {
+        padding: 8px 10px;
+        font-size: 11.5px;
+        line-height: 1.35;
+      }
+      .sw code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 10.5px;
+        color: var(--vs-ink-3);
+      }
+      .specrow {
+        display: flex;
+        align-items: baseline;
+        gap: 16px;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--vs-line);
+        flex-wrap: wrap;
+      }
+      .specrow .meta {
+        font-size: 11.5px;
+        color: var(--vs-ink-3);
+        font-weight: 600;
+        margin-left: auto;
+      }
+      @media (min-width: 768px) {
+        .specrow .meta {
+          white-space: nowrap;
+        }
+      }
+      .iconwall {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(86px, 1fr));
+        gap: 8px;
+      }
+      .iconwall div {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        padding: 12px 4px;
+        border: 1px solid var(--vs-line);
+        border-radius: var(--vs-r-sm);
+        background: var(--vs-surface);
+        font-size: 10.5px;
+        color: var(--vs-ink-3);
+      }
+      .iconwall svg {
+        width: 22px;
+        height: 22px;
+        color: var(--vs-ink);
+      }
+      .radii {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .radii div {
+        width: 82px;
+        height: 82px;
+        background: var(--vs-surface);
+        border: 1px solid var(--vs-line-strong);
+        display: grid;
+        place-items: center;
+        font-size: 11px;
+        font-weight: 700;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body data-nav="settings">
+    <main class="main">
+      <div class="container">
+        <header class="pagehead">
+          <div>
+            <p class="eyebrow">Round 24</p>
+            <h1>Design system</h1>
+            <p class="sub">Every token and component, on the surfaces it is licensed for</p>
+          </div>
+        </header>
+
+        <!-- ================= Colour ================= -->
+        <section aria-labelledby="c-t">
+          <div class="sectionhead" style="margin-top: 0">
+            <h2 id="c-t">Neutrals</h2>
+          </div>
+          <div class="sw">
+            <figure>
+              <div class="chip" style="background: #f5f6f2; color: #171a15">Aa</div>
+              <figcaption><b>canvas</b><br /><code>#F5F6F2</code><br />app background</figcaption>
+            </figure>
+            <figure>
+              <div class="chip" style="background: #fff; color: #171a15">Aa</div>
+              <figcaption><b>surface</b><br /><code>#FFFFFF</code><br />card</figcaption>
+            </figure>
+            <figure>
+              <div class="chip" style="background: #f0f2ea; color: #171a15">Aa</div>
+              <figcaption><b>surface-soft</b><br /><code>#F0F2EA</code><br />chip / inset</figcaption>
+            </figure>
+            <figure>
+              <div class="chip" style="background: #e7eade; color: #171a15">Aa</div>
+              <figcaption><b>surface-sunken</b><br /><code>#E7EADE</code><br />track / rail</figcaption>
+            </figure>
+          </div>
+
+          <div class="sectionhead">
+            <h2>Ink ramp</h2>
+          </div>
+          <div class="sw">
+            <figure>
+              <div class="chip" style="background: #171a15; color: #f7f8f4">Aa</div>
+              <figcaption><b>ink</b><br /><code>#171A15</code><br />16.3:1 · any text</figcaption>
+            </figure>
+            <figure>
+              <div class="chip" style="background: #fff; color: #4e5348">Aa</div>
+              <figcaption><b>ink-2</b><br /><code>#4E5348</code><br />7.8:1 · any text</figcaption>
+            </figure>
+            <figure>
+              <div class="chip" style="background: #fff; color: #6e7468">Aa</div>
+              <figcaption>
+                <b>ink-3</b><br /><code>#6E7468</code><br />4.8:1 on white · on canvas, large text only
+              </figcaption>
+            </figure>
+            <figure>
+              <div class="chip" style="background: #fff; color: #8b9184">Aa</div>
+              <figcaption>
+                <b>ink-4</b><br /><code>#8B9184</code><br />3.2:1 · placeholders and marks only, never copy
+              </figcaption>
+            </figure>
+          </div>
+
+          <div class="sectionhead">
+            <h2>Accent</h2>
+          </div>
+          <div class="sw">
+            <figure>
+              <div class="chip" style="background: #cdf564; color: #171a15">Aa</div>
+              <figcaption><b>accent</b><br /><code>#CDF564</code><br />fill · ink on it = 14.3:1</figcaption>
+            </figure>
+            <figure>
+              <div class="chip" style="background: #eafbc4; color: #4e6b12">Aa</div>
+              <figcaption><b>accent-soft</b><br /><code>#EAFBC4</code><br />tint ground</figcaption>
+            </figure>
+            <figure>
+              <div class="chip" style="background: #fff; color: #4e6b12">Aa</div>
+              <figcaption><b>accent-ink</b><br /><code>#4E6B12</code><br />6.0:1 · accent as text</figcaption>
+            </figure>
+            <figure>
+              <div class="chip" style="background: #74961f; color: #fff">Aa</div>
+              <figcaption><b>accent-edge</b><br /><code>#74961F</code><br />3.4:1 · control boundary</figcaption>
+            </figure>
+          </div>
+
+          <div class="sectionhead">
+            <h2>Semantic · session intensity · day resolution</h2>
+          </div>
+          <div class="wrap" style="gap: 8px; margin-bottom: 14px">
+            <span class="badge done"><span data-icon="check"></span>Completed</span>
+            <span class="badge skipped"><span data-icon="skip"></span>Skipped</span>
+            <span class="badge late"><span data-icon="alert"></span>Needs attention</span>
+            <span class="badge info"><span data-icon="info"></span>Information</span>
+            <span class="badge current">Now / Current</span>
+            <span class="badge partial"><span data-icon="skip"></span>2 skipped</span>
+          </div>
+          <div class="wrap" style="gap: 8px; margin-bottom: 14px">
+            <span class="badge hard">HARD</span>
+            <span class="badge light">LIGHT</span>
+            <span class="badge pump">PUMP</span>
+          </div>
+          <div class="wrap" style="gap: 8px">
+            <span class="badge scheduled"><span data-icon="calendar"></span>Scheduled</span>
+            <span class="badge recovery"><span data-icon="recovery"></span>Recovery</span>
+            <span class="badge extra"><span data-icon="plus"></span>Extra</span>
+            <span class="badge holiday"><span data-icon="holiday"></span>Holiday</span>
+          </div>
+          <p class="tiny muted" style="margin: 14px 0 0; max-width: 72ch">
+            <b>Extra is an outline chip, not a fill.</b> It sits in the training-green family
+            because it is training, but shape — not hue — keeps it distinct from an
+            accent-soft surface and from the ink-filled <b>current</b> marker. UI state
+            (“Now”, “Current”, “In progress”) never borrows a provenance chip's styling, or
+            the provenance signal stops being a signal.
+          </p>
+          <p class="tiny muted" style="margin: 10px 0 0; max-width: 72ch">
+            Session intensity and day resolution are two separate axes. Hue overlap between
+            them is deliberate: they never appear in the same legend, and every badge on both
+            axes carries an icon <b>and</b> a word, so no status is ever communicated by colour
+            alone.
+          </p>
+        </section>
+
+        <!-- ================= Type ================= -->
+        <section aria-labelledby="t-t">
+          <div class="sectionhead">
+            <h2 id="t-t">Type scale</h2>
+          </div>
+          <div class="card">
+            <div class="specrow"><span class="display">80.4</span><span class="meta">display · 700 44/1.02 · tabular</span></div>
+            <div class="specrow"><span class="h1">Page title</span><span class="meta">h1 · 700 28/1.14 → 32 at ≥768</span></div>
+            <div class="specrow"><span class="h2">Section title</span><span class="meta">h2 · 700 19/1.26</span></div>
+            <div class="specrow"><span class="h3">Card title</span><span class="meta">h3 · 650 16/1.3</span></div>
+            <div class="specrow"><span>Body copy — the default</span><span class="meta">body · 450 15/1.5</span></div>
+            <div class="specrow"><span class="small muted">Supporting copy</span><span class="meta">body-sm · 450 13.5/1.46</span></div>
+            <div class="specrow"><span class="label">Field label</span><span class="meta">label · 600 12/1.2</span></div>
+            <div class="specrow" style="border-bottom: 0"><span class="eyebrow" style="margin: 0">Eyebrow</span><span class="meta">eyebrow · 700 11 · 0.09em · the only licensed uppercase</span></div>
+          </div>
+        </section>
+
+        <!-- ================= Shape + elevation ================= -->
+        <section aria-labelledby="s-t">
+          <div class="sectionhead">
+            <h2 id="s-t">Radius and elevation</h2>
+          </div>
+          <div class="radii" style="margin-bottom: 18px">
+            <div style="border-radius: 8px">8<br />chip</div>
+            <div style="border-radius: 12px">12<br />input</div>
+            <div style="border-radius: 16px">16<br />button<br />row</div>
+            <div style="border-radius: 22px">22<br />card</div>
+            <div style="border-radius: 28px">28<br />hero<br />sheet</div>
+            <div style="border-radius: 999px">pill</div>
+          </div>
+          <div class="grid3">
+            <div class="card" style="box-shadow: none"><b>none</b><p class="tiny muted" style="margin: 4px 0 0">quiet / dashed blocks</p></div>
+            <div class="card"><b>shadow-card</b><p class="tiny muted" style="margin: 4px 0 0">every card and hero</p></div>
+            <div class="card" style="box-shadow: var(--vs-shadow-raised)"><b>shadow-raised</b><p class="tiny muted" style="margin: 4px 0 0">sheet, dialog, popover</p></div>
+          </div>
+        </section>
+
+        <!-- ================= Controls ================= -->
+        <section aria-labelledby="b-t">
+          <div class="sectionhead">
+            <h2 id="b-t">Buttons</h2>
+          </div>
+          <div class="card">
+            <div class="wrap" style="gap: 10px; margin-bottom: 14px">
+              <button class="btn btn-primary" type="button"><span data-icon="play"></span>Primary</button>
+              <button class="btn btn-ink" type="button">Ink</button>
+              <button class="btn btn-secondary" type="button">Secondary</button>
+              <button class="btn btn-ghost" type="button">Ghost</button>
+              <button class="btn btn-danger" type="button"><span data-icon="trash"></span>Destructive</button>
+              <button class="btn btn-primary" type="button" disabled aria-disabled="true">Disabled</button>
+            </div>
+            <div class="wrap" style="gap: 10px; align-items: center">
+              <button class="btn btn-primary btn-lg" type="button"><span data-icon="check"></span>Large · 56px, gym</button>
+              <button class="btn btn-primary" type="button">Default · 44px</button>
+              <button class="btn btn-primary btn-sm" type="button">Small · 36px</button>
+              <button class="iconbtn" type="button" aria-label="Icon button"><span data-icon="pencil"></span></button>
+            </div>
+            <p class="tiny muted" style="margin: 14px 0 0">
+              44px is the floor for anything tappable. In-gym primaries are 56px. Every
+              icon-only control carries an <code>aria-label</code>.
+            </p>
+          </div>
+
+          <div class="sectionhead">
+            <h2>Segmented pills</h2>
+          </div>
+          <div class="pilltabs" role="tablist" aria-label="Example">
+            <button role="tab" type="button" aria-selected="true">30D</button>
+            <button role="tab" type="button" aria-selected="false">90D</button>
+            <button role="tab" type="button" aria-selected="false">6M</button>
+            <button role="tab" type="button" aria-selected="false">All</button>
+          </div>
+
+          <div class="sectionhead">
+            <h2>Fields</h2>
+          </div>
+          <div class="card">
+            <div class="grid2" style="gap: 14px">
+              <div class="field">
+                <label for="f1">Standard</label>
+                <input id="f1" type="text" placeholder="Placeholder" />
+              </div>
+              <div class="field">
+                <label for="f2">Invalid</label>
+                <input id="f2" type="text" value="-3" aria-invalid="true" aria-describedby="f2e" />
+                <span class="err" id="f2e">Must be a positive whole number.</span>
+              </div>
+            </div>
+            <div class="field gym" style="margin-top: 14px; max-width: 260px">
+              <label for="f3">Gym stepper · 56px</label>
+              <div class="stepper">
+                <button class="iconbtn" type="button" aria-label="Decrease"><span data-icon="minus"></span></button>
+                <input id="f3" type="text" inputmode="decimal" value="22.5" />
+                <button class="iconbtn" type="button" aria-label="Increase"><span data-icon="plus"></span></button>
+              </div>
+            </div>
+            <p class="tiny muted" style="margin: 14px 0 0">
+              Inputs are 16px so iOS never zooms on focus. Field borders use
+              <code>line-control</code> (3.2:1) to satisfy WCAG 1.4.11.
+            </p>
+          </div>
+        </section>
+
+        <!-- ================= Feedback ================= -->
+        <section aria-labelledby="fb-t">
+          <div class="sectionhead">
+            <h2 id="fb-t">Feedback and states</h2>
+          </div>
+          <div class="stack" style="gap: 12px">
+            <div class="banner info"><span data-icon="info"></span><span class="grow"><b>Information</b>Something worth knowing that needs no action.</span></div>
+            <div class="banner success"><span data-icon="check"></span><span class="grow"><b>Saved</b>The write landed.</span></div>
+            <div class="banner warn" role="alert"><span data-icon="alert"></span><span class="grow"><b>Refused</b>This action is not allowed right now, and why.</span></div>
+            <div class="banner danger" role="alert"><span data-icon="alert"></span><span class="grow"><b>Failed</b>What went wrong, what was <i>not</i> lost, and one retry.</span></div>
+          </div>
+
+          <div class="split2" style="margin-top: 16px">
+            <div class="card">
+              <p class="label" style="margin: 0 0 12px">Loading — skeleton of the real shape</p>
+              <span class="skeleton" style="display: block; height: 14px; width: 55%"></span>
+              <span class="skeleton" style="display: block; height: 11px; width: 35%; margin-top: 8px"></span>
+              <span class="skeleton" style="display: block; height: 64px; margin-top: 12px"></span>
+            </div>
+            <div class="empty">
+              <span class="icn"><span data-icon="training" style="display: block; width: 22px; height: 22px"></span></span>
+              <div>
+                <p class="rowtitle">Nothing here yet</p>
+                <p class="rowsub">What would put something here, in one line.</p>
+              </div>
+              <button class="btn btn-primary btn-sm" type="button">The one action</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================= Set rows ================= -->
+        <section aria-labelledby="sr-t">
+          <div class="sectionhead">
+            <h2 id="sr-t">Set rows</h2>
+          </div>
+          <ul class="list">
+            <li class="setrow"><span class="idx">1</span><span class="grow"><span class="what muted">Pending</span></span></li>
+            <li class="setrow done">
+              <span class="idx">2</span>
+              <span class="grow"><span class="what">12 reps · 22.5kg each</span><span class="rowsub" style="color: var(--vs-success-ink)">Completed</span></span>
+              <button class="btn btn-ghost btn-sm" type="button"><span data-icon="undo"></span>Undo</button>
+            </li>
+            <li class="setrow done">
+              <span class="idx">3</span>
+              <span class="grow"><span class="what">15 reps · Black ×3 <span class="corrected">Corrected</span></span></span>
+            </li>
+            <li class="setrow skipped">
+              <span class="idx">4</span>
+              <span class="grow"><span class="what">Skipped</span><span class="rowsub" style="color: var(--vs-warn-ink)">Not a completed set</span></span>
+            </li>
+          </ul>
+        </section>
+
+        <!-- ================= Icons ================= -->
+        <section aria-labelledby="i-t">
+          <div class="sectionhead">
+            <h2 id="i-t">Icon set</h2>
+            <span class="small muted">24 × 24 · 1.9 stroke · round caps</span>
+          </div>
+          <div class="iconwall" id="iconwall"></div>
+        </section>
+      </div>
+    </main>
+
+    <script>
+      window.addEventListener('DOMContentLoaded', () => {
+        const wall = document.getElementById('iconwall')
+        wall.innerHTML = Object.keys(window.VS.ICONS)
+          .map((n) => `<div>${window.VS.svg(n)}<span>${n}</span></div>`)
+          .join('')
+      })
+    </script>
+  </body>
+</html>

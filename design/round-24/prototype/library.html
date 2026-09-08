@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Exercise Library · VShape100 Round 24 prototype</title>
+    <link rel="stylesheet" href="vs.css" />
+    <script defer src="vs.js"></script>
+  </head>
+  <body data-nav="settings">
+    <main class="main">
+      <div class="container">
+        <a class="btn btn-ghost btn-sm" href="settings.html" style="margin-bottom: 12px; padding-left: 0">
+          <span data-icon="back"></span>Settings
+        </a>
+
+        <header class="pagehead">
+          <div>
+            <p class="eyebrow">Settings</p>
+            <h1>Exercise Library</h1>
+            <p class="sub">One canonical record per exercise, shared by every day it appears on</p>
+          </div>
+          <button class="btn btn-primary" type="button">
+            <span data-icon="plus"></span><span class="desk-only">Add exercise</span>
+          </button>
+        </header>
+
+        <div class="field" style="margin-bottom: 14px">
+          <label for="q" class="sr-only">Search exercises</label>
+          <input id="q" type="search" placeholder="Search exercises" autocomplete="off" />
+        </div>
+
+        <div class="pilltabs" role="tablist" aria-label="Filter" style="margin-bottom: var(--vs-section-gap)">
+          <button role="tab" type="button" aria-selected="true">All 14</button>
+          <button role="tab" type="button" aria-selected="false">Weight 8</button>
+          <button role="tab" type="button" aria-selected="false">Band 4</button>
+          <button role="tab" type="button" aria-selected="false">Bodyweight 2</button>
+          <button role="tab" type="button" aria-selected="false">Needs media 3</button>
+          <button role="tab" type="button" aria-selected="false">Archived 1</button>
+        </div>
+
+        <div class="cols even">
+          <div class="stack">
+            <ul class="list">
+              <li>
+                <a class="card listrow" href="#">
+                  <span class="lead" aria-hidden="true" style="border-radius: 13px; overflow: hidden">
+                    <span data-icon="image" style="display: block; width: 19px; height: 19px"></span>
+                  </span>
+                  <span class="grow">
+                    <span class="rowtitle">Lat Pulldown</span>
+                    <span class="wrap" style="margin-top: 5px">
+                      <span class="badge neutral"><span data-icon="band"></span>Resistance band</span>
+                      <span class="badge done"><span data-icon="check"></span>Media set</span>
+                      <span class="badge outline">Mon · Wed · Thu</span>
+                    </span>
+                  </span>
+                  <span class="chev" data-icon="right"></span>
+                </a>
+              </li>
+
+              <li>
+                <a class="card listrow" href="#">
+                  <span class="lead" aria-hidden="true">
+                    <span data-icon="image" style="display: block; width: 19px; height: 19px"></span>
+                  </span>
+                  <span class="grow">
+                    <span class="rowtitle">One-Arm DB Row</span>
+                    <span class="wrap" style="margin-top: 5px">
+                      <span class="badge neutral"><span data-icon="training"></span>Weight (kg)</span>
+                      <span class="badge done"><span data-icon="check"></span>Media set</span>
+                      <span class="badge outline">Mon</span>
+                    </span>
+                  </span>
+                  <span class="chev" data-icon="right"></span>
+                </a>
+              </li>
+
+              <li>
+                <a class="card listrow" href="#">
+                  <span class="lead" aria-hidden="true">
+                    <span data-icon="image" style="display: block; width: 19px; height: 19px"></span>
+                  </span>
+                  <span class="grow">
+                    <span class="rowtitle">Plank</span>
+                    <span class="wrap" style="margin-top: 5px">
+                      <span class="badge neutral"><span data-icon="user"></span>Bodyweight / no load</span>
+                      <span class="badge late">No media</span>
+                      <span class="badge outline">Wed</span>
+                    </span>
+                  </span>
+                  <span class="chev" data-icon="right"></span>
+                </a>
+              </li>
+
+              <li>
+                <a class="card listrow" href="#" style="border-color: #ecd7a6">
+                  <span class="lead" aria-hidden="true" style="background: var(--vs-warn-soft); color: var(--vs-warn-ink)">
+                    <span data-icon="alert" style="display: block; width: 19px; height: 19px"></span>
+                  </span>
+                  <span class="grow">
+                    <span class="rowtitle">Cable Fly</span>
+                    <span class="wrap" style="margin-top: 5px">
+                      <span class="badge late"><span data-icon="alert"></span>Input type not set</span>
+                      <span class="badge outline">Tue</span>
+                    </span>
+                    <span class="rowsub" style="margin-top: 6px; color: var(--vs-warn-ink)">
+                      Sets for this exercise cannot be logged until an input type is chosen.
+                    </span>
+                  </span>
+                  <span class="chev" data-icon="right"></span>
+                </a>
+              </li>
+
+              <li>
+                <a class="card listrow" href="#" style="border-style: dashed; box-shadow: none">
+                  <span class="lead" aria-hidden="true">
+                    <span data-icon="lock" style="display: block; width: 19px; height: 19px"></span>
+                  </span>
+                  <span class="grow">
+                    <span class="rowtitle muted">Machine Chest Press</span>
+                    <span class="wrap" style="margin-top: 5px">
+                      <span class="badge neutral">Archived</span>
+                      <span class="badge outline">Not in any weekday</span>
+                    </span>
+                    <span class="rowsub" style="margin-top: 6px">
+                      Keeps its history and media. It just cannot appear in a future workout.
+                    </span>
+                  </span>
+                  <span class="chev" data-icon="right"></span>
+                </a>
+              </li>
+            </ul>
+          </div>
+
+          <!-- ============ Detail / editor ============ -->
+          <div class="stack">
+            <section class="card" aria-labelledby="ed-t">
+              <p class="eyebrow">Exercise</p>
+              <h2 id="ed-t" style="margin-bottom: 14px">Lat Pulldown</h2>
+
+              <div class="mediaframe" style="margin-bottom: 16px">
+                <span class="row" style="flex-direction: column; gap: 8px; color: var(--vs-ink-4)">
+                  <span data-icon="image" style="display: block; width: 30px; height: 30px"></span>
+                  <span class="tiny" style="font-weight: 650">Demo media · contain, never cropped</span>
+                </span>
+              </div>
+
+              <div class="stack" style="gap: 14px">
+                <div class="field">
+                  <label for="nm">Display name</label>
+                  <input id="nm" type="text" value="Lat Pulldown" />
+                  <span class="hint">
+                    Renaming changes the label only. Its identity, media, input type, personal
+                    bests and every logged set stay attached.
+                  </span>
+                </div>
+
+                <div class="field">
+                  <label for="mu">Media URL</label>
+                  <input id="mu" type="url" value="https://example.com/lat-pulldown.gif" />
+                </div>
+
+                <div class="field">
+                  <label for="ma">Media description</label>
+                  <input id="ma" type="text" value="Seated lat pulldown, wide grip, full range" />
+                  <span class="hint">Required. Never decorative — it is what someone who cannot see the clip reads.</span>
+                </div>
+
+                <fieldset style="border: 0; padding: 0; margin: 0">
+                  <legend class="label" style="padding: 0; margin-bottom: 8px">Canonical input type</legend>
+                  <div class="pilltabs" role="tablist" aria-label="Canonical input type">
+                    <button role="tab" type="button" aria-selected="false">Weight (kg)</button>
+                    <button role="tab" type="button" aria-selected="true">Resistance band</button>
+                    <button role="tab" type="button" aria-selected="false">Bodyweight</button>
+                  </div>
+                  <p class="tiny muted" style="margin: 10px 0 0">
+                    A named band and how many. Never converted to kilograms. Changing this
+                    applies to your <b>next</b> workout — workouts already started keep the
+                    modality they were started with.
+                  </p>
+                </fieldset>
+              </div>
+
+              <div class="wrap" style="margin-top: 18px">
+                <button class="btn btn-primary" type="button"><span data-icon="check"></span>Save</button>
+                <button class="btn btn-ghost" type="button">Cancel</button>
+                <button class="btn btn-ghost btn-sm" type="button" style="margin-left: auto; color: var(--vs-danger-ink)">
+                  <span data-icon="lock"></span>Archive
+                </button>
+              </div>
+            </section>
+
+            <section class="card" aria-labelledby="wk-t">
+              <h2 id="wk-t" style="margin-bottom: 4px">Where it appears</h2>
+              <p class="sub" style="margin-bottom: 14px">
+                One exercise, several prescriptions. Edit the week itself in the Programme.
+              </p>
+              <ul class="list divided" style="border-top: 1px solid var(--vs-line)">
+                <li class="listrow" style="padding-left: 0; padding-right: 0">
+                  <span class="grow"><span class="rowtitle">Monday</span></span>
+                  <span class="small muted">4 × 10–15 · position 1</span>
+                </li>
+                <li class="listrow" style="padding-left: 0; padding-right: 0">
+                  <span class="grow"><span class="rowtitle">Wednesday</span></span>
+                  <span class="small muted">2 × 15–20 · position 1</span>
+                </li>
+                <li class="listrow" style="padding-left: 0; padding-right: 0">
+                  <span class="grow"><span class="rowtitle">Thursday</span></span>
+                  <span class="small muted">4 × 10–15 · position 1</span>
+                </li>
+              </ul>
+              <a class="btn btn-secondary btn-sm" href="programme.html" style="margin-top: 14px">
+                <span data-icon="pencil"></span>Edit in Programme
+              </a>
+            </section>
+          </div>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

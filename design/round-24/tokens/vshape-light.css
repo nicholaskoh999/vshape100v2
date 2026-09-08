@@ -1,0 +1,408 @@
+/* =====================================================================
+   VSHAPE100 v2 — Round 24 light design system
+   ---------------------------------------------------------------------
+   BLUEPRINT ARTEFACT. This file is NOT imported by the app in Round 24.
+   It is the locked token layer the implementation round would adopt.
+
+   It is written to mirror the structure of src/design/tokens.css so that
+   adoption is a SWAP, not a rewrite:
+
+     Phase 1 (compatibility shim)  re-point the token NAMES the codebase
+                                   already uses to the new light values.
+                                   Every existing `bg-surface`,
+                                   `text-ink-dim`, `border-edge` keeps
+                                   working and the app becomes light in
+                                   one commit.
+     Phase 2 (rename)              mechanical rename of those legacy names
+                                   to the role names below. Codemod-able,
+                                   zero behavioural risk.
+
+   Every value below is contrast-checked. The comment on each text token
+   states the ratio it achieves and the surfaces it is licensed for. Do
+   not use a text token on a surface it is not licensed for.
+   ===================================================================== */
+
+@import 'tailwindcss';
+
+/* =====================================================================
+   1. RAW PALETTE — the only place a literal colour is written
+   ===================================================================== */
+
+:root {
+  /* ---- Neutrals: warm off-white canvas, pure white cards ---- */
+  --vs-canvas: #f5f6f2; /* app background — warm, very light */
+  --vs-surface: #ffffff; /* primary card surface */
+  --vs-surface-soft: #f0f2ea; /* secondary / inset surface, chip ground */
+  --vs-surface-sunken: #e7eade; /* track, skeleton, progress rail */
+  --vs-scrim: rgb(23 26 21 / 0.44); /* sheet + modal overlay */
+
+  /* ---- Ink ramp ----
+     ink    16.3:1 on surface · 15.6:1 on canvas   any text
+     ink-2   7.8:1 on surface ·  7.2:1 on canvas   any text
+     ink-3   4.8:1 on surface ·  4.4:1 on canvas   SMALL TEXT ON WHITE ONLY;
+                                                    on canvas it is large-text
+                                                    (>=18.66px bold / 24px) only
+     ink-4   3.2:1 on surface                      placeholders, disabled
+                                                    labels, decorative marks.
+                                                    NEVER load-bearing copy. */
+  --vs-ink: #171a15;
+  --vs-ink-2: #4e5348;
+  --vs-ink-3: #6e7468;
+  --vs-ink-4: #8b9184;
+  --vs-ink-on-dark: #f7f8f4; /* text on an ink-filled pill / button */
+
+  /* ---- Lines ----
+     line          1.6:1  decorative hairline. Legitimate ONLY where the
+                          surface/canvas step already separates the block.
+     line-strong   2.3:1  stronger hairline for dense list separation.
+     line-control  3.2:1  MANDATORY for any input, checkbox, radio, toggle
+                          or focusable control boundary (WCAG 1.4.11). */
+  --vs-line: #e4e7de;
+  --vs-line-strong: #d0d5c6;
+  --vs-line-control: #8b9184;
+
+  /* ---- Accent: lime. A FILL, never small text. ----
+     accent       used as a fill; ink on accent = 14.3:1
+     accent-edge  3.4:1 on white — the boundary of an accent fill
+     accent-ink   6.0:1 on white / 5.5:1 on accent-soft — accent as TEXT
+     accent-soft  tint ground for accent chips and highlights */
+  --vs-accent: #cdf564;
+  --vs-accent-edge: #74961f;
+  --vs-accent-ink: #4e6b12;
+  --vs-accent-soft: #eafbc4;
+  --vs-accent-press: #c0ea50; /* :active fill */
+
+  /* ---- Semantic ----
+     Each has an -ink (>=4.5:1 on white, for text and icons carrying
+     meaning) and a -soft (tint ground). -mark is for non-text marks such
+     as chart bars and calendar dots and clears 3:1. */
+  --vs-success-ink: #1f7a46;
+  --vs-success-soft: #e1f4e8;
+  --vs-success-mark: #2f9c5c;
+
+  --vs-warn-ink: #8a5a00;
+  --vs-warn-soft: #fbf0d8;
+  --vs-warn-mark: #c77f06;
+
+  --vs-danger-ink: #b3261e;
+  --vs-danger-soft: #fbe6e4;
+  --vs-danger-mark: #c9382f;
+
+  --vs-info-ink: #1d5fbf;
+  --vs-info-soft: #e3edfb;
+  --vs-info-mark: #2f6bff;
+
+  /* ---- Session intensity (LOCKED SEMANTICS, retuned for a light ground)
+     HARD / LIGHT / PUMP keep their hue families from the accepted
+     palette. Only luminance changed, because the ground changed. ---- */
+  --vs-hard-ink: #c2453a;
+  --vs-hard-soft: #fce9e6;
+  --vs-light-ink: #0e6e7b;
+  --vs-light-soft: #ddf1f4;
+  --vs-pump-ink: #6a45c7;
+  --vs-pump-soft: #ebe4fa;
+
+  /* ---- Day resolution (Scheduled / Recovery / Extra / Holiday) ----
+     A SEPARATE AXIS from session intensity. Hue overlap between the two
+     axes is permitted and deliberate: they never appear in one legend,
+     and every badge on both axes carries an icon AND a word, so no status
+     is ever communicated by colour alone. */
+  --vs-scheduled-ink: #4e5348; /* neutral: the default obligation */
+  --vs-scheduled-soft: #f0f2ea;
+  --vs-recovery-ink: #0e6e7b;
+  --vs-recovery-soft: #ddf1f4;
+  --vs-extra-ink: #4e6b12;
+  --vs-extra-soft: #eafbc4;
+  --vs-holiday-ink: #6a45c7;
+  --vs-holiday-soft: #ebe4fa;
+
+  /* ---- Chart series ----
+     Ordered for categorical use. 1 is the "current / primary" series and
+     is the only one allowed to be the accent. Every series is paired with
+     a direct label or a shape difference; the legend is never the only
+     way to tell them apart. */
+  --vs-series-1: #74961f;
+  --vs-series-2: #1d5fbf;
+  --vs-series-3: #6a45c7;
+  --vs-series-4: #c77f06;
+  --vs-series-5: #0e6e7b;
+  --vs-grid: #e4e7de;
+  --vs-grid-axis: #d0d5c6;
+
+  /* =====================================================================
+     2. SHAPE
+     ===================================================================== */
+
+  --vs-r-xs: 8px; /* micro chip, tag */
+  --vs-r-sm: 12px; /* input, small control */
+  --vs-r-md: 16px; /* button, list row, media thumb */
+  --vs-r-lg: 22px; /* card */
+  --vs-r-xl: 28px; /* hero card, bottom sheet */
+  --vs-r-pill: 999px; /* pill, segmented control, avatar */
+
+  /* =====================================================================
+     3. ELEVATION
+     Soft separation only. A card is identified by its white surface
+     against the canvas first; the shadow is a whisper, not the boundary.
+     ===================================================================== */
+
+  --vs-shadow-card: 0 1px 2px rgb(23 26 21 / 0.04),
+    0 10px 24px -18px rgb(23 26 21 / 0.16);
+  --vs-shadow-raised: 0 2px 6px rgb(23 26 21 / 0.05),
+    0 20px 44px -24px rgb(23 26 21 / 0.22);
+  --vs-shadow-sticky: 0 -10px 26px -20px rgb(23 26 21 / 0.24);
+  --vs-shadow-none: none;
+
+  /* =====================================================================
+     4. SPACING RHYTHM
+     4px base. Screens differ in gutter and section gap only — never in
+     the internal rhythm of a card.
+     ===================================================================== */
+
+  --vs-gutter: 20px; /* mobile page inline padding */
+  --vs-gutter-md: 32px; /* tablet */
+  --vs-gutter-xl: 40px; /* desktop */
+
+  --vs-section-gap: 20px; /* between top-level blocks, mobile */
+  --vs-section-gap-md: 24px;
+
+  --vs-card-pad: 20px; /* mobile card padding */
+  --vs-card-pad-md: 24px;
+  --vs-hero-pad: 24px;
+  --vs-hero-pad-md: 28px;
+
+  --vs-row-gap: 10px; /* between rows inside one list card */
+
+  /* Minimum interactive box. Nothing tappable is smaller than this. */
+  --vs-tap-min: 44px;
+  /* Primary in-gym actions are larger than the minimum on purpose. */
+  --vs-tap-gym: 56px;
+
+  /* Reserved space so sticky bars never sit on top of content. */
+  --vs-bottom-nav-h: 64px;
+  --vs-sticky-action-h: 72px;
+
+  /* =====================================================================
+     5. TYPE
+     Existing stack retained: Outfit Variable is already a dependency and
+     its geometric forms suit the direction. No font change is needed and
+     none is proposed.
+     ===================================================================== */
+
+  --vs-font-sans: 'Outfit Variable', ui-sans-serif, system-ui, -apple-system,
+    'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+
+  /* size / line-height / weight / tracking */
+  --vs-display: 700 44px/1.02 var(--vs-font-sans); /* hero metric */
+  --vs-display-md: 700 56px/1.0 var(--vs-font-sans);
+  --vs-h1: 700 28px/1.14 var(--vs-font-sans); /* page title */
+  --vs-h1-md: 700 32px/1.12 var(--vs-font-sans);
+  --vs-h2: 700 19px/1.26 var(--vs-font-sans); /* section title */
+  --vs-h3: 650 16px/1.3 var(--vs-font-sans); /* card title */
+  --vs-body: 450 15px/1.5 var(--vs-font-sans);
+  --vs-body-strong: 600 15px/1.5 var(--vs-font-sans);
+  --vs-body-sm: 450 13.5px/1.46 var(--vs-font-sans);
+  --vs-label: 600 12px/1.2 var(--vs-font-sans);
+  --vs-eyebrow: 700 11px/1.1 var(--vs-font-sans);
+
+  --vs-tracking-tight: -0.015em; /* display + h1 only */
+  --vs-tracking-eyebrow: 0.09em; /* the ONLY licensed uppercase */
+
+  /* Every number that can be compared vertically is tabular. */
+  --vs-numeric: tabular-nums;
+
+  /* =====================================================================
+     6. MOTION — mirrors src/design/motion.ts. One source, two syntaxes.
+     ===================================================================== */
+
+  --vs-dur-instant: 100ms;
+  --vs-dur-fast: 180ms;
+  --vs-dur-base: 280ms;
+  --vs-dur-slow: 420ms;
+  --vs-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --vs-ease-soft: cubic-bezier(0.45, 0, 0.2, 1);
+}
+
+/* =====================================================================
+   7. TAILWIND v4 THEME MAPPING — Phase 2 role names
+   These generate bg-*, text-*, border-* utilities. Phase 1 additionally
+   re-points the LEGACY names (see section 8) so no className has to
+   change on the day the theme flips.
+   ===================================================================== */
+
+@theme {
+  --color-canvas: var(--vs-canvas);
+  --color-surface: var(--vs-surface);
+  --color-surface-soft: var(--vs-surface-soft);
+  --color-surface-sunken: var(--vs-surface-sunken);
+
+  --color-ink: var(--vs-ink);
+  --color-ink-2: var(--vs-ink-2);
+  --color-ink-3: var(--vs-ink-3);
+  --color-ink-4: var(--vs-ink-4);
+  --color-ink-on-dark: var(--vs-ink-on-dark);
+
+  --color-line: var(--vs-line);
+  --color-line-strong: var(--vs-line-strong);
+  --color-line-control: var(--vs-line-control);
+
+  --color-accent: var(--vs-accent);
+  --color-accent-edge: var(--vs-accent-edge);
+  --color-accent-ink: var(--vs-accent-ink);
+  --color-accent-soft: var(--vs-accent-soft);
+
+  --color-success-ink: var(--vs-success-ink);
+  --color-success-soft: var(--vs-success-soft);
+  --color-warn-ink: var(--vs-warn-ink);
+  --color-warn-soft: var(--vs-warn-soft);
+  --color-danger-ink: var(--vs-danger-ink);
+  --color-danger-soft: var(--vs-danger-soft);
+  --color-info-ink: var(--vs-info-ink);
+  --color-info-soft: var(--vs-info-soft);
+
+  --color-hard-ink: var(--vs-hard-ink);
+  --color-hard-soft: var(--vs-hard-soft);
+  --color-light-ink: var(--vs-light-ink);
+  --color-light-soft: var(--vs-light-soft);
+  --color-pump-ink: var(--vs-pump-ink);
+  --color-pump-soft: var(--vs-pump-soft);
+
+  --color-scheduled-ink: var(--vs-scheduled-ink);
+  --color-scheduled-soft: var(--vs-scheduled-soft);
+  --color-recovery-ink: var(--vs-recovery-ink);
+  --color-recovery-soft: var(--vs-recovery-soft);
+  --color-extra-ink: var(--vs-extra-ink);
+  --color-extra-soft: var(--vs-extra-soft);
+  --color-holiday-ink: var(--vs-holiday-ink);
+  --color-holiday-soft: var(--vs-holiday-soft);
+
+  --font-sans: var(--vs-font-sans);
+
+  --radius-xs: var(--vs-r-xs);
+  --radius-sm: var(--vs-r-sm);
+  --radius-md: var(--vs-r-md);
+  --radius-card: var(--vs-r-lg);
+  --radius-hero: var(--vs-r-xl);
+  --radius-control: var(--vs-r-md);
+
+  --shadow-card: var(--vs-shadow-card);
+  --shadow-raised: var(--vs-shadow-raised);
+
+  --duration-instant: var(--vs-dur-instant);
+  --duration-fast: var(--vs-dur-fast);
+  --duration-base: var(--vs-dur-base);
+  --duration-slow: var(--vs-dur-slow);
+  --ease-out-quart: var(--vs-ease-out);
+  --ease-in-out-soft: var(--vs-ease-soft);
+}
+
+/* =====================================================================
+   8. PHASE 1 COMPATIBILITY SHIM
+   ---------------------------------------------------------------------
+   Adopt this block FIRST. It re-points every token name the current
+   codebase already uses to a light value, so the entire app becomes
+   light without editing a single className. The names read wrong for one
+   commit ("navy" is now off-white); Phase 2 renames them mechanically.
+
+   Three names have NO honest light equivalent and MUST be handled in
+   code rather than shimmed — they are listed with their replacement:
+
+     shadow-card inset white hairline  -> delete; light cards use
+                                          --vs-line + --vs-shadow-card
+     body::before radial ambience      -> delete; the light canvas is flat
+     color-scheme: dark                -> becomes `light`
+   ===================================================================== */
+
+@theme {
+  --color-navy: var(--vs-canvas); /* -> canvas */
+  --color-offwhite: var(--vs-ink); /* -> ink   (INVERTED ROLE) */
+  --color-mutedgrey: var(--vs-ink-3);
+
+  --color-surface-raised: var(--vs-surface); /* -> surface */
+  --color-surface-overlay: var(--vs-surface-soft);
+  --color-edge: var(--vs-line);
+  --color-edge-strong: var(--vs-line-strong);
+
+  --color-ink-dim: var(--vs-ink-2);
+  --color-ink-faint: var(--vs-ink-3);
+
+  --color-blue: var(--vs-info-ink);
+  --color-lime: var(--vs-accent);
+  --color-coral: var(--vs-danger-ink);
+  --color-cyan: var(--vs-light-ink);
+  --color-purple: var(--vs-pump-ink);
+
+  --color-hard: var(--vs-hard-ink);
+  --color-light-day: var(--vs-light-ink);
+  --color-pump: var(--vs-pump-ink);
+  --color-holiday: var(--vs-holiday-ink);
+  --color-energy: var(--vs-accent-ink);
+  --color-completed: var(--vs-success-ink);
+  --color-late: var(--vs-warn-ink);
+}
+
+/* =====================================================================
+   9. BASE
+   ===================================================================== */
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--vs-canvas);
+  color: var(--vs-ink);
+  font: var(--vs-body);
+  font-variant-numeric: var(--vs-numeric);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* No ambient gradient. The light canvas is deliberately flat — the
+   separation the dark theme got from glow now comes from the
+   canvas -> surface luminance step. */
+
+:focus-visible {
+  outline: 2px solid var(--vs-ink);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* On an accent or ink fill a dark ring disappears; invert it there. */
+.vs-on-accent:focus-visible,
+.vs-on-ink:focus-visible {
+  outline-color: var(--vs-ink-on-dark);
+}
+
+::selection {
+  background: var(--vs-accent);
+  color: var(--vs-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Forced-colors: never rely on our colours to carry status there. Every
+   status in this system also carries an icon and a word, so this mode
+   degrades to legible rather than ambiguous. */
+@media (forced-colors: active) {
+  .vs-pill,
+  .vs-card,
+  .vs-btn {
+    border: 1px solid CanvasText;
+  }
+}

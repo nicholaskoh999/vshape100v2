@@ -1,0 +1,1793 @@
+/* =====================================================================
+   VSHAPE100 v2 — Round 24 prototype stylesheet
+   ---------------------------------------------------------------------
+   DESIGN EVIDENCE ONLY. Not imported by the app, not part of the build.
+   Plain CSS with no build step so every screen opens from file://.
+
+   Values are the locked token layer in ../tokens/vshape-light.css.
+   Component classes here are the visual spec for the components listed
+   in ../06_COMPONENT_INVENTORY.md.
+   ===================================================================== */
+
+/* ---------------------------------------------------------------- */
+/* Tokens                                                            */
+/* ---------------------------------------------------------------- */
+
+:root {
+  --vs-canvas: #f5f6f2;
+  --vs-surface: #ffffff;
+  --vs-surface-soft: #f0f2ea;
+  --vs-surface-sunken: #e7eade;
+  --vs-scrim: rgb(23 26 21 / 0.44);
+
+  --vs-ink: #171a15;
+  --vs-ink-2: #4e5348;
+  --vs-ink-3: #6e7468;
+  --vs-ink-4: #8b9184;
+  --vs-ink-on-dark: #f7f8f4;
+
+  --vs-line: #e4e7de;
+  --vs-line-strong: #d0d5c6;
+  --vs-line-control: #8b9184;
+
+  --vs-accent: #cdf564;
+  --vs-accent-edge: #74961f;
+  --vs-accent-ink: #4e6b12;
+  --vs-accent-soft: #eafbc4;
+  --vs-accent-press: #c0ea50;
+
+  --vs-success-ink: #1f7a46;
+  --vs-success-soft: #e1f4e8;
+  --vs-success-mark: #2f9c5c;
+  --vs-warn-ink: #8a5a00;
+  --vs-warn-soft: #fbf0d8;
+  --vs-warn-mark: #c77f06;
+  --vs-danger-ink: #b3261e;
+  --vs-danger-soft: #fbe6e4;
+  --vs-danger-mark: #c9382f;
+  --vs-info-ink: #1d5fbf;
+  --vs-info-soft: #e3edfb;
+
+  --vs-hard-ink: #c2453a;
+  --vs-hard-soft: #fce9e6;
+  --vs-light-ink: #0e6e7b;
+  --vs-light-soft: #ddf1f4;
+  --vs-pump-ink: #6a45c7;
+  --vs-pump-soft: #ebe4fa;
+
+  --vs-scheduled-ink: #4e5348;
+  --vs-scheduled-soft: #f0f2ea;
+  --vs-recovery-ink: #0e6e7b;
+  --vs-recovery-soft: #ddf1f4;
+  --vs-extra-ink: #4e6b12;
+  --vs-extra-soft: #eafbc4;
+  --vs-holiday-ink: #6a45c7;
+  --vs-holiday-soft: #ebe4fa;
+
+  --vs-series-1: #74961f;
+  --vs-series-2: #1d5fbf;
+  --vs-series-3: #6a45c7;
+  --vs-series-4: #c77f06;
+  --vs-grid: #e4e7de;
+  --vs-grid-axis: #d0d5c6;
+
+  --vs-r-xs: 8px;
+  --vs-r-sm: 12px;
+  --vs-r-md: 16px;
+  --vs-r-lg: 22px;
+  --vs-r-xl: 28px;
+  --vs-r-pill: 999px;
+
+  --vs-shadow-card: 0 1px 2px rgb(23 26 21 / 0.04),
+    0 10px 24px -18px rgb(23 26 21 / 0.16);
+  --vs-shadow-raised: 0 2px 6px rgb(23 26 21 / 0.05),
+    0 20px 44px -24px rgb(23 26 21 / 0.22);
+  --vs-shadow-sticky: 0 -10px 26px -20px rgb(23 26 21 / 0.24);
+
+  --vs-gutter: 20px;
+  --vs-section-gap: 20px;
+  --vs-card-pad: 20px;
+  --vs-tap-min: 44px;
+  --vs-tap-gym: 56px;
+  --vs-bottom-nav-h: 64px;
+
+  --vs-font: 'Outfit', 'Outfit Variable', ui-sans-serif, system-ui,
+    -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+
+  --vs-dur-fast: 180ms;
+  --vs-dur-base: 280ms;
+  --vs-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Shell metrics, overridden per breakpoint */
+  --vs-rail-w: 0px;
+  --vs-content-max: 100%;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--vs-canvas);
+  color: var(--vs-ink);
+  font-family: var(--vs-font);
+  font-size: 15px;
+  line-height: 1.5;
+  font-weight: 450;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+img {
+  max-width: 100%;
+}
+
+/* A fieldset defaults to min-width: min-content, which stops it shrinking
+   inside a constrained column and pushes the page sideways. */
+fieldset {
+  min-width: 0;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--vs-ink);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.on-accent:focus-visible,
+.on-ink:focus-visible {
+  outline-color: var(--vs-ink-on-dark);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------------------------------------------------------------- */
+/* Shell                                                             */
+/* ---------------------------------------------------------------- */
+
+.app {
+  min-height: 100dvh;
+}
+
+.main {
+  padding-left: var(--vs-rail-w);
+  padding-bottom: calc(var(--vs-bottom-nav-h) + 28px);
+}
+
+.container {
+  width: 100%;
+  max-width: var(--vs-content-max);
+  margin: 0 auto;
+  padding: 18px var(--vs-gutter) 8px;
+}
+
+/* --- Bottom nav (mobile only) --- */
+.bottomnav {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 40;
+  background: rgb(255 255 255 / 0.9);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid var(--vs-line);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.bottomnav ul {
+  display: flex;
+  margin: 0 auto;
+  padding: 0 4px;
+  max-width: 520px;
+  height: var(--vs-bottom-nav-h);
+  list-style: none;
+}
+
+.bottomnav li {
+  flex: 1;
+}
+
+.bottomnav a {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 100%;
+  text-decoration: none;
+  color: var(--vs-ink-3);
+  font-size: 10.5px;
+  font-weight: 600;
+  position: relative;
+}
+
+.bottomnav a[aria-current='page'] {
+  color: var(--vs-ink);
+  font-weight: 700;
+}
+
+.bottomnav a[aria-current='page'] .navdot {
+  position: absolute;
+  top: 7px;
+  width: 30px;
+  height: 4px;
+  border-radius: var(--vs-r-pill);
+  background: var(--vs-accent-edge);
+}
+
+.bottomnav svg {
+  width: 22px;
+  height: 22px;
+}
+
+/* --- Rail / sidebar (tablet + desktop) --- */
+.sidenav {
+  display: none;
+  position: fixed;
+  inset-block: 0;
+  left: 0;
+  z-index: 40;
+  flex-direction: column;
+  background: var(--vs-surface);
+  border-right: 1px solid var(--vs-line);
+}
+
+.sidenav .brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 22px 18px 18px;
+}
+
+.brandmark {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: var(--vs-ink);
+  color: var(--vs-accent);
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 17px;
+  flex: none;
+}
+
+.brandname {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  line-height: 1.1;
+}
+
+.brandname span {
+  color: var(--vs-accent-ink);
+}
+
+.brandsub {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--vs-ink-3);
+  margin-top: 2px;
+}
+
+.sidenav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.sidenav a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px;
+  min-height: var(--vs-tap-min);
+  border-radius: var(--vs-r-md);
+  text-decoration: none;
+  color: var(--vs-ink-2);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.sidenav a:hover {
+  background: var(--vs-surface-soft);
+  color: var(--vs-ink);
+}
+
+.sidenav a[aria-current='page'] {
+  background: var(--vs-accent-soft);
+  color: var(--vs-ink);
+  font-weight: 700;
+  box-shadow: inset 3px 0 0 0 var(--vs-accent-edge);
+}
+
+.sidenav svg {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+
+.sidenav .foot {
+  border-top: 1px solid var(--vs-line);
+  padding: 14px 18px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--vs-ink-3);
+}
+
+/* ---------------------------------------------------------------- */
+/* Type                                                              */
+/* ---------------------------------------------------------------- */
+
+.eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--vs-ink-3);
+  margin: 0 0 5px;
+}
+
+h1,
+.h1 {
+  font-size: 28px;
+  line-height: 1.14;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  margin: 0;
+}
+
+h2,
+.h2 {
+  font-size: 19px;
+  line-height: 1.26;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+h3,
+.h3 {
+  font-size: 16px;
+  line-height: 1.3;
+  font-weight: 650;
+  margin: 0;
+}
+
+.sub {
+  color: var(--vs-ink-2);
+  font-size: 13.5px;
+  margin: 4px 0 0;
+}
+
+.muted {
+  color: var(--vs-ink-3);
+}
+
+.small {
+  font-size: 13px;
+}
+
+.tiny {
+  font-size: 12px;
+}
+
+.display {
+  font-size: 44px;
+  line-height: 1.02;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vs-ink-3);
+}
+
+.pagehead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.sectionhead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 26px 2px 10px;
+}
+
+.sectionhead .link {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--vs-accent-ink);
+  text-decoration: none;
+}
+
+.sectionhead .link:hover {
+  text-decoration: underline;
+}
+
+/* ---------------------------------------------------------------- */
+/* Surfaces                                                          */
+/* ---------------------------------------------------------------- */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vs-section-gap);
+}
+
+.card {
+  background: var(--vs-surface);
+  border: 1px solid var(--vs-line);
+  border-radius: var(--vs-r-lg);
+  box-shadow: var(--vs-shadow-card);
+  padding: var(--vs-card-pad);
+}
+
+.card.flush {
+  padding: 0;
+  overflow: hidden;
+}
+
+/* A block that records nothing. Flat, inset, no card edge — deliberately NOT
+   dashed, because "dashed and quiet" is also how an Extra used to render, and
+   an Extra is real recorded training. */
+.card.quiet {
+  box-shadow: none;
+  border: 0;
+  background: var(--vs-surface-soft);
+}
+
+.hero {
+  background: var(--vs-surface);
+  border: 1px solid var(--vs-line);
+  border-radius: var(--vs-r-xl);
+  box-shadow: var(--vs-shadow-card);
+  padding: 24px;
+}
+
+.hero.accent {
+  background: linear-gradient(168deg, var(--vs-accent-soft), var(--vs-surface) 72%);
+  border-color: #dcefb2;
+}
+
+.metric {
+  background: var(--vs-surface);
+  border: 1px solid var(--vs-line);
+  border-radius: var(--vs-r-lg);
+  box-shadow: var(--vs-shadow-card);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.metric .k {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.1;
+}
+
+.metric .n {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vs-ink-3);
+}
+
+.metric .icn {
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 6px;
+}
+
+.grid2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+/* Two gym-sized steppers side by side do not fit a 390px phone: the number
+   is the point, so the pair stacks until there is room for both. */
+.gymgrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+@media (min-width: 560px) {
+  .gymgrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.grid3 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+/* Three items in a two-up grid leave a hole; the third takes the row. */
+.grid3 > :nth-child(3):last-child {
+  grid-column: span 2;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* A programme slot: content takes the full width on a phone and the reorder
+   controls drop below it, rather than squeezing the prescription badges into
+   a 150px column beside three 44px buttons. */
+.slotrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 14px;
+}
+
+.slotrow > .grow {
+  flex: 1 1 100%;
+}
+
+.slotrow > .actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+  flex: none;
+}
+
+@media (min-width: 560px) {
+  .slotrow > .grow {
+    flex: 1 1 0;
+  }
+}
+
+.spread {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.grow {
+  min-width: 0;
+  flex: 1;
+}
+
+/* ---------------------------------------------------------------- */
+/* Badges / pills                                                    */
+/* ---------------------------------------------------------------- */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: var(--vs-r-pill);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.badge svg {
+  width: 13px;
+  height: 13px;
+}
+
+.badge.hard {
+  background: var(--vs-hard-soft);
+  color: var(--vs-hard-ink);
+}
+.badge.light {
+  background: var(--vs-light-soft);
+  color: var(--vs-light-ink);
+}
+.badge.pump {
+  background: var(--vs-pump-soft);
+  color: var(--vs-pump-ink);
+}
+.badge.scheduled {
+  background: var(--vs-scheduled-soft);
+  color: var(--vs-scheduled-ink);
+}
+.badge.recovery {
+  background: var(--vs-recovery-soft);
+  color: var(--vs-recovery-ink);
+}
+/* PROVENANCE, NOT STATE.
+   Extra sits in the training-green family because it IS training, but it is
+   an OUTLINE chip so it can never be mistaken for an accent-soft fill or for
+   the current-item marker. Shape carries the distinction, not hue alone —
+   and it still renders a "+" icon and the word "Extra". */
+.badge.extra {
+  background: transparent;
+  border: 1px solid var(--vs-accent-edge);
+  color: var(--vs-extra-ink);
+}
+
+/* "Happening now" / "current" / "in progress" is UI STATE, and it gets its
+   own ink fill. It must never borrow a provenance chip's styling, or the
+   provenance signal stops being a signal. */
+.badge.current {
+  background: var(--vs-ink);
+  color: var(--vs-ink-on-dark);
+}
+
+/* An exercise whose sets were partly skipped is neither done nor pending. */
+.badge.partial {
+  background: var(--vs-warn-soft);
+  color: var(--vs-warn-ink);
+}
+.badge.holiday {
+  background: var(--vs-holiday-soft);
+  color: var(--vs-holiday-ink);
+}
+.badge.done {
+  background: var(--vs-success-soft);
+  color: var(--vs-success-ink);
+}
+.badge.skipped {
+  background: var(--vs-warn-soft);
+  color: var(--vs-warn-ink);
+}
+.badge.late {
+  background: var(--vs-warn-soft);
+  color: var(--vs-warn-ink);
+}
+.badge.info {
+  background: var(--vs-info-soft);
+  color: var(--vs-info-ink);
+}
+.badge.neutral {
+  background: var(--vs-surface-soft);
+  color: var(--vs-ink-2);
+}
+.badge.outline {
+  background: transparent;
+  border: 1px solid var(--vs-line-strong);
+  color: var(--vs-ink-2);
+}
+
+/* Segmented pill tabs — the selected pill is an ink fill (14.9:1). */
+.pilltabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--vs-surface-soft);
+  border-radius: var(--vs-r-pill);
+  overflow-x: auto;
+  scrollbar-width: none;
+  max-width: 100%;
+}
+
+.pilltabs::-webkit-scrollbar {
+  display: none;
+}
+
+.pilltabs button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--vs-ink-2);
+  padding: 8px 14px;
+  min-height: 36px;
+  border-radius: var(--vs-r-pill);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pilltabs button[aria-selected='true'] {
+  background: var(--vs-ink);
+  color: var(--vs-ink-on-dark);
+  font-weight: 700;
+}
+
+/* ---------------------------------------------------------------- */
+/* Buttons                                                           */
+/* ---------------------------------------------------------------- */
+
+.btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--vs-tap-min);
+  padding: 0 18px;
+  border-radius: var(--vs-r-md);
+  border: 1px solid transparent;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background var(--vs-dur-fast) var(--vs-ease-out),
+    border-color var(--vs-dur-fast) var(--vs-ease-out),
+    transform var(--vs-dur-fast) var(--vs-ease-out);
+}
+
+.btn:active {
+  transform: scale(0.985);
+}
+
+.btn svg {
+  width: 17px;
+  height: 17px;
+}
+
+.btn-primary {
+  background: var(--vs-accent);
+  border-color: var(--vs-accent-edge);
+  color: var(--vs-ink);
+}
+
+.btn-primary:hover {
+  background: var(--vs-accent-press);
+}
+
+.btn-ink {
+  background: var(--vs-ink);
+  border-color: var(--vs-ink);
+  color: var(--vs-ink-on-dark);
+}
+
+.btn-secondary {
+  background: var(--vs-surface);
+  border-color: var(--vs-line-strong);
+  color: var(--vs-ink);
+}
+
+.btn-secondary:hover {
+  border-color: var(--vs-ink-4);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--vs-ink-2);
+}
+
+.btn-ghost:hover {
+  background: var(--vs-surface-soft);
+  color: var(--vs-ink);
+}
+
+.btn-danger {
+  background: var(--vs-danger-soft);
+  border-color: #f0c4c0;
+  color: var(--vs-danger-ink);
+}
+
+.btn-lg {
+  min-height: var(--vs-tap-gym);
+  font-size: 16px;
+  padding: 0 24px;
+  border-radius: var(--vs-r-md);
+}
+
+.btn-sm {
+  min-height: 36px;
+  font-size: 13px;
+  padding: 0 12px;
+  border-radius: var(--vs-r-sm);
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.btn[disabled],
+.btn[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.iconbtn {
+  appearance: none;
+  width: var(--vs-tap-min);
+  height: var(--vs-tap-min);
+  display: grid;
+  place-items: center;
+  border-radius: var(--vs-r-md);
+  border: 1px solid var(--vs-line-strong);
+  background: var(--vs-surface);
+  color: var(--vs-ink-2);
+  cursor: pointer;
+}
+
+.iconbtn:hover {
+  color: var(--vs-ink);
+  border-color: var(--vs-ink-4);
+}
+
+.iconbtn svg {
+  width: 19px;
+  height: 19px;
+}
+
+/* ---------------------------------------------------------------- */
+/* List rows                                                         */
+/* ---------------------------------------------------------------- */
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.list.divided {
+  gap: 0;
+}
+
+.list.divided > li + li {
+  border-top: 1px solid var(--vs-line);
+}
+
+.listrow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: var(--vs-tap-min);
+  padding: 14px 18px;
+  text-decoration: none;
+  color: inherit;
+}
+
+.listrow.card {
+  padding: 15px 18px;
+}
+
+.listrow .lead {
+  width: 40px;
+  height: 40px;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: var(--vs-surface-soft);
+  color: var(--vs-ink-2);
+}
+
+.listrow .lead.accent {
+  background: var(--vs-accent);
+  border: 1px solid var(--vs-accent-edge);
+  color: var(--vs-ink);
+}
+
+.listrow .lead.done {
+  background: var(--vs-success-soft);
+  color: var(--vs-success-ink);
+}
+
+.listrow .chev {
+  color: var(--vs-ink-4);
+  flex: none;
+}
+
+.listrow .chev svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+/* These are spans so a whole row can be one <a>. They must still stack, and
+   an inline element ignores margin-top. */
+.rowtitle {
+  display: block;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.rowsub {
+  display: block;
+  font-size: 13px;
+  color: var(--vs-ink-3);
+  margin-top: 2px;
+}
+
+.what {
+  display: block;
+}
+
+/* ---------------------------------------------------------------- */
+/* Week strip                                                        */
+/* ---------------------------------------------------------------- */
+
+.weekstrip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.weekstrip .day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 0 8px;
+  border-radius: var(--vs-r-md);
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  min-height: var(--vs-tap-min);
+}
+
+.weekstrip .dow {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vs-ink-3);
+}
+
+.weekstrip .num {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.weekstrip .day[aria-current='date'] {
+  background: var(--vs-ink);
+  border-color: var(--vs-ink);
+}
+
+.weekstrip .day[aria-current='date'] .dow,
+.weekstrip .day[aria-current='date'] .num {
+  color: var(--vs-ink-on-dark);
+}
+
+.weekstrip .day .mark {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.weekstrip .mark.done {
+  background: var(--vs-success-mark);
+}
+.weekstrip .mark.sched {
+  background: var(--vs-ink-4);
+}
+.weekstrip .mark.hol {
+  background: var(--vs-holiday-ink);
+}
+.weekstrip .mark.rec {
+  background: var(--vs-recovery-ink);
+}
+.weekstrip .mark.extra {
+  background: var(--vs-accent-edge);
+}
+.weekstrip .day[aria-current='date'] .mark.done {
+  background: var(--vs-accent);
+}
+
+/* ---------------------------------------------------------------- */
+/* Progress rail + ring                                              */
+/* ---------------------------------------------------------------- */
+
+.rail {
+  height: 8px;
+  border-radius: var(--vs-r-pill);
+  background: var(--vs-surface-sunken);
+  overflow: hidden;
+}
+
+.rail > i {
+  display: block;
+  height: 100%;
+  border-radius: var(--vs-r-pill);
+  background: var(--vs-accent-edge);
+}
+
+.rail.thin {
+  height: 6px;
+}
+
+.ring {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+
+.ring .val {
+  position: absolute;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* ---------------------------------------------------------------- */
+/* Fields                                                            */
+/* ---------------------------------------------------------------- */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.field > label {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--vs-ink-2);
+}
+
+.field .hint {
+  font-size: 12px;
+  color: var(--vs-ink-3);
+}
+
+.field input,
+.field select,
+.field textarea {
+  font: inherit;
+  font-size: 16px; /* >=16px: iOS must not zoom on focus in a gym */
+  font-weight: 650;
+  color: var(--vs-ink);
+  background: var(--vs-surface);
+  border: 1px solid var(--vs-line-control);
+  border-radius: var(--vs-r-sm);
+  padding: 0 12px;
+  min-height: var(--vs-tap-min);
+  width: 100%;
+}
+
+.field.gym input {
+  min-height: var(--vs-tap-gym);
+  font-size: 22px;
+  font-weight: 700;
+  text-align: center;
+  padding: 0 8px;
+}
+
+.field input::placeholder {
+  color: var(--vs-ink-4);
+  font-weight: 500;
+}
+
+.field input[aria-invalid='true'] {
+  border-color: var(--vs-danger-ink);
+  border-width: 2px;
+}
+
+.field .err {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--vs-danger-ink);
+}
+
+.stepper {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+}
+
+.stepper input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.stepper .iconbtn {
+  flex: none;
+  width: 50px;
+  height: var(--vs-tap-gym);
+  border-radius: var(--vs-r-sm);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--vs-ink);
+}
+
+/* ---------------------------------------------------------------- */
+/* Banners / states                                                  */
+/* ---------------------------------------------------------------- */
+
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--vs-r-md);
+  border: 1px solid;
+  font-size: 13.5px;
+}
+
+.banner svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  margin-top: 1px;
+}
+
+.banner b {
+  display: block;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.banner.info {
+  background: var(--vs-info-soft);
+  border-color: #c7dcf7;
+  color: var(--vs-info-ink);
+}
+.banner.warn {
+  background: var(--vs-warn-soft);
+  border-color: #ecd7a6;
+  color: var(--vs-warn-ink);
+}
+.banner.danger {
+  background: var(--vs-danger-soft);
+  border-color: #f0c4c0;
+  color: var(--vs-danger-ink);
+}
+.banner.success {
+  background: var(--vs-success-soft);
+  border-color: #bfe4cd;
+  color: var(--vs-success-ink);
+}
+.banner .actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 34px 24px;
+  border: 1px dashed var(--vs-line-strong);
+  border-radius: var(--vs-r-lg);
+  background: var(--vs-surface);
+}
+
+.empty .icn {
+  width: 46px;
+  height: 46px;
+  border-radius: 15px;
+  background: var(--vs-surface-soft);
+  color: var(--vs-ink-3);
+  display: grid;
+  place-items: center;
+}
+
+/* The app's global reduced-motion rule freezes every animation, so a loading
+   signal carried ONLY by movement disappears for exactly the users most likely
+   to turn it on. A skeleton must therefore still read as a placeholder when it
+   is completely still — hence a solid sunken ground, with the shimmer as an
+   enhancement on top. */
+.skeleton {
+  border-radius: var(--vs-r-sm);
+  background-color: var(--vs-surface-sunken);
+  background-image: linear-gradient(
+    90deg,
+    rgb(255 255 255 / 0) 25%,
+    rgb(255 255 255 / 0.55) 50%,
+    rgb(255 255 255 / 0) 75%
+  );
+  background-size: 240% 100%;
+  animation: vs-shimmer 1.5s linear infinite;
+}
+
+@keyframes vs-shimmer {
+  to {
+    background-position: -240% 0;
+  }
+}
+
+/* ---------------------------------------------------------------- */
+/* Set rows (active workout)                                         */
+/* ---------------------------------------------------------------- */
+
+.setrow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--vs-r-md);
+  border: 1px solid var(--vs-line);
+  background: var(--vs-surface);
+  min-height: var(--vs-tap-min);
+}
+
+.setrow .idx {
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-size: 12.5px;
+  font-weight: 700;
+  flex: none;
+  background: var(--vs-surface-soft);
+  color: var(--vs-ink-2);
+}
+
+.setrow.done {
+  background: var(--vs-success-soft);
+  border-color: #bfe4cd;
+}
+
+.setrow.done .idx {
+  background: var(--vs-success-ink);
+  color: #fff;
+}
+
+.setrow.skipped {
+  background: var(--vs-warn-soft);
+  border-color: #ecd7a6;
+}
+
+.setrow.skipped .idx {
+  background: var(--vs-warn-ink);
+  color: #fff;
+}
+
+.setrow .what {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.setrow .corrected {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--vs-info-ink);
+  background: var(--vs-info-soft);
+  border-radius: var(--vs-r-pill);
+  padding: 2px 8px;
+}
+
+.mediaframe {
+  border-radius: var(--vs-r-lg);
+  overflow: hidden;
+  background: var(--vs-surface-soft);
+  border: 1px solid var(--vs-line);
+  aspect-ratio: 16 / 9;
+  display: grid;
+  place-items: center;
+  color: var(--vs-ink-3);
+  position: relative;
+}
+
+.mediaframe .cap {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  background: rgb(23 26 21 / 0.72);
+  color: var(--vs-ink-on-dark);
+  font-size: 12px;
+  font-weight: 650;
+  padding: 5px 10px;
+  border-radius: var(--vs-r-pill);
+}
+
+/* Sticky in-gym action bar */
+.stickybar {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 45;
+  background: rgb(255 255 255 / 0.94);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid var(--vs-line);
+  box-shadow: var(--vs-shadow-sticky);
+  padding: 12px var(--vs-gutter) calc(12px + env(safe-area-inset-bottom, 0px));
+}
+
+.stickybar .inner {
+  display: flex;
+  gap: 10px;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+/* ---------------------------------------------------------------- */
+/* Calendar                                                          */
+/* ---------------------------------------------------------------- */
+
+.cal {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.cal .hd {
+  text-align: center;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vs-ink-3);
+  padding-bottom: 6px;
+}
+
+.cal .cell {
+  aspect-ratio: 1;
+  min-height: 42px;
+  border-radius: var(--vs-r-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--vs-ink);
+  cursor: pointer;
+}
+
+.cal .cell.out {
+  color: var(--vs-ink-4);
+}
+
+.cal .cell:hover {
+  background: var(--vs-surface-soft);
+}
+
+.cal .cell[aria-pressed='true'] {
+  background: var(--vs-ink);
+  color: var(--vs-ink-on-dark);
+  border-color: var(--vs-ink);
+}
+
+.cal .dots {
+  display: flex;
+  gap: 3px;
+  height: 6px;
+}
+
+.cal .dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: block;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-top: 14px;
+}
+
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--vs-ink-2);
+  font-weight: 600;
+}
+
+.legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: block;
+}
+
+/* ---------------------------------------------------------------- */
+/* Achievements                                                      */
+/* ---------------------------------------------------------------- */
+
+.medal {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: var(--vs-accent-soft);
+  color: var(--vs-accent-ink);
+}
+
+.medal.locked {
+  background: var(--vs-surface-soft);
+  color: var(--vs-ink-4);
+}
+
+.achgrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.achcard {
+  background: var(--vs-surface);
+  border: 1px solid var(--vs-line);
+  border-radius: var(--vs-r-lg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  box-shadow: var(--vs-shadow-card);
+}
+
+.achcard.locked {
+  box-shadow: none;
+  background: transparent;
+  border-style: dashed;
+}
+
+/* ---------------------------------------------------------------- */
+/* Chart                                                             */
+/* ---------------------------------------------------------------- */
+
+/* An SVG scales its own type with the drawing, so a chart that is allowed to
+   grow without bound renders 19px axis labels on a tablet. The production
+   implementation should size chart type in device pixels independently of the
+   plot; the prototype approximates that by capping the plot width. */
+.chart {
+  width: 100%;
+  max-width: 520px;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.chart .grid {
+  stroke: var(--vs-grid);
+  stroke-width: 1;
+}
+
+.chart .axis {
+  fill: var(--vs-ink-3);
+  font-size: 9.5px;
+  font-weight: 650;
+}
+
+.chart .line {
+  fill: none;
+  stroke: var(--vs-series-1);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chart .area {
+  fill: var(--vs-accent-soft);
+  opacity: 0.7;
+}
+
+.chart .dot {
+  fill: var(--vs-surface);
+  stroke: var(--vs-series-1);
+  stroke-width: 2.5;
+}
+
+.chart .bar {
+  fill: var(--vs-surface-sunken);
+}
+
+.chart .bar.on {
+  fill: var(--vs-accent-edge);
+}
+
+.chart .goal {
+  stroke: var(--vs-ink-4);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 4;
+}
+
+.callout {
+  fill: var(--vs-ink);
+}
+
+.callout-t {
+  fill: var(--vs-ink-on-dark);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* ---------------------------------------------------------------- */
+/* Sheet (mobile) / dialog (desktop)                                 */
+/* ---------------------------------------------------------------- */
+
+.sheet {
+  border-radius: var(--vs-r-xl) var(--vs-r-xl) 0 0;
+  background: var(--vs-surface);
+  border: 1px solid var(--vs-line);
+  border-bottom: 0;
+  box-shadow: var(--vs-shadow-raised);
+  padding: 10px 20px 22px;
+}
+
+.sheet .grab {
+  width: 40px;
+  height: 5px;
+  border-radius: var(--vs-r-pill);
+  background: var(--vs-line-strong);
+  margin: 0 auto 14px;
+}
+
+/* ---------------------------------------------------------------- */
+/* Utilities                                                         */
+/* ---------------------------------------------------------------- */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.hr {
+  height: 1px;
+  background: var(--vs-line);
+  border: 0;
+  margin: 0;
+}
+
+.scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.desk-only {
+  display: none;
+}
+
+/* ================================================================= */
+/* TABLET — 768px and up                                             */
+/* ================================================================= */
+
+@media (min-width: 768px) {
+  :root {
+    --vs-rail-w: 96px;
+    --vs-gutter: 32px;
+    --vs-section-gap: 24px;
+    --vs-card-pad: 24px;
+    --vs-content-max: 720px;
+  }
+
+  body {
+    font-size: 15.5px;
+  }
+
+  .bottomnav {
+    display: none;
+  }
+
+  .main {
+    padding-bottom: 48px;
+  }
+
+  .container {
+    padding-top: 28px;
+  }
+
+  h1,
+  .h1 {
+    font-size: 32px;
+  }
+
+  .display {
+    font-size: 52px;
+  }
+
+  .sidenav {
+    display: flex;
+    width: 96px;
+  }
+
+  .sidenav .brand {
+    justify-content: center;
+    padding: 20px 0 16px;
+  }
+
+  .sidenav .brandtext {
+    display: none;
+  }
+
+  .sidenav ul {
+    padding: 0 10px;
+  }
+
+  .sidenav a {
+    flex-direction: column;
+    gap: 5px;
+    padding: 10px 2px;
+    font-size: 10px;
+    line-height: 1.15;
+    font-weight: 650;
+    text-align: center;
+    min-height: 58px;
+  }
+
+  .sidenav .foot {
+    text-align: center;
+    padding: 14px 6px;
+  }
+
+  .grid3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .achgrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .cal .cell {
+    min-height: 56px;
+    font-size: 15px;
+  }
+
+  .stickybar {
+    left: var(--vs-rail-w);
+  }
+
+  .split2 {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+    align-items: start;
+  }
+}
+
+/* ================================================================= */
+/* DESKTOP — 1200px and up                                           */
+/* ================================================================= */
+
+@media (min-width: 1200px) {
+  :root {
+    --vs-rail-w: 240px;
+    --vs-gutter: 40px;
+    --vs-content-max: 1120px;
+  }
+
+  .sidenav {
+    width: 240px;
+  }
+
+  .sidenav .brand {
+    justify-content: flex-start;
+    padding: 24px 20px 20px;
+  }
+
+  .sidenav .brandtext {
+    display: block;
+  }
+
+  .sidenav a {
+    flex-direction: row;
+    gap: 12px;
+    padding: 11px 12px;
+    font-size: 14px;
+    font-weight: 600;
+    text-align: left;
+    min-height: var(--vs-tap-min);
+  }
+
+  .sidenav .foot {
+    text-align: left;
+    padding: 16px 20px;
+  }
+
+  .container {
+    padding-top: 34px;
+  }
+
+  .desk-only {
+    display: block;
+  }
+
+  .mob-only {
+    display: none;
+  }
+
+  /* Two-column page composition: primary + rail */
+  .cols {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+    gap: 24px;
+    align-items: start;
+  }
+
+  .cols.even {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .grid2 {
+    gap: 16px;
+  }
+
+  .grid3 {
+    gap: 16px;
+  }
+
+  .achgrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .cal .cell {
+    min-height: 68px;
+  }
+
+  /* Active workout: media left, logging right */
+  .workout-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 28px;
+    align-items: start;
+  }
+
+  .stickybar {
+    position: static;
+    background: transparent;
+    backdrop-filter: none;
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+  }
+
+  .stickybar .inner {
+    max-width: none;
+  }
+}

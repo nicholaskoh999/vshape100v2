@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Round 24 responsive evidence · VShape100</title>
+    <link rel="stylesheet" href="vs.css" />
+    <style>
+      body {
+        background: var(--vs-surface-sunken);
+      }
+      .wrapmain {
+        max-width: 1600px;
+        margin: 0 auto;
+        padding: 24px 20px 64px;
+      }
+      .toolbar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: rgb(231 234 222 / 0.94);
+        backdrop-filter: blur(14px);
+        padding: 14px 0;
+        margin-bottom: 20px;
+        border-bottom: 1px solid var(--vs-line-strong);
+      }
+      .frames {
+        display: flex;
+        gap: 22px;
+        align-items: flex-start;
+        flex-wrap: wrap;
+      }
+      .device {
+        background: var(--vs-surface);
+        border: 1px solid var(--vs-line-strong);
+        border-radius: var(--vs-r-lg);
+        padding: 12px;
+        box-shadow: var(--vs-shadow-card);
+      }
+      .device h3 {
+        margin: 0 0 10px;
+        font-size: 13px;
+        font-weight: 700;
+      }
+      .device .dim {
+        font-weight: 600;
+        color: var(--vs-ink-3);
+      }
+      .viewport {
+        overflow: hidden;
+        border-radius: var(--vs-r-md);
+        border: 1px solid var(--vs-line);
+        background: var(--vs-canvas);
+      }
+      .viewport iframe {
+        border: 0;
+        display: block;
+        transform-origin: top left;
+        background: var(--vs-canvas);
+      }
+      .note {
+        font-size: 12.5px;
+        color: var(--vs-ink-2);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrapmain">
+      <header style="margin-bottom: 14px">
+        <p class="eyebrow">VSHAPE100 v2 · Round 24 · design evidence</p>
+        <h1>Responsive evidence gallery</h1>
+        <p class="sub" style="max-width: 68ch">
+          Every screen below is one responsive HTML file rendered inside a real
+          iframe viewport, so what you see is the actual media-query behaviour at
+          390&nbsp;×&nbsp;844, 834&nbsp;×&nbsp;1112 and 1440&nbsp;×&nbsp;900 — not three
+          separate mockups. Frames are scaled to fit; the layout inside is at full size.
+        </p>
+      </header>
+
+      <div class="toolbar">
+        <div class="wrap" style="align-items: center; gap: 12px">
+          <div class="pilltabs" role="tablist" aria-label="Screen" id="screens"></div>
+          <div class="pilltabs" role="tablist" aria-label="Viewports" id="views">
+            <button role="tab" type="button" aria-selected="true" data-v="all">All three</button>
+            <button role="tab" type="button" aria-selected="false" data-v="mobile">Mobile</button>
+            <button role="tab" type="button" aria-selected="false" data-v="tablet">Tablet</button>
+            <button role="tab" type="button" aria-selected="false" data-v="desktop">Desktop</button>
+          </div>
+          <a class="btn btn-secondary btn-sm" id="open" href="today.html" target="_blank" rel="noopener">
+            Open full size ↗
+          </a>
+        </div>
+      </div>
+
+      <div class="frames" id="frames"></div>
+
+      <p class="note" style="margin-top: 28px; max-width: 78ch">
+        Screens carry a “design evidence” section below the fold showing the loading, empty,
+        error, conflict and refused-write states for that screen side by side. Those sections
+        are documentation, not a region of the real screen.
+      </p>
+    </div>
+
+    <script>
+      const SCREENS = [
+        ['today.html', 'Today'],
+        ['training.html', 'Training'],
+        ['workout.html', 'Active workout'],
+        ['progress.html', 'Progress'],
+        ['calendar.html', 'Calendar'],
+        ['achievements.html', 'Achievements'],
+        ['settings.html', 'Settings'],
+        ['library.html', 'Exercise Library'],
+        ['programme.html', 'Programme'],
+        ['more.html', 'More'],
+        ['system.html', 'Design system'],
+      ]
+
+      const VIEWPORTS = {
+        mobile: { w: 390, h: 844, label: 'Mobile' },
+        tablet: { w: 834, h: 1112, label: 'Tablet' },
+        desktop: { w: 1440, h: 900, label: 'Desktop' },
+      }
+
+      let screen = 'today.html'
+      let view = 'all'
+
+      const screensEl = document.getElementById('screens')
+      screensEl.innerHTML = SCREENS.map(
+        ([href, label], i) =>
+          `<button role="tab" type="button" aria-selected="${i === 0}" data-s="${href}">${label}</button>`,
+      ).join('')
+
+      function render() {
+        document.getElementById('open').href = screen
+        const keys = view === 'all' ? ['mobile', 'tablet', 'desktop'] : [view]
+        const available = document.querySelector('.wrapmain').clientWidth
+        const gap = 22
+        const chrome = 26 // device padding + border
+
+        document.getElementById('frames').innerHTML = keys
+          .map((k) => {
+            const v = VIEWPORTS[k]
+            // Fit every requested frame into one row where it can, otherwise
+            // let them wrap and use up to the full width each.
+            const budget =
+              keys.length === 1
+                ? Math.min(available - chrome, v.w)
+                : (available - gap * (keys.length - 1)) / keys.length - chrome
+            const scale = Math.min(1, budget / v.w)
+            return `
+              <div class="device">
+                <h3>${v.label} <span class="dim">· ${v.w} × ${v.h}${
+                  scale < 1 ? ` · shown at ${Math.round(scale * 100)}%` : ''
+                }</span></h3>
+                <div class="viewport" style="width:${Math.round(v.w * scale)}px;height:${Math.round(
+                  v.h * scale,
+                )}px">
+                  <iframe src="${screen}" width="${v.w}" height="${v.h}"
+                          style="transform:scale(${scale})"
+                          title="${screen} at ${v.label}" loading="lazy"></iframe>
+                </div>
+              </div>`
+          })
+          .join('')
+      }
+
+      screensEl.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-s]')
+        if (!b) return
+        screen = b.dataset.s
+        screensEl.querySelectorAll('button').forEach((x) => x.setAttribute('aria-selected', String(x === b)))
+        render()
+      })
+
+      const viewsEl = document.getElementById('views')
+      viewsEl.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-v]')
+        if (!b) return
+        view = b.dataset.v
+        viewsEl.querySelectorAll('button').forEach((x) => x.setAttribute('aria-selected', String(x === b)))
+        render()
+      })
+
+      window.addEventListener('resize', render)
+      render()
+    </script>
+  </body>
+</html>

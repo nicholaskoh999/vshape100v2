@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Active workout · VShape100 Round 24 prototype</title>
+    <link rel="stylesheet" href="vs.css" />
+    <script defer src="vs.js"></script>
+    <style>
+      /* Focused mode hides the tab bar: the sticky action bar owns the
+         bottom of the screen while a workout is in progress. */
+      body[data-focus] .bottomnav {
+        display: none;
+      }
+      body[data-focus] .main {
+        padding-bottom: 128px;
+      }
+      @media (min-width: 1200px) {
+        body[data-focus] .main {
+          padding-bottom: 48px;
+        }
+      }
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 30;
+        background: rgb(245 246 242 / 0.92);
+        backdrop-filter: blur(14px);
+        border-bottom: 1px solid var(--vs-line);
+        padding: 10px var(--vs-gutter);
+        padding-top: calc(10px + env(safe-area-inset-top, 0px));
+        margin-left: var(--vs-rail-w);
+      }
+      .topbar .inner {
+        max-width: var(--vs-content-max);
+        margin: 0 auto;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .topbar .title,
+      .setnum {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .topbar .title {
+        font-size: 14.5px;
+        font-weight: 700;
+        line-height: 1.2;
+      }
+      .setnum {
+        font-size: 11.5px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--vs-ink-3);
+      }
+    </style>
+  </head>
+  <body data-nav="training" data-focus>
+    <!-- ============ Focused top bar ============ -->
+    <div class="topbar">
+      <div class="inner">
+        <a class="iconbtn" href="training.html" aria-label="Exit workout — your logged sets stay saved">
+          <span data-icon="back"></span>
+        </a>
+        <span class="grow" style="min-width: 0">
+          <span class="title">Back Width + Biceps</span>
+          <span class="setnum">Monday · 9 / 17 sets</span>
+        </span>
+        <span class="badge hard">HARD</span>
+      </div>
+      <div class="inner" style="margin-top: 9px">
+        <div class="rail thin grow" role="progressbar" aria-valuemin="0" aria-valuemax="17" aria-valuenow="9" aria-label="Sets resolved">
+          <i style="width: 53%"></i>
+        </div>
+      </div>
+    </div>
+
+    <main class="main">
+      <div class="container">
+        <div class="workout-split">
+          <!-- ================= Exercise hero ================= -->
+          <div class="stack">
+            <section aria-labelledby="ex-t">
+              <div class="mediaframe" style="margin-bottom: 14px">
+                <span class="row" style="flex-direction: column; gap: 8px; color: var(--vs-ink-4)">
+                  <span data-icon="image" style="display: block; width: 34px; height: 34px"></span>
+                  <span class="tiny" style="font-weight: 650">Demo media (contain — never cropped)</span>
+                </span>
+                <span class="cap">Exercise 2 of 5</span>
+              </div>
+
+              <div class="spread" style="margin-bottom: 6px">
+                <span class="badge neutral"><span data-icon="training"></span>Weight (kg)</span>
+                <span class="small muted" style="font-weight: 650">Target 4 × 10–15</span>
+              </div>
+              <h1 id="ex-t" style="font-size: 26px">One-Arm DB Row</h1>
+              <p class="sub">DB + Bench Flat</p>
+
+              <div class="banner info" style="margin-top: 14px">
+                <span data-icon="info"></span>
+                <span class="grow">
+                  <b>kg each is per dumbbell</b>
+                  Enter the weight of one dumbbell. VShape never doubles it, and never
+                  displays a combined figure.
+                </span>
+              </div>
+            </section>
+          </div>
+
+          <!-- ================= Logging column ================= -->
+          <div class="stack">
+            <!-- ---------- Current set ---------- -->
+            <section class="card" aria-labelledby="set-t" style="border-color: var(--vs-accent-edge); border-width: 2px">
+              <div class="spread" style="margin-bottom: 16px">
+                <h2 id="set-t" style="font-size: 20px">Set 3 of 4</h2>
+                <span class="badge outline">2 completed</span>
+              </div>
+
+              <div class="gymgrid">
+                <div class="field gym">
+                  <label for="load">Load (kg each)</label>
+                  <div class="stepper">
+                    <button class="iconbtn" type="button" aria-label="Decrease load by 2.5 kg">
+                      <span data-icon="minus"></span>
+                    </button>
+                    <input id="load" type="text" inputmode="decimal" placeholder="—" autocomplete="off" />
+                    <button class="iconbtn" type="button" aria-label="Increase load by 2.5 kg">
+                      <span data-icon="plus"></span>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="field gym">
+                  <label for="reps">Reps</label>
+                  <div class="stepper">
+                    <button class="iconbtn" type="button" aria-label="One fewer rep">
+                      <span data-icon="minus"></span>
+                    </button>
+                    <input id="reps" type="text" inputmode="numeric" placeholder="10–15" autocomplete="off" />
+                    <button class="iconbtn" type="button" aria-label="One more rep">
+                      <span data-icon="plus"></span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="wrap" style="margin-top: 14px">
+                <button class="btn btn-secondary btn-sm" type="button">
+                  <span data-icon="wand"></span>Use 22.5 kg each
+                </button>
+                <span class="tiny muted" style="align-self: center">
+                  Derived from your logged history. Offered, never applied.
+                </span>
+              </div>
+
+              <!-- desktop: the action bar is not sticky, it sits here -->
+              <div class="stickybar" style="margin-top: 18px">
+                <div class="inner">
+                  <button class="btn btn-primary btn-lg grow" type="button">
+                    <span data-icon="check"></span>Complete set
+                  </button>
+                  <button class="btn btn-secondary btn-lg" type="button" aria-label="Skip set 3">
+                    <span data-icon="skip"></span><span class="desk-only">Skip</span>
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <!-- ---------- Rest timer ---------- -->
+            <div class="card" style="display: flex; align-items: center; gap: 14px">
+              <span class="lead" style="background: var(--vs-surface-soft); color: var(--vs-ink-2); width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center; flex: none">
+                <span data-icon="timer" style="display: block; width: 20px; height: 20px"></span>
+              </span>
+              <span class="grow">
+                <span class="rowtitle">Rest</span>
+                <span class="rowsub">Optional. Never blocks the next set.</span>
+              </span>
+              <span class="display" style="font-size: 26px" aria-live="off">1:24</span>
+              <button class="btn btn-ghost btn-sm" type="button">Reset</button>
+            </div>
+
+            <!-- ---------- This exercise's sets ---------- -->
+            <section aria-labelledby="hist-t">
+              <div class="sectionhead" style="margin-top: 6px">
+                <h2 id="hist-t">One-Arm DB Row · sets</h2>
+              </div>
+              <ul class="list">
+                <li class="setrow done">
+                  <span class="idx">1</span>
+                  <span class="grow">
+                    <span class="what">12 reps · 22.5kg each</span>
+                    <span class="rowsub" style="color: var(--vs-success-ink)">Completed</span>
+                  </span>
+                  <button class="btn btn-ghost btn-sm" type="button" aria-label="Undo set 1">
+                    <span data-icon="undo"></span>Undo
+                  </button>
+                </li>
+                <li class="setrow done">
+                  <span class="idx">2</span>
+                  <span class="grow">
+                    <span class="what">
+                      11 reps · 22.5kg each
+                      <span class="corrected">Corrected</span>
+                    </span>
+                    <span class="rowsub" style="color: var(--vs-success-ink)">Completed · corrected 2 days ago</span>
+                  </span>
+                  <button class="btn btn-ghost btn-sm" type="button" aria-label="Undo set 2">
+                    <span data-icon="undo"></span>Undo
+                  </button>
+                </li>
+                <li class="setrow" style="border-color: var(--vs-accent-edge); border-width: 2px">
+                  <span class="idx" style="background: var(--vs-accent); color: var(--vs-ink)">3</span>
+                  <span class="grow">
+                    <span class="what">Current set</span>
+                    <span class="rowsub">Nothing recorded yet</span>
+                  </span>
+                </li>
+                <li class="setrow skipped">
+                  <span class="idx">4</span>
+                  <span class="grow">
+                    <span class="what">Skipped</span>
+                    <span class="rowsub" style="color: var(--vs-warn-ink)">Not a completed set</span>
+                  </span>
+                  <button class="btn btn-ghost btn-sm" type="button" aria-label="Undo set 4">
+                    <span data-icon="undo"></span>Undo
+                  </button>
+                </li>
+              </ul>
+            </section>
+
+            <!-- ---------- Exercise rail ---------- -->
+            <section aria-labelledby="plan-t">
+              <div class="sectionhead">
+                <h2 id="plan-t">Session</h2>
+                <span class="small muted">5 exercises</span>
+              </div>
+              <ul class="list divided card flush">
+                <li>
+                  <div class="listrow">
+                    <span class="lead done" aria-hidden="true">
+                      <span data-icon="check" style="display: block; width: 18px; height: 18px"></span>
+                    </span>
+                    <span class="grow">
+                      <span class="rowtitle">Lat Pulldown</span>
+                      <span class="rowsub">4 completed · resistance band</span>
+                    </span>
+                    <span class="badge done"><span data-icon="check"></span>4 completed</span>
+                  </div>
+                </li>
+                <li style="background: var(--vs-accent-soft)">
+                  <div class="listrow">
+                    <span class="lead accent" aria-hidden="true">
+                      <span data-icon="play" style="display: block; width: 16px; height: 16px"></span>
+                    </span>
+                    <span class="grow">
+                      <span class="rowtitle">One-Arm DB Row</span>
+                      <span class="rowsub">Set 3 of 4 · weight (kg each)</span>
+                    </span>
+                    <span class="badge current">Current</span>
+                  </div>
+                </li>
+                <li>
+                  <div class="listrow">
+                    <span class="lead" aria-hidden="true" style="background: var(--vs-warn-soft); color: var(--vs-warn-ink)">
+                      <span data-icon="skip" style="display: block; width: 16px; height: 16px"></span>
+                    </span>
+                    <span class="grow">
+                      <span class="rowtitle">Face Pull</span>
+                      <span class="rowsub">1 completed · 2 skipped · resistance band</span>
+                    </span>
+                    <span class="badge partial"><span data-icon="skip"></span>2 skipped</span>
+                  </div>
+                </li>
+                <li>
+                  <div class="listrow">
+                    <span class="lead" aria-hidden="true">4</span>
+                    <span class="grow">
+                      <span class="rowtitle">Preacher Curl</span>
+                      <span class="rowsub">3 sets · weight (kg each)</span>
+                    </span>
+                    <span class="chev" data-icon="right"></span>
+                  </div>
+                </li>
+                <li>
+                  <div class="listrow">
+                    <span class="lead" aria-hidden="true">5</span>
+                    <span class="grow">
+                      <span class="rowtitle">Hammer Curl</span>
+                      <span class="rowsub">2 sets · weight (kg each)</span>
+                    </span>
+                    <span class="chev" data-icon="right"></span>
+                  </div>
+                </li>
+              </ul>
+            </section>
+          </div>
+        </div>
+
+        <!-- ============ Modality + state evidence ============ -->
+        <section aria-labelledby="mod-t" style="margin-top: 40px">
+          <div class="sectionhead">
+            <h2 id="mod-t">Set logging · every canonical modality</h2>
+            <span class="small muted">Design evidence</span>
+          </div>
+
+          <div class="split2">
+            <!-- Resistance band -->
+            <div class="card">
+              <div class="spread" style="margin-bottom: 14px">
+                <span class="badge neutral"><span data-icon="band"></span>Resistance band</span>
+                <span class="small muted" style="font-weight: 650">Target 3 × 15–20</span>
+              </div>
+              <h3 style="margin-bottom: 12px">Face Pull · Set 1 of 3</h3>
+              <div class="grid2" style="gap: 12px">
+                <div class="field">
+                  <label for="band">Band</label>
+                  <input id="band" type="text" placeholder="e.g. Black" autocomplete="off" />
+                </div>
+                <div class="field">
+                  <label for="bandn">How many</label>
+                  <input id="bandn" type="text" inputmode="numeric" placeholder="1" autocomplete="off" />
+                </div>
+              </div>
+              <div class="field gym" style="margin-top: 12px">
+                <label for="breps">Reps</label>
+                <input id="breps" type="text" inputmode="numeric" placeholder="15–20" autocomplete="off" />
+              </div>
+              <div class="wrap" style="margin-top: 12px">
+                <button class="btn btn-secondary btn-sm" type="button">Black ×3 — same as set 1</button>
+                <button class="btn btn-secondary btn-sm" type="button">Red ×2</button>
+              </div>
+              <p class="hint tiny muted" style="margin: 10px 0 0">
+                Bands already used in this workout, offered as one tap so a label is not
+                retyped four times. A chip fills the draft; nothing is recorded until Complete.
+                A band is named and counted, never converted to kilograms, and there is no kg
+                field on this set.
+              </p>
+              <div class="wrap" style="margin-top: 14px">
+                <button class="btn btn-primary grow" type="button"><span data-icon="check"></span>Complete set</button>
+                <button class="btn btn-secondary" type="button"><span data-icon="skip"></span>Skip</button>
+              </div>
+            </div>
+
+            <!-- Bodyweight -->
+            <div class="card">
+              <div class="spread" style="margin-bottom: 14px">
+                <span class="badge neutral"><span data-icon="user"></span>Bodyweight / no load</span>
+                <span class="small muted" style="font-weight: 650">Target 3 × 30–60s</span>
+              </div>
+              <h3 style="margin-bottom: 12px">Plank · Set 2 of 3</h3>
+              <div class="field gym">
+                <label for="secs">Seconds</label>
+                <div class="stepper">
+                  <button class="iconbtn" type="button" aria-label="Five seconds fewer">
+                    <span data-icon="minus"></span>
+                  </button>
+                  <input id="secs" type="text" inputmode="numeric" placeholder="30–60" autocomplete="off" />
+                  <button class="iconbtn" type="button" aria-label="Five seconds more">
+                    <span data-icon="plus"></span>
+                  </button>
+                </div>
+              </div>
+              <p class="hint tiny muted" style="margin: 10px 0 0">
+                No external resistance, so there is no load field at all. Nothing is
+                inferred, and no kilogram figure is invented.
+              </p>
+              <div class="wrap" style="margin-top: 14px">
+                <button class="btn btn-primary grow" type="button"><span data-icon="check"></span>Complete set</button>
+                <button class="btn btn-secondary" type="button"><span data-icon="skip"></span>Skip</button>
+              </div>
+            </div>
+
+            <!-- Per-side reps -->
+            <div class="card">
+              <div class="spread" style="margin-bottom: 14px">
+                <span class="badge neutral"><span data-icon="user"></span>Bodyweight / no load</span>
+                <span class="badge outline">Per side</span>
+              </div>
+              <h3 style="margin-bottom: 12px">Dead Bug · Set 1 of 3</h3>
+              <div class="field gym">
+                <label for="pside">Reps / side</label>
+                <input id="pside" type="text" inputmode="numeric" placeholder="10" autocomplete="off" />
+              </div>
+              <p class="hint tiny muted" style="margin: 10px 0 0">
+                Recorded and displayed as "10 reps / side" — never silently doubled into 20.
+              </p>
+            </div>
+
+            <!-- Unreadable modality: logging refused -->
+            <div class="card" style="border-color: #ecd7a6">
+              <div class="spread" style="margin-bottom: 14px">
+                <span class="badge late"><span data-icon="alert"></span>Input type unreadable</span>
+              </div>
+              <h3 style="margin-bottom: 8px">Cable Fly · Set 1 of 3</h3>
+              <div class="banner warn" role="alert" style="margin-top: 8px">
+                <span data-icon="alert"></span>
+                <span class="grow">
+                  <b>This set cannot be logged</b>
+                  Its stored input type could not be read, so nothing is assumed about how it
+                  was loaded. Set the exercise's input type in the Exercise Library and this
+                  set becomes loggable again.
+                  <span class="actions">
+                    <a class="btn btn-secondary btn-sm" href="library.html">
+                      <span data-icon="settings"></span>Open Exercise Library
+                    </a>
+                  </span>
+                </span>
+              </div>
+              <div class="wrap" style="margin-top: 14px">
+                <button class="btn btn-primary grow" type="button" disabled aria-disabled="true">
+                  <span data-icon="check"></span>Complete set
+                </button>
+                <button class="btn btn-secondary" type="button"><span data-icon="skip"></span>Skip</button>
+              </div>
+            </div>
+
+            <!-- Modality drift: frozen snapshot wins -->
+            <div class="card" style="border-color: #c7dcf7">
+              <div class="banner info" style="margin: -4px 0 14px">
+                <span data-icon="info"></span>
+                <span class="grow">
+                  <b>This exercise's input type changed since you started</b>
+                  This workout keeps the modality it was started with — kilograms — because
+                  that is what you are actually doing right now. The new setting applies to
+                  your next workout.
+                </span>
+              </div>
+              <h3>Triceps Pushdown · Set 1 of 3</h3>
+              <p class="sub">Logging in <b>kg</b>, as frozen at Start.</p>
+            </div>
+
+            <!-- Stale write: fail closed -->
+            <div class="card" style="border-color: #f0c4c0">
+              <div class="banner danger" role="alert" style="margin: -4px 0 14px">
+                <span data-icon="alert"></span>
+                <span class="grow">
+                  <b>That set was not saved</b>
+                  This workout changed on another device while you were logging. Nothing was
+                  overwritten. Reload to see the current sets, then log again.
+                  <span class="actions">
+                    <button class="btn btn-secondary btn-sm" type="button">
+                      <span data-icon="refresh"></span>Reload this workout
+                    </button>
+                  </span>
+                </span>
+              </div>
+              <p class="small muted" style="margin: 0">
+                Stale writes fail closed. The set you typed stays on screen until you decide.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ Finished ============ -->
+        <section aria-labelledby="fin-t" style="margin-top: 36px">
+          <div class="sectionhead">
+            <h2 id="fin-t">When the last set is resolved</h2>
+          </div>
+          <div class="hero accent">
+            <div class="wrap" style="margin-bottom: 12px">
+              <span class="badge done"><span data-icon="check"></span>Workout complete</span>
+              <span class="badge scheduled"><span data-icon="calendar"></span>Scheduled</span>
+              <span class="badge hard">HARD</span>
+            </div>
+            <h2 style="font-size: 24px">Back Width + Biceps</h2>
+            <p class="sub">Monday 8 September · finished 21:24</p>
+            <div class="grid3" style="margin: 18px 0">
+              <div class="metric"><span class="k">15</span><span class="n">Sets completed</span></div>
+              <div class="metric"><span class="k">2</span><span class="n">Sets skipped</span></div>
+              <div class="metric"><span class="k">5</span><span class="n">Exercises</span></div>
+            </div>
+            <div class="wrap">
+              <a class="btn btn-primary" href="progress.html"><span data-icon="progress"></span>See it in Progress</a>
+              <a class="btn btn-secondary" href="today.html">Back to Today</a>
+            </div>
+            <p class="tiny muted" style="margin: 14px 0 0">
+              Counted from the sets that were actually recorded. Completed and skipped are
+              reported separately and never added together. No volume, calorie or intensity
+              figure is derived — none of those is in the data.
+            </p>
+          </div>
+        </section>
+
+        <!-- ============ Start / cancel states ============ -->
+        <section aria-labelledby="start-t" style="margin-top: 36px">
+          <div class="sectionhead">
+            <h2 id="start-t">Before Start, and taking a Start back</h2>
+          </div>
+          <div class="split2">
+            <div class="card">
+              <p class="eyebrow">Not started</p>
+              <h3 style="margin-bottom: 4px">Back Width + Biceps</h3>
+              <p class="sub">5 exercises · 17 sets to log</p>
+              <button class="btn btn-primary btn-lg btn-block" type="button" style="margin-top: 16px">
+                <span data-icon="play"></span>Start workout
+              </button>
+              <p class="tiny muted" style="margin: 10px 0 0">
+                Starting freezes today's programme into this workout. Later programme edits
+                will not change it.
+              </p>
+            </div>
+
+            <div class="card">
+              <p class="eyebrow">Started by mistake</p>
+              <h3 style="margin-bottom: 4px">Cancel this workout?</h3>
+              <p class="sub">
+                No sets have been recorded. This returns the workout to <b>Not started</b>.
+                It is offered only while the server confirms nothing was logged.
+              </p>
+              <div class="wrap" style="margin-top: 16px">
+                <button class="btn btn-danger" type="button"><span data-icon="trash"></span>Cancel workout</button>
+                <button class="btn btn-ghost" type="button">Keep workout</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>

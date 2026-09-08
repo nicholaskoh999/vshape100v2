@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Calendar · VShape100 Round 24 prototype</title>
+    <link rel="stylesheet" href="vs.css" />
+    <script defer src="vs.js"></script>
+  </head>
+  <body data-nav="calendar">
+    <main class="main">
+      <div class="container">
+        <header class="pagehead">
+          <div>
+            <p class="eyebrow">Schedule &amp; history</p>
+            <h1>Calendar</h1>
+            <p class="sub">What each day was, and what you did on it</p>
+          </div>
+        </header>
+
+        <div class="cols">
+          <div class="stack">
+            <section class="card" aria-labelledby="cal-t">
+              <div class="spread" style="margin-bottom: 16px">
+                <h2 id="cal-t">September 2026</h2>
+                <div class="row" style="gap: 6px">
+                  <button class="iconbtn" type="button" aria-label="Previous month">
+                    <span data-icon="left"></span>
+                  </button>
+                  <button class="btn btn-secondary btn-sm" type="button">Today</button>
+                  <button class="iconbtn" type="button" aria-label="Next month">
+                    <span data-icon="right"></span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="cal" data-single="aria-pressed" role="group" aria-label="September 2026">
+                <span class="hd">Mon</span><span class="hd">Tue</span><span class="hd">Wed</span>
+                <span class="hd">Thu</span><span class="hd">Fri</span><span class="hd">Sat</span>
+                <span class="hd">Sun</span>
+
+                <button class="cell out" type="button">31<span class="dots"></span></button>
+                <button class="cell" type="button">1
+                  <span class="dots"><i style="background: var(--vs-success-mark)"></i></span>
+                  <span class="sr-only">Workout completed</span>
+                </button>
+                <button class="cell" type="button">2
+                  <span class="dots"><i style="background: var(--vs-success-mark)"></i></span>
+                  <span class="sr-only">Workout completed</span>
+                </button>
+                <button class="cell" type="button">3
+                  <span class="dots"><i style="background: var(--vs-recovery-ink)"></i></span>
+                  <span class="sr-only">Recovery day</span>
+                </button>
+                <button class="cell" type="button">4
+                  <span class="dots"><i style="background: var(--vs-success-mark)"></i></span>
+                  <span class="sr-only">Workout completed</span>
+                </button>
+                <button class="cell" type="button">5
+                  <span class="dots"><i style="background: var(--vs-success-mark)"></i></span>
+                  <span class="sr-only">Workout completed</span>
+                </button>
+                <button class="cell" type="button">6
+                  <span class="dots"><i style="background: var(--vs-accent-edge)"></i></span>
+                  <span class="sr-only">Extra workout</span>
+                </button>
+
+                <button class="cell" type="button">7<span class="dots"></span></button>
+                <button class="cell" type="button" aria-pressed="true">8
+                  <span class="dots"><i style="background: var(--vs-ink-4)"></i></span>
+                  <span class="sr-only">Today · workout scheduled</span>
+                </button>
+                <button class="cell" type="button">9
+                  <span class="dots"><i style="background: var(--vs-ink-4)"></i></span>
+                </button>
+                <button class="cell" type="button">10
+                  <span class="dots"><i style="background: var(--vs-ink-4)"></i></span>
+                </button>
+                <button class="cell" type="button">11
+                  <span class="dots"><i style="background: var(--vs-ink-4)"></i></span>
+                </button>
+                <button class="cell" type="button">12
+                  <span class="dots"><i style="background: var(--vs-ink-4)"></i></span>
+                </button>
+                <button class="cell" type="button">13<span class="dots"></span></button>
+                <button class="cell" type="button">14<span class="dots"></span></button>
+
+                <button class="cell" type="button">15
+                  <span class="dots">
+                    <i style="background: var(--vs-holiday-ink)"></i>
+                    <i style="background: var(--vs-ink-4)"></i>
+                  </span>
+                  <span class="sr-only">Holiday · training on</span>
+                </button>
+                <button class="cell" type="button">16
+                  <span class="dots"><i style="background: var(--vs-holiday-ink)"></i></span>
+                  <span class="sr-only">Holiday · exempt</span>
+                </button>
+                <button class="cell" type="button">17
+                  <span class="dots"><i style="background: var(--vs-holiday-ink)"></i></span>
+                  <span class="sr-only">Holiday · exempt</span>
+                </button>
+                <button class="cell" type="button">18<span class="dots"></span></button>
+                <button class="cell" type="button">19<span class="dots"></span></button>
+                <button class="cell" type="button">20<span class="dots"></span></button>
+                <button class="cell" type="button">21<span class="dots"></span></button>
+
+                <button class="cell" type="button">22<span class="dots"></span></button>
+                <button class="cell" type="button">23<span class="dots"></span></button>
+                <button class="cell" type="button">24<span class="dots"></span></button>
+                <button class="cell" type="button">25<span class="dots"></span></button>
+                <button class="cell" type="button">26<span class="dots"></span></button>
+                <button class="cell" type="button">27<span class="dots"></span></button>
+                <button class="cell" type="button">28<span class="dots"></span></button>
+
+                <button class="cell" type="button">29<span class="dots"></span></button>
+                <button class="cell" type="button">30<span class="dots"></span></button>
+                <button class="cell out" type="button">1<span class="dots"></span></button>
+                <button class="cell out" type="button">2<span class="dots"></span></button>
+                <button class="cell out" type="button">3<span class="dots"></span></button>
+                <button class="cell out" type="button">4<span class="dots"></span></button>
+                <button class="cell out" type="button">5<span class="dots"></span></button>
+              </div>
+
+              <div class="legend">
+                <span><i style="background: var(--vs-ink-4)"></i>Scheduled</span>
+                <span><i style="background: var(--vs-success-mark)"></i>Completed</span>
+                <span><i style="background: var(--vs-accent-edge)"></i>Extra</span>
+                <span><i style="background: var(--vs-recovery-ink)"></i>Recovery</span>
+                <span><i style="background: var(--vs-holiday-ink)"></i>Holiday</span>
+              </div>
+              <p class="tiny muted" style="margin: 10px 0 0">
+                Every marker also has a text label in the day's detail below, so no state is
+                communicated by colour alone.
+              </p>
+            </section>
+          </div>
+
+          <!-- ============ Selected day ============ -->
+          <div class="stack">
+            <section class="card" aria-labelledby="day-t">
+              <p class="eyebrow">Selected day</p>
+              <h2 id="day-t">Monday 8 September</h2>
+              <div class="wrap" style="margin: 10px 0 14px">
+                <span class="badge scheduled"><span data-icon="calendar"></span>Scheduled</span>
+                <span class="badge hard">HARD</span>
+                <span class="badge outline">Today</span>
+              </div>
+              <p class="sub" style="margin-top: 0">
+                <b>Back Width + Biceps</b> · 5 exercises · 17 sets · not started
+              </p>
+              <div class="wrap" style="margin-top: 16px">
+                <a class="btn btn-primary" href="workout.html"><span data-icon="play"></span>Start workout</a>
+                <button class="btn btn-secondary" type="button"><span data-icon="holiday"></span>Mark as Holiday</button>
+              </div>
+            </section>
+
+            <section class="card" aria-labelledby="hol-t">
+              <div class="spread" style="margin-bottom: 12px">
+                <h2 id="hol-t">Holidays</h2>
+                <button class="btn btn-secondary btn-sm" type="button"><span data-icon="plus"></span>Add</button>
+              </div>
+              <ul class="list" style="gap: 8px">
+                <li class="listrow card" style="padding: 12px 14px">
+                  <span class="lead" style="background: var(--vs-holiday-soft); color: var(--vs-holiday-ink)">
+                    <span data-icon="holiday" style="display: block; width: 18px; height: 18px"></span>
+                  </span>
+                  <span class="grow">
+                    <span class="rowtitle">Company shutdown</span>
+                    <span class="rowsub">15 – 17 Sep · your own Holiday</span>
+                  </span>
+                  <span class="badge outline">Training on</span>
+                </li>
+                <li class="listrow card" style="padding: 12px 14px">
+                  <span class="lead" style="background: var(--vs-holiday-soft); color: var(--vs-holiday-ink)">
+                    <span data-icon="lock" style="display: block; width: 18px; height: 18px"></span>
+                  </span>
+                  <span class="grow">
+                    <span class="rowtitle">Malaysia Day</span>
+                    <span class="rowsub">16 Sep · company holiday, cannot be edited</span>
+                  </span>
+                  <span class="badge outline">Training off</span>
+                </li>
+              </ul>
+              <p class="tiny muted" style="margin: 12px 0 0">
+                A Holiday pauses the <b>work</b> routine, not the day. Training On and Exempt
+                are genuinely different days and are always named as such.
+              </p>
+            </section>
+
+            <section aria-labelledby="cst-t">
+              <div class="sectionhead">
+                <h2 id="cst-t">Other states</h2>
+              </div>
+              <div class="stack" style="gap: 12px">
+                <div class="banner warn" role="alert">
+                  <span data-icon="alert"></span>
+                  <span class="grow">
+                    <b>That Holiday overlaps one you already have</b>
+                    Nothing was saved. Adjust the dates, or edit the existing Holiday.
+                  </span>
+                </div>
+                <div class="banner info">
+                  <span data-icon="lock"></span>
+                  <span class="grow">
+                    <b>Company holidays cannot be edited</b>
+                    You can still choose Training On or Off for the day.
+                  </span>
+                </div>
+                <div class="card">
+                  <p class="label" style="margin: 0 0 4px">Day with no schedule</p>
+                  <p class="small muted" style="margin: 0">
+                    Sunday 7 September · Recovery route · no gym scheduled. Nothing is counted
+                    as missed.
+                  </p>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

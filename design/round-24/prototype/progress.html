@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Progress · VShape100 Round 24 prototype</title>
+    <link rel="stylesheet" href="vs.css" />
+    <script defer src="vs.js"></script>
+  </head>
+  <body data-nav="progress">
+    <main class="main">
+      <div class="container">
+        <header class="pagehead">
+          <div>
+            <p class="eyebrow">Foundation · Day 9 of 100</p>
+            <h1>Progress</h1>
+            <p class="sub">Everything here is read from what you logged</p>
+          </div>
+        </header>
+
+        <!-- ============ Summary ============ -->
+        <div class="grid3" style="margin-bottom: var(--vs-section-gap)">
+          <div class="metric">
+            <span class="icn" style="background: var(--vs-info-soft); color: var(--vs-info-ink)">
+              <span data-icon="scale" style="display: block; width: 17px; height: 17px"></span>
+            </span>
+            <span class="k">80.4<span style="font-size: 15px; font-weight: 650"> kg</span></span>
+            <span class="n">Current weight · −1.7 kg</span>
+          </div>
+          <div class="metric">
+            <span class="icn" style="background: var(--vs-warn-soft); color: var(--vs-warn-ink)">
+              <span data-icon="flame" style="display: block; width: 17px; height: 17px"></span>
+            </span>
+            <span class="k">6</span>
+            <span class="n">Day streak</span>
+          </div>
+          <div class="metric">
+            <span class="icn" style="background: var(--vs-accent-soft); color: var(--vs-accent-ink)">
+              <span data-icon="training" style="display: block; width: 17px; height: 17px"></span>
+            </span>
+            <span class="k">34</span>
+            <span class="n">Workouts logged</span>
+          </div>
+        </div>
+
+        <div class="cols even">
+          <div class="stack">
+            <!-- ============ Body weight ============ -->
+            <section class="card" aria-labelledby="bw-t">
+              <div class="spread" style="margin-bottom: 14px">
+                <div>
+                  <h2 id="bw-t">Body weight</h2>
+                  <p class="sub">12 entries · goal 78.0 kg</p>
+                </div>
+                <button class="btn btn-secondary btn-sm" type="button">
+                  <span data-icon="plus"></span>Log weight
+                </button>
+              </div>
+
+              <div class="pilltabs" role="tablist" aria-label="Time range" style="margin-bottom: 16px">
+                <button role="tab" type="button" aria-selected="true">30D</button>
+                <button role="tab" type="button" aria-selected="false">90D</button>
+                <button role="tab" type="button" aria-selected="false">6M</button>
+                <button role="tab" type="button" aria-selected="false">1Y</button>
+                <button role="tab" type="button" aria-selected="false">All</button>
+              </div>
+
+              <svg class="chart" viewBox="0 0 340 140" role="img"
+                   aria-label="Body weight fell from 82.1 kg to 80.4 kg over the last 30 days. Goal is 78.0 kg.">
+                <g class="grid">
+                  <line x1="34" y1="23.8" x2="330" y2="23.8" />
+                  <line x1="34" y1="43.4" x2="330" y2="43.4" />
+                  <line x1="34" y1="63" x2="330" y2="63" />
+                  <line x1="34" y1="82.6" x2="330" y2="82.6" />
+                  <line x1="34" y1="112" x2="330" y2="112" />
+                </g>
+                <g class="axis" text-anchor="end">
+                  <text x="28" y="27">82</text>
+                  <text x="28" y="46.6">81</text>
+                  <text x="28" y="66.2">80</text>
+                  <text x="28" y="85.8">79</text>
+                  <text x="28" y="105.4">78</text>
+                </g>
+                <line class="goal" x1="34" y1="102.2" x2="330" y2="102.2" />
+                <text class="axis" x="330" y="99" text-anchor="end" fill="#6e7468">Goal 78.0</text>
+
+                <path class="area"
+                      d="M34,21.8 L60.9,27.7 L87.8,25.8 L114.7,35.6 L141.6,43.4 L168.5,39.5 L195.5,47.3 L222.4,51.2 L249.3,45.4 L276.2,53.2 L303.1,55.2 L330,55.2 L330,112 L34,112 Z" />
+                <path class="line"
+                      d="M34,21.8 L60.9,27.7 L87.8,25.8 L114.7,35.6 L141.6,43.4 L168.5,39.5 L195.5,47.3 L222.4,51.2 L249.3,45.4 L276.2,53.2 L303.1,55.2 L330,55.2" />
+                <circle class="dot" cx="330" cy="55.2" r="4.5" />
+
+                <g transform="translate(272,26)">
+                  <rect class="callout" x="0" y="0" width="58" height="22" rx="11" />
+                  <text class="callout-t" x="29" y="15" text-anchor="middle">80.4 kg</text>
+                </g>
+
+                <g class="axis" text-anchor="middle">
+                  <text x="34" y="128">10 Aug</text>
+                  <text x="182" y="128">24 Aug</text>
+                  <text x="330" y="128">6 Sep</text>
+                </g>
+              </svg>
+
+              <p class="tiny muted" style="margin: 12px 0 0">
+                One entry per day. Saving the same date again replaces it, so a day can never
+                hold two contradictory weights.
+              </p>
+            </section>
+
+            <!-- ============ Consistency ============ -->
+            <section class="card" aria-labelledby="cons-t">
+              <h2 id="cons-t" style="margin-bottom: 4px">Sessions per week</h2>
+              <p class="sub" style="margin-bottom: 16px">Scheduled sessions completed. Extras are counted separately.</p>
+
+              <svg class="chart" viewBox="0 0 340 122" role="img"
+                   aria-label="Completed sessions per week: 4, 5, 3, 5, 4, 5, 4, and 4 this week.">
+                <g class="grid">
+                  <line x1="16" y1="98" x2="330" y2="98" />
+                </g>
+                <g class="bar">
+                  <rect x="26" y="37.2" width="22" height="60.8" rx="6" />
+                  <rect x="64" y="22" width="22" height="76" rx="6" />
+                  <rect x="102" y="52.4" width="22" height="45.6" rx="6" />
+                  <rect x="140" y="22" width="22" height="76" rx="6" />
+                  <rect x="178" y="37.2" width="22" height="60.8" rx="6" />
+                  <rect x="216" y="22" width="22" height="76" rx="6" />
+                  <rect x="254" y="37.2" width="22" height="60.8" rx="6" />
+                </g>
+                <rect class="bar on" x="292" y="37.2" width="22" height="60.8" rx="6" />
+                <g transform="translate(274,8)">
+                  <rect class="callout" x="0" y="0" width="58" height="21" rx="10.5" />
+                  <text class="callout-t" x="29" y="14.5" text-anchor="middle">4 of 5</text>
+                </g>
+                <g class="axis" text-anchor="middle">
+                  <text x="37" y="114">W1</text>
+                  <text x="75" y="114">W2</text>
+                  <text x="113" y="114">W3</text>
+                  <text x="151" y="114">W4</text>
+                  <text x="189" y="114">W5</text>
+                  <text x="227" y="114">W6</text>
+                  <text x="265" y="114">W7</text>
+                  <text x="303" y="114">Now</text>
+                </g>
+              </svg>
+            </section>
+          </div>
+
+          <div class="stack">
+            <!-- ============ Personal bests ============ -->
+            <section aria-labelledby="pb-t">
+              <div class="sectionhead" style="margin-top: 0">
+                <h2 id="pb-t">Personal bests</h2>
+                <span class="small muted">By modality</span>
+              </div>
+
+              <div class="banner info" style="margin-bottom: 12px">
+                <span data-icon="info"></span>
+                <span class="grow">
+                  Bests are listed within one modality only. A band set and a kilogram set are
+                  not ranked against each other, because no arithmetic makes them comparable.
+                </span>
+              </div>
+
+              <ul class="list divided card flush">
+                <li>
+                  <div class="listrow">
+                    <span class="lead accent" aria-hidden="true">
+                      <span data-icon="training" style="display: block; width: 18px; height: 18px"></span>
+                    </span>
+                    <span class="grow">
+                      <span class="rowtitle">One-Arm DB Row</span>
+                      <span class="rowsub">12 reps · 22.5kg each · 4 Sep</span>
+                    </span>
+                    <span class="badge neutral">Weight</span>
+                  </div>
+                </li>
+                <li>
+                  <div class="listrow">
+                    <span class="lead" aria-hidden="true">
+                      <span data-icon="band" style="display: block; width: 18px; height: 18px"></span>
+                    </span>
+                    <span class="grow">
+                      <span class="rowtitle">Lat Pulldown</span>
+                      <span class="rowsub">15 reps · Black ×3 · 4 Sep</span>
+                    </span>
+                    <span class="badge neutral">Band</span>
+                  </div>
+                </li>
+                <li>
+                  <div class="listrow">
+                    <span class="lead" aria-hidden="true">
+                      <span data-icon="user" style="display: block; width: 18px; height: 18px"></span>
+                    </span>
+                    <span class="grow">
+                      <span class="rowtitle">Plank</span>
+                      <span class="rowsub">62s · 3 Sep</span>
+                    </span>
+                    <span class="badge neutral">Bodyweight</span>
+                  </div>
+                </li>
+              </ul>
+            </section>
+
+            <!-- ============ Exercise performance ============ -->
+            <section aria-labelledby="perf-t">
+              <div class="sectionhead">
+                <h2 id="perf-t">Exercise performance</h2>
+              </div>
+
+              <div class="card" style="margin-bottom: 12px">
+                <div class="spread" style="margin-bottom: 10px">
+                  <div>
+                    <h3>One-Arm DB Row</h3>
+                    <p class="tiny muted" style="margin: 2px 0 0">Weight (kg each) · last 6 sessions</p>
+                  </div>
+                  <span class="badge done">+2.5 kg</span>
+                </div>
+                <svg class="chart" viewBox="0 0 300 68" role="img"
+                     aria-label="Top set load rose from 20 to 22.5 kg each over six sessions.">
+                  <path class="line" d="M10,50 L68,50 L126,38 L184,38 L242,26 L290,26" />
+                  <circle class="dot" cx="290" cy="26" r="4" />
+                  <g class="axis">
+                    <text x="10" y="66">20kg</text>
+                    <text x="270" y="66">22.5kg</text>
+                  </g>
+                </svg>
+              </div>
+
+              <div class="card">
+                <div class="spread" style="margin-bottom: 10px">
+                  <div>
+                    <h3>Lat Pulldown</h3>
+                    <p class="tiny muted" style="margin: 2px 0 0">Resistance band · last 6 sessions</p>
+                  </div>
+                  <span class="badge neutral">Black ×3</span>
+                </div>
+                <p class="small" style="margin: 0">
+                  Reps at the same band setup: <b>12 → 13 → 13 → 14 → 15 → 15</b>
+                </p>
+                <p class="tiny muted" style="margin: 8px 0 0">
+                  Band progress is read as reps at a stated band and count. No load curve is
+                  drawn, because a band has no kilogram value to plot.
+                </p>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <!-- ============ Recent workouts ============ -->
+        <section aria-labelledby="rec-t">
+          <div class="sectionhead">
+            <h2 id="rec-t">Recent workouts</h2>
+            <a class="link" href="calendar.html">Open Calendar</a>
+          </div>
+
+          <ul class="list">
+            <li class="card">
+              <div class="spread" style="margin-bottom: 10px">
+                <div class="wrap">
+                  <span class="badge scheduled"><span data-icon="calendar"></span>Scheduled</span>
+                  <span class="badge hard">HARD</span>
+                  <span class="badge done"><span data-icon="check"></span>14 of 14</span>
+                </div>
+                <span class="small muted" style="font-weight: 650">Thu 4 Sep</span>
+              </div>
+              <h3>Back Thickness + Chest + Biceps</h3>
+              <p class="sub">12 completed · 2 skipped · 0 pending</p>
+
+              <button class="btn btn-ghost btn-sm" type="button" data-disclosure
+                      aria-expanded="false" aria-controls="sets-1" style="margin-top: 10px">
+                <span data-icon="list"></span>Show recorded sets
+              </button>
+
+              <div id="sets-1" hidden style="margin-top: 12px">
+                <ul class="list" style="gap: 8px">
+                  <li class="setrow done">
+                    <span class="idx">1</span>
+                    <span class="grow"><span class="what">15 reps · Black ×3</span></span>
+                    <button class="btn btn-ghost btn-sm" type="button">
+                      <span data-icon="pencil"></span>Correct
+                    </button>
+                  </li>
+                  <li class="setrow done">
+                    <span class="idx">2</span>
+                    <span class="grow">
+                      <span class="what">12 reps · 22.5kg each <span class="corrected">Corrected</span></span>
+                    </span>
+                    <button class="btn btn-ghost btn-sm" type="button">
+                      <span data-icon="pencil"></span>Correct
+                    </button>
+                  </li>
+                  <li class="setrow skipped">
+                    <span class="idx">3</span>
+                    <span class="grow"><span class="what">Skipped</span></span>
+                    <span class="tiny" style="color: var(--vs-warn-ink); font-weight: 650">
+                      Not a completed set
+                    </span>
+                  </li>
+                </ul>
+                <p class="tiny muted" style="margin: 10px 0 0">
+                  A correction records what the set really was and keeps an immutable audit of
+                  what it said before. It never deletes the original record.
+                </p>
+              </div>
+            </li>
+
+            <li class="card">
+              <div class="spread" style="margin-bottom: 10px">
+                <div class="wrap">
+                  <span class="badge extra"><span data-icon="plus"></span>Extra</span>
+                  <span class="badge pump">PUMP</span>
+                  <span class="badge done"><span data-icon="check"></span>15 of 15</span>
+                </div>
+                <span class="small muted" style="font-weight: 650">Sat 6 Sep</span>
+              </div>
+              <h3>Arms + Shoulders Pump</h3>
+              <p class="sub">Voluntary session, based on Friday. Counted as an Extra, never as Friday.</p>
+            </li>
+          </ul>
+        </section>
+
+        <!-- ============ States ============ -->
+        <section aria-labelledby="pst-t" style="margin-top: 40px">
+          <div class="sectionhead">
+            <h2 id="pst-t">Progress · other states</h2>
+            <span class="small muted">Design evidence</span>
+          </div>
+          <div class="split2">
+            <div class="empty">
+              <span class="icn"><span data-icon="scale" style="display: block; width: 22px; height: 22px"></span></span>
+              <div>
+                <p class="rowtitle">No weight logged yet</p>
+                <p class="rowsub">Your first entry starts the chart. Nothing is estimated before then.</p>
+              </div>
+              <button class="btn btn-primary btn-sm" type="button"><span data-icon="plus"></span>Log weight</button>
+            </div>
+
+            <div class="empty">
+              <span class="icn"><span data-icon="training" style="display: block; width: 22px; height: 22px"></span></span>
+              <div>
+                <p class="rowtitle">No workouts logged yet</p>
+                <p class="rowsub">
+                  Personal bests and exercise performance appear once you have completed sets
+                  to read them from.
+                </p>
+              </div>
+              <a class="btn btn-primary btn-sm" href="training.html"><span data-icon="play"></span>Go to Training</a>
+            </div>
+
+            <div class="card">
+              <p class="label" style="margin: 0 0 12px">Loading</p>
+              <span class="skeleton" style="display: block; height: 16px; width: 45%"></span>
+              <span class="skeleton" style="display: block; height: 118px; margin-top: 14px"></span>
+            </div>
+
+            <div class="banner danger" role="alert">
+              <span data-icon="alert"></span>
+              <span class="grow">
+                <b>Your history could not be read</b>
+                Nothing is estimated in its place and no chart is drawn from a partial answer.
+                <span class="actions">
+                  <button class="btn btn-secondary btn-sm" type="button">
+                    <span data-icon="refresh"></span>Try again
+                  </button>
+                </span>
+              </span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>

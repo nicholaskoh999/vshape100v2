@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Programme · VShape100 Round 24 prototype</title>
+    <link rel="stylesheet" href="vs.css" />
+    <script defer src="vs.js"></script>
+  </head>
+  <body data-nav="settings">
+    <main class="main">
+      <div class="container">
+        <a class="btn btn-ghost btn-sm" href="settings.html" style="margin-bottom: 12px; padding-left: 0">
+          <span data-icon="back"></span>Settings
+        </a>
+
+        <header class="pagehead">
+          <div>
+            <p class="eyebrow">Settings · Revision 12</p>
+            <h1>Programme</h1>
+            <p class="sub">Your Monday–Friday training week</p>
+          </div>
+          <span class="badge done"><span data-icon="check"></span>All changes saved</span>
+        </header>
+
+        <!-- ============ Day tabs ============ -->
+        <div class="pilltabs" role="tablist" aria-label="Weekday" style="margin-bottom: var(--vs-section-gap)">
+          <button role="tab" type="button" aria-selected="true">Mon · 5</button>
+          <button role="tab" type="button" aria-selected="false">Tue · 5</button>
+          <button role="tab" type="button" aria-selected="false">Wed · 5</button>
+          <button role="tab" type="button" aria-selected="false">Thu · 5</button>
+          <button role="tab" type="button" aria-selected="false">Fri · 5</button>
+        </div>
+
+        <div class="cols">
+          <div class="stack">
+            <!-- ============ Selected day ============ -->
+            <section aria-labelledby="day-t">
+              <div class="spread" style="margin-bottom: 14px">
+                <div>
+                  <h2 id="day-t">Monday</h2>
+                  <p class="sub">Back Width + Biceps · 5 exercises · 17 sets</p>
+                </div>
+                <span class="badge hard">HARD</span>
+              </div>
+
+              <ul class="list">
+                <li class="card" style="padding: 14px 16px">
+                  <div class="slotrow">
+                    <span class="lead" aria-hidden="true">1</span>
+                    <span class="grow">
+                      <span class="rowtitle">Lat Pulldown</span>
+                      <span class="wrap" style="margin-top: 5px">
+                        <span class="badge outline">4 × 10–15</span>
+                        <span class="badge neutral"><span data-icon="band"></span>Band</span>
+                        <span class="badge outline">BAND 20kg</span>
+                      </span>
+                    </span>
+                    <span class="actions">
+                      <button class="iconbtn" type="button" aria-label="Move Lat Pulldown up in Monday" disabled aria-disabled="true">
+                        <span data-icon="up"></span>
+                      </button>
+                      <button class="iconbtn" type="button" aria-label="Move Lat Pulldown down in Monday">
+                        <span data-icon="down"></span>
+                      </button>
+                      <button class="iconbtn" type="button" aria-label="Edit Lat Pulldown on Monday">
+                        <span data-icon="pencil"></span>
+                      </button>
+                    </span>
+                  </div>
+                </li>
+
+                <li class="card" style="padding: 14px 16px; border-color: var(--vs-accent-edge); border-width: 2px">
+                  <div class="slotrow">
+                    <span class="lead accent" aria-hidden="true">2</span>
+                    <span class="grow">
+                      <span class="rowtitle">One-Arm DB Row</span>
+                      <span class="wrap" style="margin-top: 5px">
+                        <span class="badge outline">3 × 8–12</span>
+                        <span class="badge neutral"><span data-icon="training"></span>Weight</span>
+                        <span class="badge outline">DB + Bench Flat</span>
+                      </span>
+                    </span>
+                    <span class="actions">
+                      <button class="iconbtn" type="button" aria-label="Move One-Arm DB Row up in Monday">
+                        <span data-icon="up"></span>
+                      </button>
+                      <button class="iconbtn" type="button" aria-label="Move One-Arm DB Row down in Monday">
+                        <span data-icon="down"></span>
+                      </button>
+                      <button class="iconbtn" type="button" aria-label="Edit One-Arm DB Row on Monday" style="border-color: var(--vs-accent-edge)">
+                        <span data-icon="pencil"></span>
+                      </button>
+                    </span>
+                  </div>
+
+                  <!-- inline editor: a sheet on mobile, this panel on desktop -->
+                  <div style="margin-top: 16px; border-top: 1px solid var(--vs-line); padding-top: 16px">
+                    <p class="label" style="margin: 0 0 12px">Monday prescription</p>
+
+                    <div class="grid2" style="gap: 12px">
+                      <div class="field">
+                        <label for="sets">Sets</label>
+                        <input id="sets" type="text" inputmode="numeric" value="3" />
+                      </div>
+                      <div class="field">
+                        <label for="kind">Records</label>
+                        <select id="kind">
+                          <option selected>Reps</option>
+                          <option>Seconds</option>
+                        </select>
+                      </div>
+                      <div class="field">
+                        <label for="tmin">Target from</label>
+                        <input id="tmin" type="text" inputmode="numeric" value="8" />
+                      </div>
+                      <div class="field">
+                        <label for="tmax">Target to</label>
+                        <input id="tmax" type="text" inputmode="numeric" value="12" />
+                      </div>
+                    </div>
+
+                    <div class="field" style="margin-top: 12px">
+                      <label for="eq">Equipment note (optional)</label>
+                      <input id="eq" type="text" value="DB + Bench Flat" />
+                    </div>
+
+                    <label class="row" style="margin-top: 14px; gap: 10px; cursor: pointer">
+                      <input type="checkbox" style="width: 20px; height: 20px; accent-color: var(--vs-accent-edge)" />
+                      <span class="small" style="font-weight: 600">
+                        Per side — records as “10 reps / side”, never doubled
+                      </span>
+                    </label>
+
+                    <div class="wrap" style="margin-top: 16px">
+                      <button class="btn btn-primary" type="button"><span data-icon="check"></span>Apply</button>
+                      <button class="btn btn-ghost" type="button">Cancel</button>
+                      <button class="btn btn-ghost btn-sm" type="button" style="margin-left: auto; color: var(--vs-danger-ink)">
+                        <span data-icon="trash"></span>Remove from Monday
+                      </button>
+                    </div>
+                    <p class="tiny muted" style="margin: 12px 0 0">
+                      Removing it from Monday does not delete the exercise or any workout you
+                      have already logged. It only stops appearing in future Monday workouts.
+                    </p>
+                  </div>
+                </li>
+
+                <li class="card" style="padding: 14px 16px">
+                  <div class="slotrow">
+                    <span class="lead" aria-hidden="true">3</span>
+                    <span class="grow">
+                      <span class="rowtitle">Face Pull</span>
+                      <span class="wrap" style="margin-top: 5px">
+                        <span class="badge outline">3 × 15–20</span>
+                        <span class="badge neutral"><span data-icon="band"></span>Band</span>
+                      </span>
+                    </span>
+                    <span class="actions">
+                      <button class="iconbtn" type="button" aria-label="Move Face Pull up in Monday"><span data-icon="up"></span></button>
+                      <button class="iconbtn" type="button" aria-label="Move Face Pull down in Monday"><span data-icon="down"></span></button>
+                      <button class="iconbtn" type="button" aria-label="Edit Face Pull on Monday"><span data-icon="pencil"></span></button>
+                    </span>
+                  </div>
+                </li>
+
+                <li class="card" style="padding: 14px 16px">
+                  <div class="slotrow">
+                    <span class="lead" aria-hidden="true">4</span>
+                    <span class="grow">
+                      <span class="rowtitle">Preacher Curl</span>
+                      <span class="wrap" style="margin-top: 5px">
+                        <span class="badge outline">3 × 10–15</span>
+                        <span class="badge neutral"><span data-icon="training"></span>Weight</span>
+                      </span>
+                    </span>
+                    <span class="actions">
+                      <button class="iconbtn" type="button" aria-label="Move Preacher Curl up in Monday"><span data-icon="up"></span></button>
+                      <button class="iconbtn" type="button" aria-label="Move Preacher Curl down in Monday"><span data-icon="down"></span></button>
+                      <button class="iconbtn" type="button" aria-label="Edit Preacher Curl on Monday"><span data-icon="pencil"></span></button>
+                    </span>
+                  </div>
+                </li>
+
+                <li class="card" style="padding: 14px 16px">
+                  <div class="slotrow">
+                    <span class="lead" aria-hidden="true">5</span>
+                    <span class="grow">
+                      <span class="rowtitle">Hammer Curl</span>
+                      <span class="wrap" style="margin-top: 5px">
+                        <span class="badge outline">2 × 10–15</span>
+                        <span class="badge neutral"><span data-icon="training"></span>Weight</span>
+                      </span>
+                    </span>
+                    <span class="actions">
+                      <button class="iconbtn" type="button" aria-label="Move Hammer Curl up in Monday"><span data-icon="up"></span></button>
+                      <button class="iconbtn" type="button" aria-label="Move Hammer Curl down in Monday" disabled aria-disabled="true"><span data-icon="down"></span></button>
+                      <button class="iconbtn" type="button" aria-label="Edit Hammer Curl on Monday"><span data-icon="pencil"></span></button>
+                    </span>
+                  </div>
+                </li>
+              </ul>
+
+              <button class="btn btn-secondary btn-block" type="button" style="margin-top: 12px">
+                <span data-icon="plus"></span>Add an exercise to Monday
+              </button>
+
+              <p class="tiny muted" style="margin: 12px 2px 0">
+                Ordering uses explicit Move up / Move down buttons with real accessible names,
+                not drag-and-drop — these lists are edited on a phone, in a gym, and a keyboard
+                user must be able to reorder them at all.
+              </p>
+            </section>
+          </div>
+
+          <!-- ============ Week overview + state ============ -->
+          <div class="stack">
+            <section class="card" aria-labelledby="ov-t">
+              <h2 id="ov-t" style="margin-bottom: 12px">Week at a glance</h2>
+              <ul class="list divided" style="border-top: 1px solid var(--vs-line)">
+                <li class="listrow" style="padding-left: 0; padding-right: 0">
+                  <span class="grow">
+                    <span class="rowtitle">Monday</span>
+                    <span class="rowsub">Back Width + Biceps</span>
+                  </span>
+                  <span class="badge hard">HARD</span>
+                  <span class="small muted">17 sets</span>
+                </li>
+                <li class="listrow" style="padding-left: 0; padding-right: 0">
+                  <span class="grow">
+                    <span class="rowtitle">Tuesday</span>
+                    <span class="rowsub">Upper Chest + Shoulders + Triceps</span>
+                  </span>
+                  <span class="badge hard">HARD</span>
+                  <span class="small muted">16 sets</span>
+                </li>
+                <li class="listrow" style="padding-left: 0; padding-right: 0">
+                  <span class="grow">
+                    <span class="rowtitle">Wednesday</span>
+                    <span class="rowsub">Light Back + Rear Delts + Core</span>
+                  </span>
+                  <span class="badge light">LIGHT</span>
+                  <span class="small muted">13 sets</span>
+                </li>
+                <li class="listrow" style="padding-left: 0; padding-right: 0">
+                  <span class="grow">
+                    <span class="rowtitle">Thursday</span>
+                    <span class="rowsub">Back Thickness + Chest + Biceps</span>
+                  </span>
+                  <span class="badge hard">HARD</span>
+                  <span class="small muted">14 sets</span>
+                </li>
+                <li class="listrow" style="padding-left: 0; padding-right: 0">
+                  <span class="grow">
+                    <span class="rowtitle">Friday</span>
+                    <span class="rowsub">Arms + Shoulders Pump</span>
+                  </span>
+                  <span class="badge pump">PUMP</span>
+                  <span class="small muted">15 sets</span>
+                </li>
+              </ul>
+              <p class="tiny muted" style="margin: 14px 0 0">
+                Day names, focus and intensity are fixed Foundation identities. This screen
+                arranges what is <i>in</i> each day.
+              </p>
+            </section>
+
+            <section aria-labelledby="pst-t">
+              <div class="sectionhead">
+                <h2 id="pst-t">Save &amp; validation states</h2>
+                <span class="small muted">Design evidence</span>
+              </div>
+
+              <div class="stack" style="gap: 12px">
+                <div class="banner warn" role="alert">
+                  <span data-icon="alert"></span>
+                  <span class="grow">
+                    <b>Wednesday would have no exercises</b>
+                    A weekday with nothing in it cannot be started, so this cannot be saved.
+                    Add at least one exercise to Wednesday.
+                  </span>
+                </div>
+
+                <div class="banner warn" role="alert">
+                  <span data-icon="alert"></span>
+                  <span class="grow">
+                    <b>Machine Chest Press is archived</b>
+                    An archived exercise keeps its history but cannot hold a place in a future
+                    workout. Remove it from Tuesday, or restore it in the Exercise Library.
+                  </span>
+                </div>
+
+                <div class="banner danger" role="alert">
+                  <span data-icon="alert"></span>
+                  <span class="grow">
+                    <b>Your programme changed somewhere else</b>
+                    Nothing was overwritten and your edits are still on screen. Review the
+                    newer version, then decide.
+                    <span class="actions">
+                      <button class="btn btn-secondary btn-sm" type="button">Show the newer version</button>
+                      <button class="btn btn-secondary btn-sm" type="button">Keep editing mine</button>
+                    </span>
+                  </span>
+                </div>
+
+                <div class="banner info">
+                  <span data-icon="info"></span>
+                  <span class="grow">
+                    <b>Editing the programme never changes a workout you already started</b>
+                    A started workout keeps the snapshot it was started with, so a rename or a
+                    reorder can never attach your sets to a different exercise.
+                  </span>
+                </div>
+
+                <div class="card">
+                  <div class="spread">
+                    <span class="small" style="font-weight: 650">Unsaved changes</span>
+                    <span class="wrap">
+                      <button class="btn btn-ghost btn-sm" type="button">Discard</button>
+                      <button class="btn btn-primary btn-sm" type="button">
+                        <span data-icon="check"></span>Save programme
+                      </button>
+                    </span>
+                  </div>
+                  <p class="tiny muted" style="margin: 10px 0 0">
+                    One all-or-nothing write on the revision you loaded. Either the whole week
+                    is saved, or none of it is.
+                  </p>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

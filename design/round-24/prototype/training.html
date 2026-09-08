@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Training · VShape100 Round 24 prototype</title>
+    <link rel="stylesheet" href="vs.css" />
+    <script defer src="vs.js"></script>
+  </head>
+  <body data-nav="training">
+    <main class="main">
+      <div class="container">
+        <header class="pagehead">
+          <div>
+            <p class="eyebrow">Home Mode · Foundation</p>
+            <h1>Training</h1>
+            <p class="sub">Your Monday–Friday week</p>
+          </div>
+          <a class="iconbtn" href="programme.html" aria-label="Edit programme">
+            <span data-icon="pencil"></span>
+          </a>
+        </header>
+
+        <div class="cols">
+          <div class="stack">
+            <!-- ============ Next action hero ============ -->
+            <section class="hero accent" aria-labelledby="next-t">
+              <div class="spread" style="margin-bottom: 14px">
+                <div class="wrap">
+                  <span class="badge scheduled"><span data-icon="calendar"></span>Today · Scheduled</span>
+                  <span class="badge hard">HARD</span>
+                </div>
+                <span class="small muted" style="font-weight: 650">20:30 – 21:30</span>
+              </div>
+              <h2 id="next-t" style="font-size: 24px; line-height: 1.16">Back Width + Biceps</h2>
+              <p class="sub">Monday · 5 exercises · 17 sets to log</p>
+              <a class="btn btn-primary btn-lg btn-block" href="workout.html" style="margin-top: 20px">
+                <span data-icon="play"></span>Start workout
+              </a>
+            </section>
+
+            <!-- ============ The week ============ -->
+            <section aria-labelledby="week-t">
+              <div class="sectionhead" style="margin-top: 6px">
+                <h2 id="week-t">This week</h2>
+                <a class="link" href="programme.html">Edit programme</a>
+              </div>
+
+              <ul class="list">
+                <li>
+                  <a class="card listrow" href="workout.html" style="background: var(--vs-accent-soft); border-color: #dcefb2">
+                    <span class="lead accent" aria-hidden="true">
+                      <span data-icon="play" style="display: block; width: 17px; height: 17px"></span>
+                    </span>
+                    <span class="grow">
+                      <span class="wrap" style="margin-bottom: 3px">
+                        <span class="badge scheduled">Monday</span>
+                        <span class="badge hard">HARD</span>
+                        <span class="badge current">Today</span>
+                      </span>
+                      <span class="rowtitle">Back Width + Biceps</span>
+                      <span class="rowsub">5 exercises · 17 sets</span>
+                    </span>
+                    <span class="chev" data-icon="right"></span>
+                  </a>
+                </li>
+
+                <li>
+                  <a class="card listrow" href="workout.html">
+                    <span class="lead" aria-hidden="true">
+                      <span data-icon="training" style="display: block; width: 19px; height: 19px"></span>
+                    </span>
+                    <span class="grow">
+                      <span class="wrap" style="margin-bottom: 3px">
+                        <span class="badge scheduled">Tuesday</span>
+                        <span class="badge hard">HARD</span>
+                      </span>
+                      <span class="rowtitle">Upper Chest + Shoulders + Triceps</span>
+                      <span class="rowsub">5 exercises · 16 sets</span>
+                    </span>
+                    <span class="chev" data-icon="right"></span>
+                  </a>
+                </li>
+
+                <li>
+                  <a class="card listrow" href="workout.html">
+                    <span class="lead" aria-hidden="true">
+                      <span data-icon="training" style="display: block; width: 19px; height: 19px"></span>
+                    </span>
+                    <span class="grow">
+                      <span class="wrap" style="margin-bottom: 3px">
+                        <span class="badge scheduled">Wednesday</span>
+                        <span class="badge light">LIGHT</span>
+                      </span>
+                      <span class="rowtitle">Light Back + Rear Delts + Core</span>
+                      <span class="rowsub">5 exercises · 13 sets</span>
+                    </span>
+                    <span class="chev" data-icon="right"></span>
+                  </a>
+                </li>
+
+                <li>
+                  <a class="card listrow" href="workout.html">
+                    <span class="lead done" aria-hidden="true">
+                      <span data-icon="check" style="display: block; width: 18px; height: 18px"></span>
+                    </span>
+                    <span class="grow">
+                      <span class="wrap" style="margin-bottom: 3px">
+                        <span class="badge scheduled">Thursday</span>
+                        <span class="badge hard">HARD</span>
+                        <span class="badge done"><span data-icon="check"></span>Completed</span>
+                      </span>
+                      <span class="rowtitle">Back Thickness + Chest + Biceps</span>
+                      <span class="rowsub">14 of 14 sets · 4 Sep</span>
+                    </span>
+                    <span class="chev" data-icon="right"></span>
+                  </a>
+                </li>
+
+                <li>
+                  <a class="card listrow" href="workout.html">
+                    <span class="lead" aria-hidden="true">
+                      <span data-icon="training" style="display: block; width: 19px; height: 19px"></span>
+                    </span>
+                    <span class="grow">
+                      <span class="wrap" style="margin-bottom: 3px">
+                        <span class="badge scheduled">Friday</span>
+                        <span class="badge pump">PUMP</span>
+                      </span>
+                      <span class="rowtitle">Arms + Shoulders Pump</span>
+                      <span class="rowsub">5 exercises · 15 sets</span>
+                    </span>
+                    <span class="chev" data-icon="right"></span>
+                  </a>
+                </li>
+              </ul>
+            </section>
+
+            <!-- ============ Weekend ============ -->
+            <section aria-labelledby="wk-t">
+              <div class="sectionhead">
+                <h2 id="wk-t">Weekend</h2>
+              </div>
+              <ul class="list">
+                <li class="card quiet">
+                  <div class="row">
+                    <span class="lead" aria-hidden="true" style="background: transparent">
+                      <span data-icon="moon" style="display: block; width: 19px; height: 19px"></span>
+                    </span>
+                    <span class="grow">
+                      <span class="rowtitle">Saturday</span>
+                      <span class="rowsub">Chill route · no gym scheduled</span>
+                    </span>
+                  </div>
+                </li>
+                <li class="card quiet">
+                  <div class="row">
+                    <span class="lead" aria-hidden="true" style="background: transparent">
+                      <span data-icon="recovery" style="display: block; width: 19px; height: 19px"></span>
+                    </span>
+                    <span class="grow">
+                      <span class="rowtitle">Sunday</span>
+                      <span class="rowsub">Recovery route · no gym scheduled</span>
+                    </span>
+                  </div>
+                </li>
+              </ul>
+            </section>
+          </div>
+
+          <!-- ================= Secondary rail ================= -->
+          <div class="stack">
+            <section aria-labelledby="out-t">
+              <div class="sectionhead" style="margin-top: 0">
+                <h2 id="out-t">Outside the schedule</h2>
+              </div>
+
+              <a class="card listrow" href="workout.html">
+                <span class="lead" aria-hidden="true" style="background: var(--vs-extra-soft); color: var(--vs-extra-ink)">
+                  <span data-icon="plus" style="display: block; width: 19px; height: 19px"></span>
+                </span>
+                <span class="grow">
+                  <span class="wrap" style="margin-bottom: 3px">
+                    <span class="badge extra"><span data-icon="plus"></span>Extra</span>
+                  </span>
+                  <span class="rowtitle">Extra workout</span>
+                  <span class="rowsub">Train again today, on top of your schedule</span>
+                </span>
+                <span class="chev" data-icon="right"></span>
+              </a>
+
+              <p class="tiny muted" style="margin: 10px 2px 0">
+                An Extra is a voluntary session recorded as its own workout. It is never
+                counted as, or merged with, the scheduled one — so it is a solid card with
+                its own provenance chip, not a quiet row. The weekend rows below record
+                nothing, and look like it.
+              </p>
+            </section>
+
+            <section aria-labelledby="cfg-t">
+              <div class="sectionhead">
+                <h2 id="cfg-t">Set-up</h2>
+              </div>
+              <ul class="list divided card flush">
+                <li>
+                  <a class="listrow" href="programme.html">
+                    <span class="lead" aria-hidden="true">
+                      <span data-icon="list" style="display: block; width: 19px; height: 19px"></span>
+                    </span>
+                    <span class="grow">
+                      <span class="rowtitle">Programme</span>
+                      <span class="rowsub">Arrange your training week</span>
+                    </span>
+                    <span class="chev" data-icon="right"></span>
+                  </a>
+                </li>
+                <li>
+                  <a class="listrow" href="library.html">
+                    <span class="lead" aria-hidden="true">
+                      <span data-icon="library" style="display: block; width: 19px; height: 19px"></span>
+                    </span>
+                    <span class="grow">
+                      <span class="rowtitle">Exercise Library</span>
+                      <span class="rowsub">Names, input types and demo media</span>
+                    </span>
+                    <span class="chev" data-icon="right"></span>
+                  </a>
+                </li>
+              </ul>
+            </section>
+          </div>
+        </div>
+
+        <!-- ============ States ============ -->
+        <section aria-labelledby="st-t" style="margin-top: 40px">
+          <div class="sectionhead">
+            <h2 id="st-t">Training · other states</h2>
+            <span class="small muted">Design evidence</span>
+          </div>
+
+          <div class="split2">
+            <div class="card">
+              <p class="label" style="margin: 0 0 12px">Loading your training week</p>
+              <div class="stack" style="gap: 10px">
+                <span class="skeleton" style="height: 66px; border-radius: var(--vs-r-lg)"></span>
+                <span class="skeleton" style="height: 66px; border-radius: var(--vs-r-lg)"></span>
+                <span class="skeleton" style="height: 66px; border-radius: var(--vs-r-lg)"></span>
+              </div>
+            </div>
+
+            <div class="banner danger" role="alert">
+              <span data-icon="alert"></span>
+              <span class="grow">
+                <b>Your training week could not be loaded</b>
+                The default Foundation week is deliberately not shown in its place — it may
+                not be the programme you edited.
+                <span class="actions">
+                  <button class="btn btn-secondary btn-sm" type="button">
+                    <span data-icon="refresh"></span>Try again
+                  </button>
+                </span>
+              </span>
+            </div>
+
+            <div class="card">
+              <p class="label" style="margin: 0 0 10px">Extra already in progress</p>
+              <a class="listrow" href="workout.html" style="padding: 0">
+                <span class="lead" aria-hidden="true" style="background: var(--vs-extra-soft); color: var(--vs-extra-ink)">
+                  <span data-icon="play" style="display: block; width: 17px; height: 17px"></span>
+                </span>
+                <span class="grow">
+                  <span class="rowtitle">Resume extra workout</span>
+                  <span class="rowsub">In progress · based on Friday · Arms + Shoulders Pump</span>
+                </span>
+                <span class="chev" data-icon="right"></span>
+              </a>
+            </div>
+
+            <div class="card">
+              <p class="label" style="margin: 0 0 10px">Session cannot be started</p>
+              <div class="banner warn">
+                <span data-icon="alert"></span>
+                <span class="grow">
+                  <b>Wednesday has no exercises</b>
+                  A weekday with nothing in it cannot be started. Add at least one exercise
+                  to this day in the Programme.
+                  <span class="actions">
+                    <a class="btn btn-secondary btn-sm" href="programme.html">
+                      <span data-icon="pencil"></span>Open Programme
+                    </a>
+                  </span>
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>

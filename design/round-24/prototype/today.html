@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Today · VShape100 Round 24 prototype</title>
+    <link rel="stylesheet" href="vs.css" />
+    <script defer src="vs.js"></script>
+  </head>
+  <body data-nav="today">
+    <main class="main">
+      <div class="container">
+        <!-- ============ Page header ============ -->
+        <header class="pagehead">
+          <div>
+            <p class="eyebrow">Foundation · Day 9</p>
+            <h1>Today</h1>
+            <p class="sub">Monday 8 September · Home Mode</p>
+          </div>
+          <span class="badge neutral" aria-label="Local time 20:12">
+            <span data-icon="clock"></span>20:12
+          </span>
+        </header>
+
+        <!-- ============ Week strip ============ -->
+        <div class="card" style="padding: 12px 10px; margin-bottom: var(--vs-section-gap)">
+          <div class="weekstrip" data-single="aria-current" role="group" aria-label="This week">
+            <button class="day" type="button">
+              <span class="dow">Tue</span><span class="num">2</span>
+              <span class="mark done"></span><span class="sr-only">Workout completed</span>
+            </button>
+            <button class="day" type="button">
+              <span class="dow">Wed</span><span class="num">3</span>
+              <span class="mark rec"></span><span class="sr-only">Recovery day</span>
+            </button>
+            <button class="day" type="button">
+              <span class="dow">Thu</span><span class="num">4</span>
+              <span class="mark done"></span><span class="sr-only">Workout completed</span>
+            </button>
+            <button class="day" type="button">
+              <span class="dow">Fri</span><span class="num">5</span>
+              <span class="mark done"></span><span class="sr-only">Workout completed</span>
+            </button>
+            <button class="day" type="button">
+              <span class="dow">Sat</span><span class="num">6</span>
+              <span class="mark extra"></span><span class="sr-only">Extra workout</span>
+            </button>
+            <button class="day" type="button">
+              <span class="dow">Sun</span><span class="num">7</span>
+              <span class="mark"></span>
+            </button>
+            <button class="day" type="button" aria-current="date">
+              <span class="dow">Mon</span><span class="num">8</span>
+              <span class="mark sched"></span><span class="sr-only">Today · workout scheduled</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="cols">
+          <!-- ================= Primary column ================= -->
+          <div class="stack">
+            <!-- ============ Training hero ============ -->
+            <section class="hero accent" aria-labelledby="hero-t">
+              <div class="spread" style="margin-bottom: 14px">
+                <div class="wrap">
+                  <span class="badge scheduled">
+                    <span data-icon="calendar"></span>Scheduled
+                  </span>
+                  <span class="badge hard">HARD</span>
+                </div>
+                <span class="small muted" style="font-weight: 650">20:30 – 21:30</span>
+              </div>
+
+              <p class="eyebrow" style="margin-bottom: 4px">Monday · Today's training</p>
+              <h2 id="hero-t" style="font-size: 24px; line-height: 1.16">
+                Back Width + Biceps
+              </h2>
+              <p class="sub">5 exercises · 17 sets to log</p>
+
+              <div style="margin-top: 20px; display: flex; flex-direction: column; gap: 10px">
+                <a class="btn btn-primary btn-lg btn-block" href="workout.html">
+                  <span data-icon="play"></span>Start workout
+                </a>
+                <div class="spread">
+                  <a class="btn btn-ghost btn-sm" href="training.html">
+                    View session<span data-icon="right"></span>
+                  </a>
+                  <button class="btn btn-ghost btn-sm" type="button">
+                    <span data-icon="recovery"></span>Take a recovery day instead
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <!-- ============ Metrics ============ -->
+            <div class="grid3">
+              <div class="metric">
+                <span class="icn" style="background: var(--vs-warn-soft); color: var(--vs-warn-ink)">
+                  <span data-icon="flame" style="display: block; width: 17px; height: 17px"></span>
+                </span>
+                <span class="k">6</span>
+                <span class="n">Day streak</span>
+              </div>
+              <div class="metric">
+                <span class="icn" style="background: var(--vs-info-soft); color: var(--vs-info-ink)">
+                  <span data-icon="scale" style="display: block; width: 17px; height: 17px"></span>
+                </span>
+                <span class="k">80.4<span style="font-size: 15px; font-weight: 650"> kg</span></span>
+                <span class="n">Weight · 2 days ago</span>
+              </div>
+              <div class="metric">
+                <span class="icn" style="background: var(--vs-accent-soft); color: var(--vs-accent-ink)">
+                  <span data-icon="target" style="display: block; width: 17px; height: 17px"></span>
+                </span>
+                <span class="k">4<span style="font-size: 15px; font-weight: 650">/5</span></span>
+                <span class="n">Sessions this week</span>
+              </div>
+            </div>
+
+            <!-- ============ Rest of the day ============ -->
+            <section aria-labelledby="rest-t">
+              <div class="sectionhead">
+                <h2 id="rest-t">Rest of your day</h2>
+                <span class="small muted">Home Mode</span>
+              </div>
+
+              <ul class="list">
+                <li class="card flush">
+                  <div class="listrow">
+                    <span class="lead accent" aria-hidden="true">
+                      <span data-icon="today" style="display: block; width: 19px; height: 19px"></span>
+                    </span>
+                    <span class="grow">
+                      <span class="rowtitle">Dinner + Netflix</span>
+                      <span class="rowsub">18:30 – 20:30 · happening now</span>
+                    </span>
+                    <span class="badge current">Now</span>
+                    <button class="iconbtn" type="button" aria-label="Mark Dinner + Netflix complete">
+                      <span data-icon="check"></span>
+                    </button>
+                  </div>
+                </li>
+
+                <li class="card flush">
+                  <div class="listrow">
+                    <span class="lead" aria-hidden="true">
+                      <span data-icon="scale" style="display: block; width: 19px; height: 19px"></span>
+                    </span>
+                    <span class="grow">
+                      <span class="rowtitle">Shower + rest</span>
+                      <span class="rowsub">21:30 – 22:00</span>
+                    </span>
+                    <button class="iconbtn" type="button" aria-label="Mark Shower + rest complete">
+                      <span data-icon="check"></span>
+                    </button>
+                  </div>
+                </li>
+
+                <li class="card flush">
+                  <div class="listrow">
+                    <span class="lead" aria-hidden="true">
+                      <span data-icon="library" style="display: block; width: 19px; height: 19px"></span>
+                    </span>
+                    <span class="grow">
+                      <span class="rowtitle">Reading</span>
+                      <span class="rowsub">22:00 – 22:30</span>
+                    </span>
+                    <button class="iconbtn" type="button" aria-label="Mark Reading complete">
+                      <span data-icon="check"></span>
+                    </button>
+                  </div>
+                </li>
+
+                <li class="card flush">
+                  <div class="listrow">
+                    <span class="lead" aria-hidden="true">
+                      <span data-icon="moon" style="display: block; width: 19px; height: 19px"></span>
+                    </span>
+                    <span class="grow">
+                      <span class="rowtitle">Ready to sleep</span>
+                      <span class="rowsub">23:30 – 00:30 · runs past midnight</span>
+                    </span>
+                    <button class="iconbtn" type="button" aria-label="Mark Ready to sleep complete">
+                      <span data-icon="check"></span>
+                    </button>
+                  </div>
+                </li>
+              </ul>
+            </section>
+          </div>
+
+          <!-- ================= Attention rail ================= -->
+          <div class="stack">
+            <section aria-labelledby="att-t">
+              <div class="sectionhead" style="margin-top: 0">
+                <h2 id="att-t">Needs attention</h2>
+              </div>
+              <div class="card" style="border-color: #ecd7a6; background: var(--vs-warn-soft)">
+                <div class="row">
+                  <span class="lead" style="background: #fff; color: var(--vs-warn-ink); width: 40px; height: 40px; border-radius: 13px; display: grid; place-items: center; flex: none">
+                    <span data-icon="alert" style="display: block; width: 19px; height: 19px"></span>
+                  </span>
+                  <span class="grow">
+                    <span class="rowtitle" style="color: var(--vs-warn-ink)">Cook dinner + shower</span>
+                    <span class="rowsub" style="color: var(--vs-warn-ink)">
+                      17:30 – 18:30 · not marked done
+                    </span>
+                  </span>
+                  <button class="iconbtn" type="button" aria-label="Mark Cook dinner + shower complete" style="background: #fff">
+                    <span data-icon="check"></span>
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section aria-labelledby="done-t">
+              <div class="sectionhead">
+                <h2 id="done-t">Done earlier</h2>
+                <span class="small muted">3</span>
+              </div>
+              <ul class="list divided card flush">
+                <li>
+                  <div class="listrow">
+                    <span class="lead done" aria-hidden="true">
+                      <span data-icon="check" style="display: block; width: 18px; height: 18px"></span>
+                    </span>
+                    <span class="grow">
+                      <span class="rowtitle">Wake up</span>
+                      <span class="rowsub">07:30</span>
+                    </span>
+                    <button class="btn btn-ghost btn-sm" type="button">
+                      <span data-icon="undo"></span>Undo
+                    </button>
+                  </div>
+                </li>
+                <li>
+                  <div class="listrow">
+                    <span class="lead done" aria-hidden="true">
+                      <span data-icon="check" style="display: block; width: 18px; height: 18px"></span>
+                    </span>
+                    <span class="grow">
+                      <span class="rowtitle">Work</span>
+                      <span class="rowsub">08:00 – 17:00</span>
+                    </span>
+                    <button class="btn btn-ghost btn-sm" type="button">
+                      <span data-icon="undo"></span>Undo
+                    </button>
+                  </div>
+                </li>
+                <li>
+                  <div class="listrow">
+                    <span class="lead done" aria-hidden="true">
+                      <span data-icon="check" style="display: block; width: 18px; height: 18px"></span>
+                    </span>
+                    <span class="grow">
+                      <span class="rowtitle">Back home</span>
+                      <span class="rowsub">17:30</span>
+                    </span>
+                    <button class="btn btn-ghost btn-sm" type="button">
+                      <span data-icon="undo"></span>Undo
+                    </button>
+                  </div>
+                </li>
+              </ul>
+            </section>
+
+            <a class="card listrow" href="progress.html" style="text-decoration: none">
+              <span class="lead" aria-hidden="true">
+                <span data-icon="scale" style="display: block; width: 19px; height: 19px"></span>
+              </span>
+              <span class="grow">
+                <span class="rowtitle">Log today's weight</span>
+                <span class="rowsub">Last logged 80.4 kg, 2 days ago</span>
+              </span>
+              <span class="chev" data-icon="right"></span>
+            </a>
+          </div>
+        </div>
+
+        <!-- ============ State gallery (evidence, not a screen region) ============ -->
+        <section aria-labelledby="states-t" style="margin-top: 40px">
+          <div class="sectionhead">
+            <h2 id="states-t">Today · other states</h2>
+            <span class="small muted">Design evidence — not stacked in the real screen</span>
+          </div>
+
+          <div class="stack">
+            <!-- Day mode unknown: the routine is NOT rendered -->
+            <div class="card">
+              <p class="label" style="margin: 0 0 10px">Loading — day mode not yet known</p>
+              <div class="row">
+                <span class="skeleton" style="width: 40px; height: 40px; border-radius: 13px"></span>
+                <span class="grow">
+                  <span class="skeleton" style="display: block; height: 14px; width: 62%"></span>
+                  <span class="skeleton" style="display: block; height: 11px; width: 40%; margin-top: 8px"></span>
+                </span>
+              </div>
+              <p class="small muted" style="margin: 14px 0 0" role="status">
+                Checking whether today is a Holiday. Nothing is shown as due until we know.
+              </p>
+            </div>
+
+            <!-- Day mode failed: fail closed -->
+            <div class="banner danger" role="alert">
+              <span data-icon="alert"></span>
+              <span class="grow">
+                <b>Could not check whether today is a Holiday</b>
+                Your routine is not being guessed at, and nothing has been lost.
+                <span class="actions">
+                  <button class="btn btn-secondary btn-sm" type="button">
+                    <span data-icon="refresh"></span>Try again
+                  </button>
+                </span>
+              </span>
+            </div>
+
+            <!-- Holiday · training on -->
+            <div class="hero" style="background: linear-gradient(168deg, var(--vs-holiday-soft), var(--vs-surface) 72%); border-color: #d9cef5">
+              <div class="wrap" style="margin-bottom: 12px">
+                <span class="badge holiday"><span data-icon="holiday"></span>Holiday</span>
+                <span class="badge outline">Training on</span>
+              </div>
+              <h2 style="font-size: 22px">Company shutdown</h2>
+              <p class="sub">
+                Your work routine stays paused and the recovery-day schedule stays in place,
+                with today's training session added. Foundation Day keeps counting.
+              </p>
+              <div class="wrap" style="margin-top: 18px">
+                <a class="btn btn-primary" href="workout.html"><span data-icon="play"></span>Start workout</a>
+                <a class="btn btn-secondary" href="calendar.html"><span data-icon="calendar"></span>Open Calendar</a>
+              </div>
+            </div>
+
+            <!-- Recovery chosen: the scheduled session is withdrawn, and says so -->
+            <div class="hero" style="background: linear-gradient(168deg, var(--vs-recovery-soft), var(--vs-surface) 72%); border-color: #c6e5ea">
+              <div class="wrap" style="margin-bottom: 12px">
+                <span class="badge recovery"><span data-icon="recovery"></span>Recovery day</span>
+              </div>
+              <h2 style="font-size: 22px">Today is a recovery day</h2>
+              <p class="sub">
+                Monday's <b>Back Width + Biceps</b> is withdrawn from today's list while this
+                choice stands. Nothing has been completed, nothing has been written to your
+                programme, and no session is counted as missed.
+              </p>
+              <div class="wrap" style="margin-top: 18px">
+                <button class="btn btn-secondary" type="button">
+                  <span data-icon="undo"></span>Do the scheduled workout instead
+                </button>
+              </div>
+            </div>
+
+            <!-- Workout already in progress -->
+            <div class="hero accent">
+              <div class="spread" style="margin-bottom: 14px">
+                <div class="wrap">
+                  <span class="badge scheduled"><span data-icon="calendar"></span>Scheduled</span>
+                  <span class="badge hard">HARD</span>
+                  <span class="badge current">In progress</span>
+                </div>
+              </div>
+              <h2 style="font-size: 24px">Back Width + Biceps</h2>
+              <p class="sub">9 of 17 sets resolved · 7 completed · 2 skipped</p>
+              <div class="rail" style="margin: 14px 0 18px" role="progressbar" aria-valuemin="0" aria-valuemax="17" aria-valuenow="9" aria-label="Sets resolved">
+                <i style="width: 53%"></i>
+              </div>
+              <a class="btn btn-primary btn-lg btn-block" href="workout.html">
+                <span data-icon="play"></span>Continue workout
+              </a>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>

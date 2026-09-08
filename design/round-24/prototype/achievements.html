@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Achievements · VShape100 Round 24 prototype</title>
+    <link rel="stylesheet" href="vs.css" />
+    <script defer src="vs.js"></script>
+  </head>
+  <body data-nav="achievements">
+    <main class="main">
+      <div class="container">
+        <header class="pagehead">
+          <div>
+            <p class="eyebrow">Derived from what you logged</p>
+            <h1>Achievements</h1>
+            <p class="sub">Nothing here can be edited by hand</p>
+          </div>
+        </header>
+
+        <!-- ============ Featured ============ -->
+        <section class="hero accent" aria-labelledby="feat-t" style="margin-bottom: var(--vs-section-gap)">
+          <div class="row" style="align-items: flex-start">
+            <span class="medal" style="width: 60px; height: 60px; border-radius: 20px; background: var(--vs-ink); color: var(--vs-accent)">
+              <span data-icon="trophy" style="display: block; width: 28px; height: 28px"></span>
+            </span>
+            <span class="grow">
+              <p class="eyebrow" style="margin-bottom: 3px">Most recent</p>
+              <h2 id="feat-t" style="font-size: 22px">Full week</h2>
+              <p class="sub">
+                Five training days in a row. Weekends and Holidays are exempt.
+              </p>
+              <p class="small" style="margin-top: 10px; font-weight: 650; color: var(--vs-accent-ink)">
+                Earned Friday 5 September, on your fifth consecutive training day.
+              </p>
+            </span>
+          </div>
+        </section>
+
+        <!-- ============ Streak ============ -->
+        <div class="grid3" style="margin-bottom: var(--vs-section-gap)">
+          <div class="metric">
+            <span class="icn" style="background: var(--vs-warn-soft); color: var(--vs-warn-ink)">
+              <span data-icon="flame" style="display: block; width: 17px; height: 17px"></span>
+            </span>
+            <span class="k">6</span>
+            <span class="n">Current streak</span>
+          </div>
+          <div class="metric">
+            <span class="icn" style="background: var(--vs-accent-soft); color: var(--vs-accent-ink)">
+              <span data-icon="target" style="display: block; width: 17px; height: 17px"></span>
+            </span>
+            <span class="k">8</span>
+            <span class="n">Best streak</span>
+          </div>
+          <div class="metric">
+            <span class="icn" style="background: var(--vs-info-soft); color: var(--vs-info-ink)">
+              <span data-icon="today" style="display: block; width: 17px; height: 17px"></span>
+            </span>
+            <span class="k">9<span style="font-size: 15px; font-weight: 650">/100</span></span>
+            <span class="n">Foundation day</span>
+          </div>
+        </div>
+
+        <!-- ============ Milestones ============ -->
+        <section aria-labelledby="ms-t">
+          <div class="sectionhead" style="margin-top: 0">
+            <h2 id="ms-t">Milestones</h2>
+            <span class="small muted">2 of 6 earned</span>
+          </div>
+
+          <div class="achgrid">
+            <!-- unlocked -->
+            <div class="achcard">
+              <span class="medal">
+                <span data-icon="check" style="display: block; width: 22px; height: 22px"></span>
+              </span>
+              <div>
+                <p class="rowtitle">First session</p>
+                <p class="rowsub">Finish one planned training session.</p>
+              </div>
+              <span class="badge done"><span data-icon="check"></span>Earned 31 Aug</span>
+            </div>
+
+            <div class="achcard">
+              <span class="medal">
+                <span data-icon="check" style="display: block; width: 22px; height: 22px"></span>
+              </span>
+              <div>
+                <p class="rowtitle">Full week</p>
+                <p class="rowsub">Five training days in a row. Weekends and Holidays are exempt.</p>
+              </div>
+              <span class="badge done"><span data-icon="check"></span>Earned 5 Sep</span>
+            </div>
+
+            <!-- locked, with honest progress -->
+            <div class="achcard locked">
+              <span class="medal locked">
+                <span data-icon="lock" style="display: block; width: 20px; height: 20px"></span>
+              </span>
+              <div>
+                <p class="rowtitle">Day 10</p>
+                <p class="rowsub">Reach Day 10 of Foundation.</p>
+              </div>
+              <div class="rail thin" role="progressbar" aria-valuemin="0" aria-valuemax="10" aria-valuenow="9" aria-label="Day 10 progress">
+                <i style="width: 90%"></i>
+              </div>
+              <span class="tiny muted">Day 9 of 10</span>
+            </div>
+
+            <div class="achcard locked">
+              <span class="medal locked">
+                <span data-icon="lock" style="display: block; width: 20px; height: 20px"></span>
+              </span>
+              <div>
+                <p class="rowtitle">Consistency</p>
+                <p class="rowsub">Ten training days in a row. Weekends and Holidays are exempt.</p>
+              </div>
+              <div class="rail thin" role="progressbar" aria-valuemin="0" aria-valuemax="10" aria-valuenow="8" aria-label="Consistency progress">
+                <i style="width: 80%"></i>
+              </div>
+              <span class="tiny muted">Best streak 8 of 10</span>
+            </div>
+
+            <div class="achcard locked">
+              <span class="medal locked">
+                <span data-icon="lock" style="display: block; width: 20px; height: 20px"></span>
+              </span>
+              <div>
+                <p class="rowtitle">Day 50</p>
+                <p class="rowsub">Reach Day 50 of Foundation.</p>
+              </div>
+              <div class="rail thin" role="progressbar" aria-valuemin="0" aria-valuemax="50" aria-valuenow="9" aria-label="Day 50 progress">
+                <i style="width: 18%"></i>
+              </div>
+              <span class="tiny muted">Day 9 of 50</span>
+            </div>
+
+            <!-- unresolved: NOT locked -->
+            <div class="achcard" style="border-color: #ecd7a6; background: var(--vs-warn-soft); box-shadow: none">
+              <span class="medal" style="background: #fff; color: var(--vs-warn-ink)">
+                <span data-icon="alert" style="display: block; width: 20px; height: 20px"></span>
+              </span>
+              <div>
+                <p class="rowtitle" style="color: var(--vs-warn-ink)">Day 100</p>
+                <p class="rowsub" style="color: var(--vs-warn-ink)">Reach Day 100 of Foundation.</p>
+              </div>
+              <span class="tiny" style="color: var(--vs-warn-ink); font-weight: 650">
+                Not known yet — your Foundation start date could not be read. This is not the
+                same as “not earned”.
+              </span>
+              <button class="btn btn-secondary btn-sm" type="button">
+                <span data-icon="refresh"></span>Try again
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ Detail ============ -->
+        <section aria-labelledby="det-t">
+          <div class="sectionhead">
+            <h2 id="det-t">Why an achievement was earned</h2>
+          </div>
+          <div class="card">
+            <div class="row" style="align-items: flex-start; margin-bottom: 14px">
+              <span class="medal">
+                <span data-icon="check" style="display: block; width: 22px; height: 22px"></span>
+              </span>
+              <span class="grow">
+                <p class="rowtitle">Full week</p>
+                <p class="rowsub">Earned Friday 5 September 2026</p>
+              </span>
+            </div>
+            <ul class="list divided" style="border-top: 1px solid var(--vs-line)">
+              <li class="listrow" style="padding-left: 0; padding-right: 0">
+                <span class="lead done"><span data-icon="check" style="display: block; width: 17px; height: 17px"></span></span>
+                <span class="grow"><span class="rowtitle">Mon 1 Sep</span><span class="rowsub">Back Width + Biceps · 17 of 17</span></span>
+              </li>
+              <li class="listrow" style="padding-left: 0; padding-right: 0">
+                <span class="lead done"><span data-icon="check" style="display: block; width: 17px; height: 17px"></span></span>
+                <span class="grow"><span class="rowtitle">Tue 2 Sep</span><span class="rowsub">Upper Chest + Shoulders + Triceps · 16 of 16</span></span>
+              </li>
+              <li class="listrow" style="padding-left: 0; padding-right: 0">
+                <span class="lead" style="background: var(--vs-recovery-soft); color: var(--vs-recovery-ink)">
+                  <span data-icon="recovery" style="display: block; width: 17px; height: 17px"></span>
+                </span>
+                <span class="grow"><span class="rowtitle">Wed 3 Sep</span><span class="rowsub">Recovery day · exempt, streak not broken</span></span>
+              </li>
+              <li class="listrow" style="padding-left: 0; padding-right: 0">
+                <span class="lead done"><span data-icon="check" style="display: block; width: 17px; height: 17px"></span></span>
+                <span class="grow"><span class="rowtitle">Thu 4 Sep</span><span class="rowsub">Back Thickness + Chest + Biceps · 14 of 14</span></span>
+              </li>
+              <li class="listrow" style="padding-left: 0; padding-right: 0">
+                <span class="lead done"><span data-icon="check" style="display: block; width: 17px; height: 17px"></span></span>
+                <span class="grow"><span class="rowtitle">Fri 5 Sep</span><span class="rowsub">Arms + Shoulders Pump · 15 of 15</span></span>
+              </li>
+            </ul>
+            <p class="tiny muted" style="margin: 14px 0 0">
+              This list is the evidence, read back from your logged workouts. There is no
+              counter to edit and no way to award an achievement by hand.
+            </p>
+          </div>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>
