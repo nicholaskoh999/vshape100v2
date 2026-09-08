@@ -29,7 +29,7 @@ export function AuthSplash({ label = 'Loading your day' }: { label?: string }) {
           animate={{ opacity: [0.55, 1, 0.55] }}
           transition={{ duration: 1.6, repeat: Infinity, ease: ease.inOutSoft }}
         />
-        <p className="text-[13px] font-semibold text-ink-faint">{label}</p>
+        <p className="text-[13px] font-semibold text-ink-3">{label}</p>
       </motion.div>
     </div>
   )

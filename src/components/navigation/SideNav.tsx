@@ -11,6 +11,11 @@ import { allNavItems } from './navItems'
  * - `rail`: tablet — icon-first compact rail with short labels
  * - `full`: desktop — full sidebar with direct entries for all six sections
  * Both list every destination directly; "More" is a mobile-only concept.
+ *
+ * ROUND 24. The rail is 96px rather than 76px for one concrete reason:
+ * "Achievements" does not fit at 76px and was clipping. The selected state is
+ * an accent-soft ground with an accent-edge inset marker rather than a heavy
+ * block, so the page content stays the visual focus.
  */
 export function SideNav({ variant }: { variant: 'rail' | 'full' }) {
   const isRail = variant === 'rail'
@@ -19,8 +24,8 @@ export function SideNav({ variant }: { variant: 'rail' | 'full' }) {
     <nav
       aria-label="Primary"
       className={cn(
-        'fixed inset-y-0 left-0 z-40 flex flex-col border-r border-edge bg-surface/60 backdrop-blur-xl pt-safe',
-        isRail ? 'w-[76px]' : 'w-60',
+        'fixed inset-y-0 left-0 z-40 flex flex-col border-r border-line bg-surface pt-safe',
+        isRail ? 'w-24' : 'w-60',
       )}
     >
       <div className={cn('flex items-center', isRail ? 'justify-center py-5' : 'px-5 py-6')}>
@@ -45,8 +50,8 @@ export function SideNav({ variant }: { variant: 'rail' | 'full' }) {
                       ? 'flex-col gap-1 px-1 py-2.5'
                       : 'gap-3 px-3.5 py-2.5',
                     isActive
-                      ? 'text-offwhite'
-                      : 'text-ink-faint hover:bg-surface-overlay/60 hover:text-ink-dim',
+                      ? 'text-ink'
+                      : 'text-ink-2 hover:bg-surface-soft hover:text-ink',
                   )}
                 >
                   {isActive && (
@@ -54,7 +59,7 @@ export function SideNav({ variant }: { variant: 'rail' | 'full' }) {
                       layoutId={NAV_INDICATOR_ID}
                       transition={spring.snappy}
                       aria-hidden="true"
-                      className="absolute inset-0 rounded-control bg-blue/15 shadow-[inset_2px_0_0_0_var(--color-blue)]"
+                      className="absolute inset-0 rounded-control bg-accent-soft shadow-[inset_3px_0_0_0_var(--color-accent-edge)]"
                     />
                   )}
                   <Icon
@@ -65,7 +70,7 @@ export function SideNav({ variant }: { variant: 'rail' | 'full' }) {
                   <span
                     className={cn(
                       'relative tracking-wide',
-                      isRail ? 'text-[10px]' : 'text-sm',
+                      isRail ? 'text-[10px] leading-[1.15]' : 'text-sm',
                       isActive ? 'font-bold' : 'font-medium',
                     )}
                   >
@@ -80,7 +85,7 @@ export function SideNav({ variant }: { variant: 'rail' | 'full' }) {
 
       <div
         className={cn(
-          'border-t border-edge py-4 text-ink-faint',
+          'border-t border-line py-4 text-ink-3',
           isRail ? 'px-2 text-center' : 'px-5',
         )}
       >

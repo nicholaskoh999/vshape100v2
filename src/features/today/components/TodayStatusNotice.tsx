@@ -35,7 +35,7 @@ export function TodayStatusNotice({
     return (
       <Notice tone="alert" role="alert">
         <TriangleAlert className="size-4 shrink-0" aria-hidden="true" />
-        <p className="min-w-0 flex-1 text-ink-dim">
+        <p className="min-w-0 flex-1 text-ink-2">
           Couldn’t load your saved progress. Marking items done is paused until
           it loads.
         </p>
@@ -48,7 +48,7 @@ export function TodayStatusNotice({
     return (
       <Notice tone="alert" role="alert">
         <TriangleAlert className="size-4 shrink-0" aria-hidden="true" />
-        <p className="min-w-0 flex-1 text-ink-dim">{failureMessage}</p>
+        <p className="min-w-0 flex-1 text-ink-2">{failureMessage}</p>
         <Action onClick={onDismiss} icon={X} label="Dismiss" />
       </Notice>
     )
@@ -72,8 +72,8 @@ function Notice({
       className={cn(
         'mb-4 flex items-center gap-2.5 rounded-card border px-4 py-2.5 text-[13px]',
         tone === 'alert'
-          ? 'border-late/40 bg-late/[0.06] text-late'
-          : 'border-edge bg-surface/60 text-ink-faint',
+          ? 'border-warn-ink/30 bg-warn-soft text-warn-ink'
+          : 'border-line bg-surface/60 text-ink-2',
       )}
     >
       {children}
@@ -96,7 +96,7 @@ function Action({
       onClick={onClick}
       whileTap={pressStrong.whileTap}
       transition={pressStrong.transition}
-      className="inline-flex shrink-0 items-center gap-1.5 rounded-control border border-edge-strong px-2.5 py-1 text-[12px] font-bold text-ink-dim transition-colors duration-150 hover:border-blue/60 hover:text-offwhite"
+      className="inline-flex shrink-0 items-center gap-1.5 rounded-control border border-line-strong px-2.5 py-1 text-[12px] font-bold text-ink-2 transition-colors duration-fast hover:border-blue/60 hover:text-ink"
     >
       <Icon className="size-3.5" aria-hidden="true" />
       {label}

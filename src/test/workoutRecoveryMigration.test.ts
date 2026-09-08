@@ -1,3 +1,11 @@
+/*
+ * ROUND 24 (Q6). This suite drives a real SQLite database through `node:sqlite`,
+ * which Vite refuses to bundle for the client environment — the whole file
+ * failed to load under the project's default jsdom environment, so none of its
+ * tests had ever run here. It needs Node, not a DOM.
+ *
+ * @vitest-environment node
+ */
 import { DatabaseSync } from 'node:sqlite'
 
 import { describe, expect, it } from 'vitest'

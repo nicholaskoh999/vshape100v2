@@ -51,16 +51,16 @@ export function ExercisePerformanceCard({ state }: { state: PerformanceState }) 
       <div data-exercise-performance data-exercise-performance-state={state.status}>
         <header className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-ink-faint">
+            <p className="text-[15px] font-bold tracking-[-0.01em] text-ink">
               Exercise performance
             </p>
-            <p className="mt-0.5 text-[13px] text-ink-faint">
+            <p className="mt-0.5 text-[13px] text-ink-3">
               Your best completed set in each workout.
             </p>
           </div>
           <span
             aria-hidden="true"
-            className="grid size-11 shrink-0 place-items-center rounded-2xl bg-surface-overlay text-ink-faint"
+            className="grid size-11 shrink-0 place-items-center rounded-2xl bg-surface-soft text-ink-3"
           >
             <LineChart className="size-5" />
           </span>
@@ -69,7 +69,7 @@ export function ExercisePerformanceCard({ state }: { state: PerformanceState }) 
         {state.status === "loading" && (
           <p
             role="status"
-            className="mt-4 flex items-center gap-2 text-[13px] font-semibold text-ink-dim"
+            className="mt-4 flex items-center gap-2 text-[13px] font-semibold text-ink-2"
           >
             <Loader2 className="size-4 animate-spin" aria-hidden="true" />
             Reading your recorded history…
@@ -78,7 +78,7 @@ export function ExercisePerformanceCard({ state }: { state: PerformanceState }) 
 
         {(state.status === "error" || state.status === "incomplete") && (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <p role="alert" className="max-w-prose text-[13px] font-semibold text-coral">
+            <p role="alert" className="max-w-prose text-[13px] font-semibold text-danger-ink">
               {state.status === "incomplete"
                 ? "Your full history could not be read, so no trend is shown."
                 : "Could not load your exercise history. Nothing has been lost."}
@@ -86,7 +86,7 @@ export function ExercisePerformanceCard({ state }: { state: PerformanceState }) 
             <button
               type="button"
               onClick={state.reload}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-control border border-edge-strong px-3.5 py-2 text-[13px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-control border border-line-strong px-3.5 py-2 text-[13px] font-bold text-ink-2 transition-colors duration-fast hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink"
             >
               <RefreshCw className="size-4" aria-hidden="true" />
               Try again
@@ -95,7 +95,7 @@ export function ExercisePerformanceCard({ state }: { state: PerformanceState }) 
         )}
 
         {state.status === "ready" && variants.length === 0 && (
-          <p className="mt-4 text-[13px] leading-relaxed text-ink-faint">
+          <p className="mt-4 text-[13px] leading-relaxed text-ink-3">
             No completed sets recorded yet. Once you finish sets in Training, each exercise you
             have performed will be selectable here.
           </p>
@@ -106,7 +106,7 @@ export function ExercisePerformanceCard({ state }: { state: PerformanceState }) 
             <div className="mt-4">
               <label
                 htmlFor="performance-exercise"
-                className="block text-[11px] font-bold uppercase tracking-[0.14em] text-ink-faint"
+                className="block text-[11px] font-bold uppercase tracking-[0.09em] text-ink-3"
               >
                 Exercise
               </label>
@@ -114,7 +114,7 @@ export function ExercisePerformanceCard({ state }: { state: PerformanceState }) 
                 id="performance-exercise"
                 value={selected.key}
                 onChange={(event) => setChosenKey(event.target.value)}
-                className="mt-1 w-full rounded-control border border-edge-strong bg-surface-overlay px-3 py-2 text-[14px] font-semibold text-offwhite focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue"
+                className="mt-1 w-full rounded-control border border-line-strong bg-surface-soft px-3 py-2 text-[14px] font-semibold text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink"
               >
                 {variants.map((variant) => (
                   <option key={variant.key} value={variant.key}>
@@ -148,25 +148,25 @@ function SelectedVariant({ variant }: { variant: PerformanceVariant }) {
   return (
     <div className="mt-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <p className="text-[13px] font-semibold text-ink-dim">
+        <p className="text-[13px] font-semibold text-ink-2">
           {variant.points.length}{" "}
           {variant.points.length === 1 ? "workout recorded" : "workouts recorded"}
         </p>
-        <p className="text-[12px] font-semibold text-ink-faint">
+        <p className="text-[12px] font-semibold text-ink-3">
           Last performed {formatLocalDate(variant.lastPerformed)}
         </p>
       </div>
 
       {variant.points.length === 1 ? (
         <div className="mt-3">
-          <p className="text-[22px] font-extrabold tabular-nums text-offwhite">
+          <p className="text-[22px] font-bold tabular-nums text-ink">
             {formatPerformance(variant.points[0], variant)}
           </p>
-          <p className="mt-0.5 text-[12px] font-semibold text-ink-faint">
+          <p className="mt-0.5 text-[12px] font-semibold text-ink-3">
             {formatLocalDate(variant.points[0].date)}
           </p>
           {/* One real result, and deliberately no line drawn through it. */}
-          <p className="mt-2 text-[13px] leading-relaxed text-ink-faint">
+          <p className="mt-2 text-[13px] leading-relaxed text-ink-3">
             One workout recorded so far — not enough history for a trend yet.
           </p>
         </div>

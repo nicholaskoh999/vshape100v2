@@ -339,4 +339,18 @@ export const FRESH_START_PRESERVED_TABLES = [
   // about the user's gym, not a record of anything they did — so wiping their
   // training history must not also forget that Triceps Pushdown is a band.
   'exercise_input_types',
+  // ROUND 24 (Q6 B). Four tables were outside this guard.
+  //
+  // Nothing currently touches them — the reset names four tables and none of
+  // these is one — but this array is what stops a FUTURE statement from
+  // reaching a protected table, and a table outside it is unguarded. Migration
+  // 0015's three programme tables ARE the user's training week; deleting them
+  // would not be "reset the history", it would be "delete the programme and
+  // lose the optimistic lock that protects it".
+  'programme_revisions',
+  'programme_exercises',
+  'programme_slots',
+  // A per-account Training On/Off decision for a company holiday is
+  // configuration about a day, not evidence of training.
+  'company_holiday_preferences',
 ] as const

@@ -1,21 +1,16 @@
-import { ChevronRight, Dumbbell, Home, Info, Loader2, LogOut } from 'lucide-react'
+import { ChevronRight, Info, Library, ListOrdered, Loader2, LogOut } from 'lucide-react'
 import { motion } from 'motion/react'
-import { Link, useNavigate } from 'react-router'
+import { useNavigate } from 'react-router'
 
-import { Card } from '@/components/ui/Card'
-import { PageHeader } from '@/components/ui/PageHeader'
-import { listItemVariants, listVariants, press } from '@/design/motion'
+import { Badge } from '@/components/ui/Badge'
+import { Button } from '@/components/ui/Button'
+import { Card, ListRow, PageHeader, RowList, SectionHeader } from '@/components/ui/Layout'
+import { listItemVariants, listVariants } from '@/design/motion'
 import { useAuth } from '@/features/auth/AuthContext'
 import { NotificationSettingsCard } from '@/features/notifications/NotificationSettingsCard'
 import { FoundationStartCard } from './FoundationStartCard'
 
 const rows = [
-  {
-    icon: Home,
-    label: 'Mode',
-    value: 'Home',
-    note: 'Holiday Mode is set from the Calendar.',
-  },
   {
     icon: Info,
     label: 'App',
@@ -58,14 +53,14 @@ export function SettingsPage() {
               ) : (
                 <span
                   aria-hidden="true"
-                  className="grid size-11 shrink-0 place-items-center rounded-full bg-blue text-base font-extrabold text-offwhite"
+                  className="grid size-11 shrink-0 place-items-center rounded-full bg-accent text-base font-bold text-ink"
                 >
                   {user.email.slice(0, 1).toUpperCase()}
                 </span>
               )}
               <div className="min-w-0 flex-1">
-                <p className="truncate font-bold text-offwhite">{user.name ?? 'Signed in'}</p>
-                <p className="mt-0.5 truncate text-[13px] text-ink-faint">{user.email}</p>
+                <p className="truncate font-bold text-ink">{user.name ?? 'Signed in'}</p>
+                <p className="mt-0.5 truncate text-[13px] text-ink-3">{user.email}</p>
               </div>
             </Card>
           </motion.div>
@@ -88,59 +83,70 @@ export function SettingsPage() {
         </motion.div>
 
         <motion.div variants={listItemVariants}>
-          {/*
-            Exercise Library — the one place canonical exercise media is
-            edited. Exercise Detail links to the same editor rather than
-            carrying a second one.
-          */}
-          <Link
-            to="/settings/exercises"
-            className="block rounded-card"
-            aria-label="Exercise Library"
-          >
-            <motion.div {...press} tabIndex={-1}>
-              <Card className="flex items-center gap-4 px-5 py-4 transition-colors duration-150 hover:border-edge-strong">
-                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-surface-overlay text-ink-dim">
-                  <Dumbbell className="size-5" aria-hidden="true" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold text-offwhite">Exercise Library</p>
-                  <p className="mt-0.5 truncate text-[13px] text-ink-faint">
-                    Set the demo media each exercise shows everywhere.
-                  </p>
-                </div>
-                <ChevronRight className="size-5 shrink-0 text-ink-faint" aria-hidden="true" />
-              </Card>
-            </motion.div>
-          </Link>
+          <SectionHeader title="Training" className="mt-2" />
+          <RowList label="Training set-up">
+            <li>
+              {/*
+                ROUND 24 (Q3, approved). The training week gets a real entry
+                point. Before this link the programme editor was reachable only
+                through Exercise Library → an exercise → its media editor,
+                behind a control labelled "Edit media".
+              */}
+              <ListRow
+                to="/settings/programme"
+                linkLabel="Programme"
+                icon={ListOrdered}
+                title="Programme"
+                subtitle="Arrange your Monday–Friday training week"
+                trailing={
+                  <ChevronRight className="size-4.5 shrink-0 text-ink-4" aria-hidden="true" />
+                }
+              />
+            </li>
+            <li>
+              {/*
+                Exercise Library — the one place canonical exercise identity,
+                input type and media are edited. Exercise Detail links to the
+                same editor rather than carrying a second one.
+              */}
+              <ListRow
+                to="/settings/exercises"
+                linkLabel="Exercise Library"
+                icon={Library}
+                title="Exercise Library"
+                subtitle="Names, input types and the demo media each exercise shows"
+                trailing={
+                  <ChevronRight className="size-4.5 shrink-0 text-ink-4" aria-hidden="true" />
+                }
+              />
+            </li>
+          </RowList>
         </motion.div>
 
         <motion.div variants={listItemVariants}>
-          <Card className="divide-y divide-edge">
+          <Card className="divide-y divide-line">
             {rows.map(({ icon: Icon, label, value, note }) => (
               <div key={label} className="flex items-center gap-4 px-5 py-4">
-                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-surface-overlay text-ink-dim">
+                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-surface-soft text-ink-2">
                   <Icon className="size-5" aria-hidden="true" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold text-offwhite">{label}</p>
-                  <p className="mt-0.5 truncate text-[13px] text-ink-faint">{note}</p>
+                  <p className="text-sm font-bold text-ink">{label}</p>
+                  <p className="mt-0.5 truncate text-[13px] text-ink-3">{note}</p>
                 </div>
-                <span className="shrink-0 rounded-full bg-surface-overlay px-3 py-1 text-[12px] font-bold text-ink-dim">
-                  {value}
-                </span>
+                <Badge tone="neutral">{value}</Badge>
               </div>
             ))}
           </Card>
         </motion.div>
 
         <motion.div variants={listItemVariants}>
-          <motion.button
-            {...press}
-            type="button"
+          <Button
+            block
+            size="lg"
             onClick={handleLogout}
             disabled={isLoggingOut}
-            className="flex w-full items-center justify-center gap-2.5 rounded-card border border-edge bg-surface px-5 py-4 text-sm font-bold text-coral transition-colors duration-150 hover:border-coral/40 disabled:opacity-70"
+            className="text-danger-ink"
           >
             {isLoggingOut ? (
               <>
@@ -153,8 +159,8 @@ export function SettingsPage() {
                 Sign out
               </>
             )}
-          </motion.button>
-          <p className="mt-2 text-center text-[12px] text-ink-faint">
+          </Button>
+          <p className="mt-2 text-center text-[12px] text-ink-3">
             Signs out this device only.
           </p>
         </motion.div>

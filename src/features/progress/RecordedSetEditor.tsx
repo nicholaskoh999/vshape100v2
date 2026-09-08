@@ -176,7 +176,7 @@ export function RecordedSetEditor({
           setFeedback({ state: 'idle' })
           setOpen(true)
         }}
-        className="inline-flex items-center gap-1.5 rounded-control border border-edge-strong px-2.5 py-1 text-[11px] font-bold text-ink-faint transition-colors duration-150 hover:text-offwhite"
+        className="inline-flex items-center gap-1.5 rounded-control border border-line-strong px-2.5 py-1 text-[11px] font-bold text-ink-3 transition-colors duration-fast hover:text-ink"
       >
         <PencilLine className="size-3" aria-hidden="true" />
         Edit recorded set
@@ -185,11 +185,11 @@ export function RecordedSetEditor({
   }
 
   return (
-    <div className="mt-2 rounded-control border border-edge-strong bg-surface-overlay/60 p-3">
-      <p className="text-[12px] font-bold text-offwhite">
+    <div className="mt-2 rounded-control border border-line-strong bg-surface-soft/60 p-3">
+      <p className="text-[12px] font-bold text-ink">
         Correct {set.exerciseName} · set {set.setIndex + 1}
       </p>
-      <p className="mt-0.5 text-[11px] text-ink-faint">
+      <p className="mt-0.5 text-[11px] text-ink-3">
         This corrects recorded performance. It does not change workout
         completion.
       </p>
@@ -205,10 +205,10 @@ export function RecordedSetEditor({
               aria-checked={draft.inputType === option}
               onClick={() => edit({ inputType: option })}
               className={cn(
-                'rounded-control border px-2.5 py-1 text-[11px] font-bold transition-colors duration-150',
+                'rounded-control border px-2.5 py-1 text-[11px] font-bold transition-colors duration-fast',
                 draft.inputType === option
-                  ? 'border-blue bg-blue/15 text-offwhite'
-                  : 'border-edge bg-surface text-ink-dim hover:border-edge-strong',
+                  ? 'border-accent-edge bg-accent/15 text-ink'
+                  : 'border-line bg-surface text-ink-2 hover:border-line-strong',
               )}
             >
               {WORKOUT_INPUT_TYPE_LABELS[option]}
@@ -228,7 +228,7 @@ export function RecordedSetEditor({
               disabled={busy}
             />
             <div className="min-w-0">
-              <span className="block text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">
+              <span className="block text-[10px] font-bold uppercase tracking-[0.09em] text-ink-3">
                 Unit
               </span>
               <div role="radiogroup" aria-label="Load unit" className="mt-1 flex gap-1.5">
@@ -241,10 +241,10 @@ export function RecordedSetEditor({
                     disabled={busy}
                     onClick={() => edit({ unit })}
                     className={cn(
-                      'rounded-control border px-2 py-1 text-[11px] font-bold transition-colors duration-150',
+                      'rounded-control border px-2 py-1 text-[11px] font-bold transition-colors duration-fast',
                       draft.unit === unit
-                        ? 'border-blue bg-blue/15 text-offwhite'
-                        : 'border-edge bg-surface text-ink-dim',
+                        ? 'border-accent-edge bg-accent/15 text-ink'
+                        : 'border-line bg-surface text-ink-2',
                     )}
                   >
                     {/* kg_each is PER DUMBBELL and is written that way. */}
@@ -286,22 +286,22 @@ export function RecordedSetEditor({
       </div>
 
       <div role="status" aria-live="polite" className="mt-2 min-h-4 text-[11px]">
-        {feedback.state === 'saving' && <span className="text-ink-faint">Saving…</span>}
+        {feedback.state === 'saving' && <span className="text-ink-3">Saving…</span>}
         {feedback.state === 'saved' && (
-          <span className="font-semibold text-completed">Corrected.</span>
+          <span className="font-semibold text-success-ink">Corrected.</span>
         )}
         {feedback.state === 'unchanged' && (
-          <span className="text-ink-faint">
+          <span className="text-ink-3">
             That is already what this set records — nothing was changed.
           </span>
         )}
         {feedback.state === 'stale' && (
-          <span className="text-coral">
+          <span className="text-danger-ink">
             This set changed while you were editing. Nothing was overwritten —
             the current values are shown.
           </span>
         )}
-        {feedback.state === 'error' && <span className="text-coral">{feedback.message}</span>}
+        {feedback.state === 'error' && <span className="text-danger-ink">{feedback.message}</span>}
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -309,7 +309,7 @@ export function RecordedSetEditor({
           type="button"
           onClick={() => void save()}
           disabled={!canSave}
-          className="inline-flex items-center gap-1.5 rounded-control bg-blue px-3 py-1.5 text-[12px] font-bold text-offwhite transition-opacity duration-150 disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex items-center gap-1.5 rounded-control bg-accent px-3 py-1.5 text-[12px] font-bold text-ink transition-opacity duration-fast disabled:cursor-not-allowed disabled:opacity-40"
         >
           {busy && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
           Save correction
@@ -318,7 +318,7 @@ export function RecordedSetEditor({
           type="button"
           onClick={() => setOpen(false)}
           disabled={busy}
-          className="rounded-control px-3 py-1.5 text-[12px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-control px-3 py-1.5 text-[12px] font-bold text-ink-2 transition-colors duration-fast hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
         >
           Cancel
         </button>
@@ -344,7 +344,7 @@ function Field({
 }) {
   return (
     <div className="min-w-0">
-      <label className="block text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">
+      <label className="block text-[10px] font-bold uppercase tracking-[0.09em] text-ink-3">
         {label}
         <input
           type="text"
@@ -354,9 +354,9 @@ function Field({
           onChange={(event) => onChange(event.target.value)}
           aria-invalid={invalid || undefined}
           className={cn(
-            'mt-1 block rounded-control border bg-surface px-2 py-1 text-[13px] font-bold normal-case tracking-normal text-offwhite',
+            'mt-1 block rounded-control border bg-surface px-2 py-1 text-[13px] font-bold normal-case tracking-normal text-ink',
             wide ? 'w-28' : 'w-20',
-            invalid ? 'border-coral' : 'border-edge-strong',
+            invalid ? 'border-danger-ink' : 'border-line-strong',
           )}
         />
       </label>

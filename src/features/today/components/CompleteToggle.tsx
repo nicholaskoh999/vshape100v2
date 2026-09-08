@@ -40,11 +40,11 @@ export function CompleteToggle({
       whileTap={blocked ? undefined : pressStrong.whileTap}
       transition={pressStrong.transition}
       className={cn(
-        'relative z-10 grid size-11 shrink-0 place-items-center rounded-full border transition-colors duration-150',
+        'relative z-10 grid size-tap shrink-0 place-items-center rounded-full border transition-colors duration-fast',
         done
-          ? 'border-completed/60 bg-completed/20 text-completed hover:bg-completed/30'
-          : 'border-edge-strong bg-surface-overlay text-ink-faint hover:border-blue/60 hover:text-blue',
-        blocked && 'cursor-not-allowed opacity-60 hover:border-edge-strong',
+          ? 'border-success-ink/40 bg-success-soft text-success-ink hover:border-success-ink/70'
+          : 'border-line-control bg-surface text-ink-2 hover:border-ink hover:text-ink',
+        blocked && 'cursor-not-allowed opacity-60 hover:border-line-control',
         className,
       )}
     >
@@ -98,10 +98,10 @@ export function CompleteButton({
       whileTap={blocked ? undefined : pressStrong.whileTap}
       transition={pressStrong.transition}
       className={cn(
-        'inline-flex h-12 items-center justify-center gap-2 rounded-control px-5 text-sm font-extrabold tracking-tight transition-colors duration-150',
+        'on-fill inline-flex min-h-tap items-center justify-center gap-2 rounded-control border px-5 text-sm font-bold transition-colors duration-fast',
         done
-          ? 'bg-completed/15 text-completed ring-1 ring-completed/50 hover:bg-completed/25'
-          : 'bg-blue text-navy hover:bg-blue/90',
+          ? 'border-success-ink/30 bg-success-soft text-success-ink hover:border-success-ink/55'
+          : 'border-line-strong bg-surface text-ink hover:border-ink-4',
         blocked && 'cursor-not-allowed opacity-70',
         className,
       )}

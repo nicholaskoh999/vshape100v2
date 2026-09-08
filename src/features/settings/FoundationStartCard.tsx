@@ -66,14 +66,14 @@ export function FoundationStartCard() {
       <div className="flex items-start gap-3.5">
         <span
           aria-hidden="true"
-          className="grid size-9 shrink-0 place-items-center rounded-xl bg-surface-overlay text-ink-dim"
+          className="grid size-9 shrink-0 place-items-center rounded-xl bg-surface-soft text-ink-2"
         >
           <CalendarDays className="size-5" />
         </span>
 
         <div className="min-w-0 flex-1">
-          <h2 className="font-bold text-offwhite">Foundation Start Date</h2>
-          <p className="mt-0.5 text-[13px] leading-relaxed text-ink-faint">
+          <h2 className="font-bold text-ink">Foundation Start Date</h2>
+          <p className="mt-0.5 text-[13px] leading-relaxed text-ink-3">
             Day 1 of your Foundation 100. This changes day numbers and milestones
             only — your training week, Holidays, reminders and recorded workouts
             stay exactly as they are.
@@ -82,7 +82,7 @@ export function FoundationStartCard() {
           {foundation.status === 'loading' && (
             <p
               role="status"
-              className="mt-3.5 flex items-center gap-2 text-[13px] font-semibold text-ink-dim"
+              className="mt-3.5 flex items-center gap-2 text-[13px] font-semibold text-ink-2"
             >
               <Loader2 className="size-4 animate-spin" aria-hidden="true" />
               Loading your start date…
@@ -91,13 +91,13 @@ export function FoundationStartCard() {
 
           {foundation.status === 'error' && (
             <div className="mt-3.5 flex flex-wrap items-center justify-between gap-3">
-              <p role="alert" className="text-[13px] font-semibold text-coral">
+              <p role="alert" className="text-[13px] font-semibold text-danger-ink">
                 Could not load your start date. Nothing has been changed.
               </p>
               <button
                 type="button"
                 onClick={foundation.reload}
-                className="inline-flex items-center gap-1.5 rounded-control border border-edge-strong px-3.5 py-2 text-[13px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite"
+                className="inline-flex items-center gap-1.5 rounded-control border border-line-strong px-3.5 py-2 text-[13px] font-bold text-ink-2 transition-colors duration-fast hover:text-ink"
               >
                 <RefreshCw className="size-4" aria-hidden="true" />
                 Try again
@@ -116,7 +116,7 @@ export function FoundationStartCard() {
             >
               <label
                 htmlFor={inputId}
-                className="block text-[11px] font-bold uppercase tracking-[0.14em] text-ink-faint"
+                className="block text-[11px] font-bold uppercase tracking-[0.09em] text-ink-3"
               >
                 Day 1
               </label>
@@ -134,7 +134,7 @@ export function FoundationStartCard() {
                       setDraft(event.target.value)
                       setTouched(true)
                     }}
-                    className="w-44 rounded-control border border-edge-strong bg-surface px-3 py-2 text-[15px] font-bold text-offwhite outline-offset-2 disabled:opacity-50 aria-[invalid=true]:border-coral"
+                    className="w-44 rounded-control border border-line-strong bg-surface px-3 py-2 text-[15px] font-bold text-ink outline-offset-2 disabled:opacity-50 aria-[invalid=true]:border-danger-ink"
                   />
                 </div>
 
@@ -142,7 +142,7 @@ export function FoundationStartCard() {
                   type="submit"
                   disabled={!valid || !changed || foundation.saving}
                   aria-busy={foundation.saving}
-                  className="inline-flex items-center gap-1.5 rounded-control bg-blue px-4 py-2.5 text-[13px] font-bold text-offwhite transition-opacity duration-150 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="inline-flex items-center gap-1.5 rounded-control bg-accent px-4 py-2.5 text-[13px] font-bold text-ink transition-opacity duration-fast disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {foundation.saving ? (
                     <Loader2 className="size-4 animate-spin" aria-hidden="true" />
@@ -153,7 +153,7 @@ export function FoundationStartCard() {
                 </button>
               </div>
 
-              <p id={helpId} className="mt-2 text-[12px] leading-relaxed text-ink-faint">
+              <p id={helpId} className="mt-2 text-[12px] leading-relaxed text-ink-3">
                 {foundation.persisted === null
                   ? `No date saved yet — counting from ${DEFAULT_FOUNDATION_START}.`
                   : `Saved: ${foundation.persisted}.`}
@@ -163,13 +163,13 @@ export function FoundationStartCard() {
               {/* Not colour alone: the invalid, failed and saved states each
                   carry their own words and an icon or role. */}
               {showInvalid && (
-                <p role="alert" className="mt-2 text-[13px] font-semibold text-coral">
+                <p role="alert" className="mt-2 text-[13px] font-semibold text-danger-ink">
                   That is not a real calendar date. Pick a valid day.
                 </p>
               )}
 
               {foundation.saveError && (
-                <p role="alert" className="mt-2 text-[13px] font-semibold text-coral">
+                <p role="alert" className="mt-2 text-[13px] font-semibold text-danger-ink">
                   {foundation.saveError}
                 </p>
               )}
@@ -177,7 +177,7 @@ export function FoundationStartCard() {
               {foundation.saved && !foundation.saveError && !changed && (
                 <p
                   role="status"
-                  className="mt-2 flex items-center gap-1.5 text-[13px] font-semibold text-lime"
+                  className="mt-2 flex items-center gap-1.5 text-[13px] font-semibold text-accent-ink"
                 >
                   <Check className="size-4" aria-hidden="true" />
                   Start date saved.

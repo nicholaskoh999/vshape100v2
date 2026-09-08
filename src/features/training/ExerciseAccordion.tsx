@@ -8,6 +8,9 @@ import { listItemVariants, listVariants, press, tween } from '@/design/motion'
 import { cn } from '@/lib/utils'
 import { ExerciseGuidance } from './ExerciseGuidance'
 import { exercisePath } from './navigation'
+import { ExerciseMedia } from './ExerciseMedia'
+import { toMediaSource } from './exerciseMediaApi'
+import { useExerciseMedia } from './useExerciseMedia'
 import type { LaneRecommendation, ProgressionLoad } from './progressionApi'
 import type { LaneError } from './useProgression'
 import type { SessionExercise, TrainingSession } from './sessions'
@@ -102,8 +105,18 @@ export function ExerciseAccordion({
   guidance?: AccordionGuidance
   modalityAt?: AccordionModality
 }) {
-  // Local, deliberately ephemeral: nothing here needs to survive a refresh,
-  // so there is no URL state and no storage.
+  /*
+   * Local, deliberately ephemeral: nothing here needs to survive a refresh,
+   * so there is no URL state and no storage.
+   *
+   * ROUND 24 CONSIDERED AND REJECTED auto-opening the exercise being worked
+   * on. It reads well in a gym, but it takes the disclosure out of the user's
+   * hands: the panel would open itself on Start, so the user's own tap on that
+   * row then CLOSES it, and finishing an exercise would move the open panel
+   * out from under them mid-scroll. The accordion's contract is that a row
+   * opens when it is activated and not otherwise. Carried to Development
+   * Directions instead, where it belongs with a real focused-workout mode.
+   */
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null)
 
   return (
@@ -192,8 +205,8 @@ function ExerciseRow({
     <motion.li variants={listItemVariants}>
       <Card
         className={cn(
-          'overflow-hidden transition-colors duration-150',
-          expanded ? 'border-blue/45 bg-surface-raised' : 'hover:border-edge-strong',
+          'overflow-hidden transition-colors duration-fast',
+          expanded ? 'border-blue/45 bg-surface' : 'hover:border-line-strong',
         )}
       >
         <motion.button
@@ -209,20 +222,20 @@ function ExerciseRow({
           <span
             aria-hidden="true"
             className={cn(
-              'grid size-9 shrink-0 place-items-center rounded-xl text-sm font-extrabold transition-colors duration-150',
-              expanded ? 'bg-blue/15 text-blue' : 'bg-surface-overlay text-ink-dim',
+              'grid size-9 shrink-0 place-items-center rounded-xl text-sm font-extrabold transition-colors duration-fast',
+              expanded ? 'bg-accent/15 text-info-ink' : 'bg-surface-soft text-ink-2',
             )}
           >
             {index + 1}
           </span>
 
           <div className="min-w-0 flex-1">
-            <p className="font-bold text-offwhite">{exercise.name}</p>
-            <p className="mt-0.5 text-[13px] text-ink-faint">{summary}</p>
+            <p className="font-bold text-ink">{exercise.name}</p>
+            <p className="mt-0.5 text-[13px] text-ink-3">{summary}</p>
           </div>
 
           {sets.length > 0 && (
-            <span className="shrink-0 text-[12px] font-bold text-ink-faint">
+            <span className="shrink-0 text-[12px] font-bold text-ink-3">
               {resolved}/{sets.length}
             </span>
           )}
@@ -231,7 +244,7 @@ function ExerciseRow({
             aria-hidden="true"
             animate={{ rotate: expanded ? 180 : 0 }}
             transition={reduceMotion ? { duration: 0 } : tween.enter}
-            className="shrink-0 text-ink-faint"
+            className="shrink-0 text-ink-3"
           >
             <ChevronDown className="size-5" />
           </motion.span>
@@ -250,7 +263,7 @@ function ExerciseRow({
               transition={reduceMotion ? { duration: 0 } : tween.enter}
               className="overflow-hidden"
             >
-              <div className="border-t border-edge px-4 pb-4 pt-3.5">
+              <div className="border-t border-line px-4 pb-4 pt-3.5">
                 <dl className="flex flex-wrap gap-x-8 gap-y-3">
                   <Detail label="Prescribed" value={exercise.sets} />
                   {exercise.equipment && (
@@ -262,25 +275,25 @@ function ExerciseRow({
                   <div
                     role="status"
                     data-modality-mismatch
-                    className="mt-4 rounded-control border border-coral/50 bg-coral/10 p-3"
+                    className="mt-4 rounded-control border border-danger-ink/50 bg-danger-ink/10 p-3"
                   >
-                    <p className="text-[12px] font-bold text-offwhite">
+                    <p className="text-[12px] font-bold text-ink">
                       This workout was started before this exercise&rsquo;s input
                       type changed.
                     </p>
-                    <p className="mt-1 text-[12px] text-ink-dim">
+                    <p className="mt-1 text-[12px] text-ink-2">
                       It is frozen as{' '}
-                      <strong className="text-offwhite">
+                      <strong className="text-ink">
                         {WORKOUT_INPUT_TYPE_LABELS[mismatch.frozen as WorkoutInputType]}
                       </strong>
                       ; your current setting is{' '}
-                      <strong className="text-offwhite">
+                      <strong className="text-ink">
                         {WORKOUT_INPUT_TYPE_LABELS[mismatch.current as WorkoutInputType]}
                       </strong>
                       . Nothing has been converted, and what you already recorded
                       is unchanged.
                     </p>
-                    <p className="mt-1 text-[12px] text-ink-faint">
+                    <p className="mt-1 text-[12px] text-ink-3">
                       Load guidance is paused for this exercise while the two
                       disagree. You can correct anything you recorded here
                       afterwards from Progress → Recorded sets → Edit recorded
@@ -294,14 +307,14 @@ function ExerciseRow({
                     role="status"
                     data-modality-unverified
                     data-unverified-reason={unverified.reason}
-                    className="mt-4 rounded-control border border-edge-strong bg-surface-overlay/60 p-3"
+                    className="mt-4 rounded-control border border-line-strong bg-surface-soft/60 p-3"
                   >
-                    <p className="text-[12px] font-bold text-offwhite">
+                    <p className="text-[12px] font-bold text-ink">
                       {unverified.reason === 'error'
                         ? 'Current input type could not be verified. Load guidance is paused.'
                         : 'Checking this exercise’s current input type. Load guidance is paused.'}
                     </p>
-                    <p className="mt-1 text-[12px] text-ink-faint">
+                    <p className="mt-1 text-[12px] text-ink-3">
                       Logging is unaffected — this workout keeps the controls it
                       was started with, and nothing you have recorded has
                       changed.
@@ -327,6 +340,10 @@ function ExerciseRow({
                 )}
 
                 {logging && (
+                  <PanelMedia exerciseId={exercise.id} />
+                )}
+
+                {logging && sets.length > 0 && (
                   <WorkoutSetList
                     sets={sets}
                     busySet={logging.busySet}
@@ -343,7 +360,7 @@ function ExerciseRow({
 
                 <Link
                   to={exercisePath(exercise.id, sessionId)}
-                  className="mt-4 inline-flex items-center gap-1 rounded-control border border-edge-strong px-3.5 py-2 text-[13px] font-bold text-ink-dim transition-colors duration-150 hover:border-blue/60 hover:text-offwhite"
+                  className="mt-4 inline-flex min-h-tap items-center gap-1 rounded-control border border-line-strong bg-surface px-3.5 text-[13px] font-bold text-ink no-underline transition-colors duration-fast hover:border-ink-4"
                 >
                   Open exercise details
                   <ChevronRight className="size-4" aria-hidden="true" />
@@ -357,13 +374,29 @@ function ExerciseRow({
   )
 }
 
+/**
+ * The exercise's demo media, in the workout.
+ *
+ * `resolution` keeps "still loading" distinct from "no media set", so a slow
+ * read never briefly claims there is nothing to show.
+ */
+function PanelMedia({ exerciseId }: { exerciseId: string }) {
+  const media = useExerciseMedia(exerciseId)
+  if (media.status === 'ready' && media.record === null) return null
+  return (
+    <div className="mt-4">
+      <ExerciseMedia media={toMediaSource(media.record)} resolution={media.status} />
+    </div>
+  )
+}
+
 function Detail({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[11px] font-bold uppercase tracking-[0.14em] text-ink-faint">
+      <dt className="text-[11px] font-bold uppercase tracking-[0.09em] text-ink-3">
         {label}
       </dt>
-      <dd className="mt-0.5 text-[15px] font-bold text-offwhite">{value}</dd>
+      <dd className="mt-0.5 text-[15px] font-bold text-ink">{value}</dd>
     </div>
   )
 }

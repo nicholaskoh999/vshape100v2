@@ -43,16 +43,16 @@ export function PersonalBestCard({ state }: { state: PerformanceState }) {
       <div data-personal-best data-personal-best-state={state.status}>
         <header className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-ink-faint">
+            <p className="text-[15px] font-bold tracking-[-0.01em] text-ink">
               Personal best
             </p>
-            <p className="mt-0.5 text-[13px] text-ink-faint">
+            <p className="mt-0.5 text-[13px] text-ink-3">
               Your best completed set in each comparable measurement.
             </p>
           </div>
           <span
             aria-hidden="true"
-            className="grid size-11 shrink-0 place-items-center rounded-2xl bg-surface-overlay text-ink-faint"
+            className="grid size-11 shrink-0 place-items-center rounded-2xl bg-surface-soft text-ink-3"
           >
             <Trophy className="size-5" />
           </span>
@@ -61,7 +61,7 @@ export function PersonalBestCard({ state }: { state: PerformanceState }) {
         {state.status === "loading" && (
           <p
             role="status"
-            className="mt-4 flex items-center gap-2 text-[13px] font-semibold text-ink-dim"
+            className="mt-4 flex items-center gap-2 text-[13px] font-semibold text-ink-2"
           >
             <Loader2 className="size-4 animate-spin" aria-hidden="true" />
             Reading your recorded history…
@@ -88,7 +88,7 @@ export function PersonalBestCard({ state }: { state: PerformanceState }) {
         )}
 
         {state.status === "ready" && variants.length === 0 && (
-          <p className="mt-4 text-[13px] leading-relaxed text-ink-faint">
+          <p className="mt-4 text-[13px] leading-relaxed text-ink-3">
             No completed sets recorded yet. Finish a set in Training and your best will appear
             here.
           </p>
@@ -96,7 +96,7 @@ export function PersonalBestCard({ state }: { state: PerformanceState }) {
 
         {state.status === "ready" && variants.length > 0 && (
           <>
-            <ul className="mt-4 divide-y divide-edge border-t border-edge">
+            <ul className="mt-4 divide-y divide-line border-t border-line">
               {shown.map((variant) => (
                 <BestRow
                   key={variant.key}
@@ -111,7 +111,7 @@ export function PersonalBestCard({ state }: { state: PerformanceState }) {
                 type="button"
                 onClick={() => setExpanded((open) => !open)}
                 aria-expanded={expanded}
-                className="mt-3 rounded-control px-2 py-1 text-[12px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue"
+                className="mt-3 rounded-control px-2 py-1 text-[12px] font-bold text-ink-2 transition-colors duration-fast hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink"
               >
                 {expanded
                   ? "Show fewer"
@@ -144,20 +144,20 @@ function BestRow({
   return (
     <li className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3">
       <div className="min-w-0">
-        <p className="truncate font-bold text-offwhite">{variant.exerciseName}</p>
+        <p className="truncate font-bold text-ink">{variant.exerciseName}</p>
         {qualifier && (
-          <p className="mt-0.5 text-[12px] font-semibold text-ink-faint">{qualifier}</p>
+          <p className="mt-0.5 text-[12px] font-semibold text-ink-3">{qualifier}</p>
         )}
       </div>
       <div className="text-right">
-        <p className="font-extrabold tabular-nums text-offwhite">
+        <p className="font-bold tabular-nums text-ink">
           {formatPerformance(best, variant)}
         </p>
         {/*
           The FIRST date this exact performance was reached. Repeating it later
           is not becoming stronger, so the date does not move.
         */}
-        <p className="mt-0.5 text-[12px] font-semibold text-ink-faint">
+        <p className="mt-0.5 text-[12px] font-semibold text-ink-3">
           {formatLocalDate(best.date)}
         </p>
       </div>
@@ -168,13 +168,13 @@ function BestRow({
 function Failure({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-      <p role="alert" className="max-w-prose text-[13px] font-semibold text-coral">
+      <p role="alert" className="max-w-prose text-[13px] font-semibold text-danger-ink">
         {message}
       </p>
       <button
         type="button"
         onClick={onRetry}
-        className="inline-flex shrink-0 items-center gap-1.5 rounded-control border border-edge-strong px-3.5 py-2 text-[13px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue"
+        className="inline-flex shrink-0 items-center gap-1.5 rounded-control border border-line-strong px-3.5 py-2 text-[13px] font-bold text-ink-2 transition-colors duration-fast hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink"
       >
         <RefreshCw className="size-4" aria-hidden="true" />
         Try again

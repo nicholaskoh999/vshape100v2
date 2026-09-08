@@ -113,10 +113,10 @@ export function ExerciseInputTypeCard({
   return (
     <Card className="flex flex-col gap-4 p-5">
       <div className="min-w-0">
-        <h2 className="text-[15px] font-extrabold tracking-tight text-offwhite">
+        <h2 className="text-[15px] font-bold tracking-tight text-ink">
           How is this loaded?
         </h2>
-        <p className="mt-1 text-[13px] text-ink-faint">
+        <p className="mt-1 text-[13px] text-ink-3">
           Applies to {name} on every day it is trained. Changing it affects future
           workouts only — sets you have already recorded are never altered.
         </p>
@@ -128,42 +128,42 @@ export function ExerciseInputTypeCard({
         className="flex min-h-5 items-center gap-2 text-[13px]"
       >
         {setting.status === 'loading' && (
-          <span className="flex items-center gap-2 text-ink-faint">
+          <span className="flex items-center gap-2 text-ink-3">
             <Loader2 className="size-4 animate-spin" aria-hidden="true" />
             Loading input type
           </span>
         )}
         {setting.status === 'error' && (
           <>
-            <span className="text-coral">The saved input type could not be loaded.</span>
+            <span className="text-danger-ink">The saved input type could not be loaded.</span>
             <button
               type="button"
               onClick={setting.reload}
-              className="rounded-control font-bold text-blue underline-offset-2 hover:underline"
+              className="rounded-control font-bold text-info-ink underline-offset-2 hover:underline"
             >
               Retry
             </button>
           </>
         )}
         {unreadable && feedback.state === 'idle' && (
-          <span className="text-coral">
+          <span className="text-danger-ink">
             Saved input type could not be read. Choose the correct type to replace it.
           </span>
         )}
         {canChoose && feedback.state === 'saving' && (
-          <span className="flex items-center gap-2 text-ink-faint">
+          <span className="flex items-center gap-2 text-ink-3">
             <Loader2 className="size-4 animate-spin" aria-hidden="true" />
             Saving
           </span>
         )}
         {canChoose && feedback.state === 'saved' && (
-          <span className="font-semibold text-completed">Saved.</span>
+          <span className="font-semibold text-success-ink">Saved.</span>
         )}
         {canChoose && feedback.state === 'error' && (
-          <span className="text-coral">{feedback.message}</span>
+          <span className="text-danger-ink">{feedback.message}</span>
         )}
         {setting.status === 'ready' && feedback.state === 'idle' && saved === null && (
-          <span className="text-ink-faint">
+          <span className="text-ink-3">
             Not set yet — this exercise still records the way it always has.
           </span>
         )}
@@ -186,28 +186,28 @@ export function ExerciseInputTypeCard({
               disabled={busy || !canChoose}
               onClick={() => void choose(option)}
               className={cn(
-                'rounded-control border px-4 py-3 text-left transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-60',
+                'rounded-control border px-4 py-3 text-left transition-colors duration-fast disabled:cursor-not-allowed disabled:opacity-60',
                 saved === option
-                  ? 'border-blue bg-blue/15'
-                  : 'border-edge bg-surface-overlay hover:border-edge-strong',
+                  ? 'border-accent-edge bg-accent/15'
+                  : 'border-line bg-surface-soft hover:border-line-strong',
               )}
             >
               <span className="flex items-center gap-2">
                 <span
                   className={cn(
                     'text-sm font-bold',
-                    saved === option ? 'text-offwhite' : 'text-ink-dim',
+                    saved === option ? 'text-ink' : 'text-ink-2',
                   )}
                 >
                   {WORKOUT_INPUT_TYPE_LABELS[option]}
                 </span>
                 {suggestion === option && (
-                  <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-bold text-ink-faint">
+                  <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-bold text-ink-3">
                     Suggested
                   </span>
                 )}
               </span>
-              <span className="mt-0.5 block text-[12px] text-ink-faint">
+              <span className="mt-0.5 block text-[12px] text-ink-3">
                 {WORKOUT_INPUT_TYPE_DESCRIPTIONS[option]}
               </span>
             </motion.button>

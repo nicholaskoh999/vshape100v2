@@ -147,7 +147,7 @@ export function TrendChart({
               strokeLinejoin="round"
               // Keeps the stroke 2px however the viewBox is scaled.
               vectorEffect="non-scaling-stroke"
-              className="text-blue"
+              className="text-info-ink"
             />
           )}
           {coordinates.map((spot) => (
@@ -162,13 +162,13 @@ export function TrendChart({
         </svg>
       </div>
 
-      <div className="mt-1.5 flex items-center justify-between gap-3 text-[11px] font-semibold tabular-nums text-ink-faint">
+      <div className="mt-1.5 flex items-center justify-between gap-3 text-[11px] font-semibold tabular-nums text-ink-3">
         <span>{formatShortDate(first.date)}</span>
         {points.length > 1 && <span>{formatShortDate(last.date)}</span>}
       </div>
 
       {plots && (
-        <p className="mt-1 text-[12px] font-semibold text-ink-faint">{plots}</p>
+        <p className="mt-1 text-[12px] font-semibold text-ink-3">{plots}</p>
       )}
 
       <figcaption className="sr-only">
@@ -178,7 +178,7 @@ export function TrendChart({
       </figcaption>
 
       <details className="mt-2 group">
-        <summary className="cursor-pointer list-none rounded-control px-2 py-1 text-[12px] font-bold text-ink-dim outline-none transition-colors duration-150 hover:text-offwhite focus-visible:ring-2 focus-visible:ring-blue">
+        <summary className="cursor-pointer list-none rounded-control px-2 py-1 text-[12px] font-bold text-ink-2 outline-none transition-colors duration-fast hover:text-ink focus-visible:ring-2 focus-visible:ring-ink">
           <span aria-hidden="true" className="mr-1 inline-block group-open:hidden">
             +
           </span>
@@ -192,29 +192,29 @@ export function TrendChart({
           Wide content scrolls inside its own box rather than pushing the page
           sideways on a narrow screen.
         */}
-        <div className="mt-2 max-h-56 overflow-auto rounded-control border border-edge">
+        <div className="mt-2 max-h-56 overflow-auto rounded-control border border-line">
           <table id={tableId} className="w-full border-collapse text-left text-[12px]">
             <caption className="sr-only">{label}, every recorded measurement</caption>
-            <thead className="sticky top-0 bg-surface-overlay">
+            <thead className="sticky top-0 bg-surface-soft">
               <tr>
-                <th scope="col" className="px-3 py-2 font-bold text-ink-faint">
+                <th scope="col" className="px-3 py-2 font-bold text-ink-3">
                   Date
                 </th>
-                <th scope="col" className="px-3 py-2 font-bold text-ink-faint">
+                <th scope="col" className="px-3 py-2 font-bold text-ink-3">
                   {unitLabel}
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-edge">
+            <tbody className="divide-y divide-line">
               {points.map((point) => (
                 <tr key={`${point.date}:${point.id ?? ""}`}>
                   <th
                     scope="row"
-                    className="whitespace-nowrap px-3 py-1.5 font-semibold text-ink-dim"
+                    className="whitespace-nowrap px-3 py-1.5 font-semibold text-ink-2"
                   >
                     {formatShortDate(point.date)}
                   </th>
-                  <td className="px-3 py-1.5 font-bold tabular-nums text-offwhite">
+                  <td className="px-3 py-1.5 font-bold tabular-nums text-ink">
                     {point.display}
                   </td>
                 </tr>

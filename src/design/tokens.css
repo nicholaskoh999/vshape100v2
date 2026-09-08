@@ -1,65 +1,166 @@
 @import 'tailwindcss';
 
 /* ------------------------------------------------------------------ */
-/* VShape100 v2 design tokens                                          */
-/* Brand palette is locked — see 01_ACCEPTED_STATE. Roughly:           */
-/*   70% deep neutral · 20% electric blue · 10% sport accents          */
+/* VShape100 v2 design tokens — Round 24 light system                  */
+/*                                                                     */
+/* Round 24 supersedes the Round 01 dark palette (Q1, approved).       */
+/* Warm off-white canvas · white cards · near-black ink · lime accent. */
+/*                                                                     */
+/* Separation now comes from the canvas -> surface luminance step, not */
+/* from glow: there is no ambient gradient and no inset white hairline, */
+/* because neither means anything on a light ground.                   */
+/*                                                                     */
+/* Every colour below carries the contrast ratio it achieves and the   */
+/* surfaces it is licensed for. Do not use a text token on a surface   */
+/* it is not licensed for.                                             */
 /* ------------------------------------------------------------------ */
 
 @theme {
-  /* Brand palette (locked) */
-  --color-navy: #0b1220;
-  --color-surface: #121a2b;
-  --color-blue: #2f6bff;
-  --color-lime: #b7f34a;
-  --color-coral: #ff6b5e;
-  --color-cyan: #39d5e8;
-  --color-purple: #9b6cff;
-  --color-offwhite: #f7f9fc;
-  --color-mutedgrey: #8491a3;
+  /* ---------------- Neutrals ---------------- */
+  --color-canvas: #f5f6f2; /* app background — warm, very light */
+  --color-surface: #ffffff; /* every card and hero */
+  --color-surface-soft: #f0f2ea; /* chip ground, inset panel, skeleton */
+  --color-surface-sunken: #e7eade; /* progress track, unfilled rail */
 
-  /* Neutral ramp derived from navy/surface for layering */
-  --color-surface-raised: #182338;
-  --color-surface-overlay: #1e2b44;
-  --color-edge: #223050;
-  --color-edge-strong: #2c3d63;
+  /* ---------------- Ink ramp ----------------
+     ink    16.3:1 on surface · 15.6:1 on canvas   any text
+     ink-2   7.8:1 on surface ·  7.2:1 on canvas   any text
+     ink-3   4.8:1 on surface ·  4.4:1 on canvas   SMALL TEXT ON WHITE ONLY;
+                                                    on canvas it is large-text
+                                                    (>=18.66px bold / 24px) only
+     ink-4   3.2:1 on surface                      placeholders, disabled
+                                                    labels, decorative marks —
+                                                    never load-bearing copy */
+  --color-ink: #171a15;
+  --color-ink-2: #4e5348;
+  --color-ink-3: #6e7468;
+  --color-ink-4: #8b9184;
+  --color-ink-on-dark: #f7f8f4; /* text on an ink or accent-dark fill */
 
-  /* Text roles */
-  --color-ink: #f7f9fc;
-  --color-ink-dim: #b9c3d4;
-  --color-ink-faint: #8491a3;
+  /* ---------------- Lines ----------------
+     line          1.6:1  decorative hairline; legitimate only where the
+                          surface/canvas step already separates the block
+     line-strong   2.3:1  denser list separation
+     line-control  3.2:1  MANDATORY on any input, checkbox, radio, toggle or
+                          focusable control boundary (WCAG 1.4.11) */
+  --color-line: #e4e7de;
+  --color-line-strong: #d0d5c6;
+  --color-line-control: #8b9184;
 
-  /* Semantic tokens (locked direction) */
-  --color-hard: #ff6b5e; /* HARD sessions */
-  --color-light-day: #39d5e8; /* LIGHT sessions */
-  --color-pump: #9b6cff; /* PUMP sessions */
-  --color-holiday: #9b6cff; /* Holiday mode */
-  --color-energy: #b7f34a; /* energy / progress / completed feedback */
-  --color-completed: #3ecf6e; /* green-family completed state */
-  --color-late: #f5a623; /* amber-family late / needs attention */
+  /* ---------------- Accent: lime ----------------
+     A FILL, never small text.
+       accent       ink on it = 14.3:1
+       accent-edge  3.4:1 on white — the boundary of an accent fill
+       accent-ink   6.0:1 on white — accent as TEXT
+       accent-soft  tint ground for accent chips and hero washes */
+  --color-accent: #cdf564;
+  --color-accent-press: #c0ea50;
+  --color-accent-edge: #74961f;
+  --color-accent-ink: #4e6b12;
+  --color-accent-soft: #eafbc4;
 
-  /* Type */
+  /* ---------------- Semantic ----------------
+     Each -ink clears 4.5:1 on white; each -mark clears 3:1 for non-text. */
+  --color-success-ink: #1f7a46;
+  --color-success-soft: #e1f4e8;
+  --color-success-mark: #2f9c5c;
+  --color-warn-ink: #8a5a00;
+  --color-warn-soft: #fbf0d8;
+  --color-warn-mark: #c77f06;
+  --color-danger-ink: #b3261e;
+  --color-danger-soft: #fbe6e4;
+  --color-info-ink: #1d5fbf;
+  --color-info-soft: #e3edfb;
+
+  /* ---------------- Session intensity ----------------
+     LOCKED SEMANTICS. HARD/LIGHT/PUMP keep their hue families from the
+     accepted palette; only luminance changed, because the ground changed. */
+  --color-hard-ink: #c2453a;
+  --color-hard-soft: #fce9e6;
+  --color-light-ink: #0e6e7b;
+  --color-light-soft: #ddf1f4;
+  --color-pump-ink: #6a45c7;
+  --color-pump-soft: #ebe4fa;
+
+  /* ---------------- Day resolution ----------------
+     A SEPARATE AXIS from session intensity. Hue overlap between the two
+     axes is deliberate and safe: they never appear in one legend, and every
+     badge on both axes renders an icon AND a word, so no status is ever
+     communicated by colour alone. */
+  --color-scheduled-ink: #4e5348;
+  --color-scheduled-soft: #f0f2ea;
+  --color-recovery-ink: #0e6e7b;
+  --color-recovery-soft: #ddf1f4;
+  --color-extra-ink: #4e6b12;
+  --color-extra-soft: #eafbc4;
+  --color-holiday-ink: #6a45c7;
+  --color-holiday-soft: #ebe4fa;
+
+  /* ------------------------------------------------------------------ */
+  /* COMPATIBILITY SHIM.                                                 */
+  /*                                                                     */
+  /* The Round 01–23 token names, re-pointed at light values, so the      */
+  /* whole app becomes light without editing a single className. The      */
+  /* names read wrong here on purpose — `navy` is now off-white and       */
+  /* `offwhite` is now near-black — and screens are migrated to the role  */
+  /* names above as they are rebuilt.                                     */
+  /* ------------------------------------------------------------------ */
+  --color-navy: #f5f6f2; /* -> canvas */
+  --color-offwhite: #171a15; /* -> ink (INVERTED ROLE) */
+  --color-mutedgrey: #6e7468;
+  --color-surface-raised: #ffffff;
+  --color-surface-overlay: #f0f2ea;
+  --color-edge: #e4e7de;
+  --color-edge-strong: #d0d5c6;
+  --color-ink-dim: #4e5348;
+  --color-ink-faint: #6e7468;
+  --color-blue: #1d5fbf; /* primary -> informational */
+  --color-lime: #cdf564;
+  --color-coral: #b3261e;
+  --color-cyan: #0e6e7b;
+  --color-purple: #6a45c7;
+  --color-hard: #c2453a;
+  --color-light-day: #0e6e7b;
+  --color-pump: #6a45c7;
+  --color-holiday: #6a45c7;
+  --color-energy: #4e6b12;
+  --color-completed: #1f7a46;
+  --color-late: #8a5a00;
+
+  /* ---------------- Type ---------------- */
   --font-sans: 'Outfit Variable', ui-sans-serif, system-ui, -apple-system,
     'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 
-  /* Radii — soft, sporty, not bubbly */
-  --radius-card: 1.25rem;
-  --radius-control: 0.875rem;
+  /* ---------------- Radii ----------------
+     Six steps, each with a stated job. Nothing gets an arbitrary radius. */
+  --radius-chip: 0.5rem; /* 8px  micro chip */
+  --radius-field: 0.75rem; /* 12px input */
+  --radius-control: 1rem; /* 16px button, list row */
+  --radius-card: 1.375rem; /* 22px card */
+  --radius-hero: 1.75rem; /* 28px hero, bottom sheet */
 
-  /* Motion durations (single source shared with motion.ts) */
+  /* ---------------- Interaction sizes ----------------
+     44px is the floor for anything tappable. 56px is the in-gym primary:
+     Complete set, and the load / rep / seconds steppers. */
+  --spacing-tap: 2.75rem;
+  --spacing-gym: 3.5rem;
+
+  /* ---------------- Motion (single source shared with motion.ts) ------ */
   --duration-instant: 100ms;
   --duration-fast: 180ms;
   --duration-base: 280ms;
   --duration-slow: 420ms;
-
-  /* Motion easings */
   --ease-out-quart: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out-soft: cubic-bezier(0.45, 0, 0.2, 1);
 
-  /* Shadows tuned for a dark ground */
-  --shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.03) inset,
-    0 8px 24px -12px rgb(0 0 0 / 0.6);
-  --shadow-pop: 0 12px 40px -12px rgb(0 0 0 / 0.7);
+  /* ---------------- Elevation ----------------
+     Soft separation only. A card is identified by its white surface against
+     the canvas first; the shadow is a whisper, not the boundary. */
+  --shadow-card: 0 1px 2px rgb(23 26 21 / 0.04),
+    0 10px 24px -18px rgb(23 26 21 / 0.16);
+  --shadow-pop: 0 2px 6px rgb(23 26 21 / 0.05),
+    0 20px 44px -24px rgb(23 26 21 / 0.22);
+  --shadow-sticky: 0 -10px 26px -20px rgb(23 26 21 / 0.24);
 }
 
 /* ------------------------------------------------------------------ */
@@ -67,7 +168,7 @@
 /* ------------------------------------------------------------------ */
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 html,
@@ -77,34 +178,34 @@ body {
 
 body {
   margin: 0;
-  background-color: var(--color-navy);
+  background-color: var(--color-canvas);
   color: var(--color-ink);
   font-family: var(--font-sans);
+  /* Every number in this app can be compared vertically — loads, reps,
+     weights, dates, counts — and proportional figures make a column of them
+     jitter. Set once here rather than per component. */
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
 }
 
-/* Subtle brand ambience behind everything — restrained, no heavy glow */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(60rem 40rem at 85% -10%, rgb(47 107 255 / 0.12), transparent 60%),
-    radial-gradient(50rem 36rem at -15% 110%, rgb(57 213 232 / 0.05), transparent 60%);
-}
+/* No ambient gradient. The light canvas is deliberately flat. */
 
-/* Visible focus for keyboard users, calm for pointer users */
+/* Visible focus for keyboard users, calm for pointer users. */
 :focus-visible {
-  outline: 2px solid var(--color-blue);
+  outline: 2px solid var(--color-ink);
   outline-offset: 2px;
   border-radius: 6px;
 }
 
+/* On an accent or ink fill a dark ring disappears; invert it there. */
+.on-fill:focus-visible {
+  outline-color: var(--color-ink-on-dark);
+}
+
 ::selection {
-  background: rgb(47 107 255 / 0.4);
+  background: var(--color-accent);
+  color: var(--color-ink);
 }
 
 /* Mobile safe areas (viewport-fit=cover) */
@@ -118,6 +219,10 @@ body::before {
 
 /* Reduced motion: kill non-essential animation globally.               */
 /* Motion-for-React honors this too via MotionConfig reducedMotion.     */
+/*                                                                      */
+/* NOTE: this is why a loading signal must never be carried by movement */
+/* alone. Skeletons read as placeholders while completely still — the   */
+/* shimmer below is an enhancement on top of a solid sunken ground.     */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -126,5 +231,13 @@ body::before {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* Forced colors: our fills are dropped there, so every status also
+   carries an icon and a word and this degrades to legible. */
+@media (forced-colors: active) {
+  .vs-bordered {
+    border: 1px solid CanvasText;
   }
 }

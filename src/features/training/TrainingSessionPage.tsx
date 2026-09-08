@@ -1,10 +1,11 @@
-import { ArrowLeft, Loader2, Play, RefreshCw, Trash2 } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Loader2, Play, RefreshCw, Trash2 } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router'
 
-import { Card } from '@/components/ui/Card'
-import { IntensityBadge } from '@/components/ui/IntensityBadge'
-import { PageHeader } from '@/components/ui/PageHeader'
+import { Badge, IntensityBadge } from '@/components/ui/Badge'
+import { Button } from '@/components/ui/Button'
+import { Banner, Skeleton } from '@/components/ui/Feedback'
+import { HeroCard, PageHeader } from '@/components/ui/Layout'
 import { useLocalToday } from '@/features/progress/useLocalToday'
 import { ExerciseAccordion } from './ExerciseAccordion'
 import { useExerciseInputTypeLibrary } from '@/features/settings/useExerciseInputTypeLibrary'
@@ -33,6 +34,11 @@ export function TrainingSessionPage() {
       <>
         <BackToTraining />
         <PageHeader title="Loading" subline="Reading your training week." />
+        <div className="flex flex-col gap-3">
+          <Skeleton className="h-32 rounded-hero" />
+          <Skeleton className="h-16 rounded-card" />
+          <Skeleton className="h-16 rounded-card" />
+        </div>
       </>
     )
   }
@@ -45,13 +51,19 @@ export function TrainingSessionPage() {
           title="Could not load this session"
           subline="Your programme could not be read, so this day is not being guessed at."
         />
-        <button
-          type="button"
-          onClick={reload}
-          className="mt-3 rounded-control text-[13px] font-bold text-blue underline-offset-2 hover:underline"
+        <Banner
+          tone="danger"
+          live="alert"
+          title="Your programme could not be read"
+          actions={
+            <Button size="sm" onClick={reload}>
+              <RefreshCw className="size-4" aria-hidden="true" />
+              Retry
+            </Button>
+          }
         >
-          Retry
-        </button>
+          This day is not being guessed at, and nothing has been lost.
+        </Banner>
       </>
     )
   }
@@ -257,12 +269,25 @@ function WorkoutBar({
   // so it is never one tap away.
   const [confirming, setConfirming] = useState(false)
 
+  /*
+   * A WORKOUT CLOSES.
+   *
+   * Before Round 24 a fully resolved session still said "Resume workout" at
+   * 17 / 17, which reads as "you are not done" at exactly the moment the app
+   * should say the opposite.
+   *
+   * DERIVED from the server's own counts. Nothing new is stored, and a started
+   * workout with nothing resolved is not finished.
+   */
+  const finished =
+    started && progress !== null && progress.total > 0 && progress.resolved === progress.total
+
   return (
-    <Card className="mb-4 p-4">
+    <HeroCard accent={status === 'ready'} className="mb-4">
       {status === 'loading' && (
         <p
           role="status"
-          className="flex items-center gap-2 text-[13px] font-semibold text-ink-dim"
+          className="flex items-center gap-2 text-[13px] font-semibold text-ink-2"
         >
           <Loader2 className="size-4 animate-spin" aria-hidden="true" />
           Checking your workout…
@@ -270,54 +295,72 @@ function WorkoutBar({
       )}
 
       {status === 'error' && (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p role="alert" className="text-[13px] font-semibold text-coral">
-            Could not load this workout. Nothing has been lost.
-          </p>
-          <button
-            type="button"
-            onClick={reload}
-            className="inline-flex items-center gap-1.5 rounded-control border border-edge-strong px-3.5 py-2 text-[13px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite"
-          >
-            <RefreshCw className="size-4" aria-hidden="true" />
-            Try again
-          </button>
-        </div>
+        <Banner
+          tone="danger"
+          live="alert"
+          title="Could not load this workout. Nothing has been lost."
+          actions={
+            <Button size="sm" onClick={reload}>
+              <RefreshCw className="size-4" aria-hidden="true" />
+              Try again
+            </Button>
+          }
+        />
       )}
 
       {status === 'ready' && !started && (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[15px] font-bold text-offwhite">Workout not started</p>
-            <p className="mt-0.5 text-[13px] text-ink-faint">
-              {plan
-                ? `${session.exercises.length} exercises · ${totalSets(plan)} sets to log`
-                : 'This session cannot be logged yet.'}
-            </p>
-          </div>
-          <button
-            type="button"
+        <div>
+          <p className="text-[15px] font-bold text-ink">Workout not started</p>
+          <p className="mt-0.5 text-[13px] text-ink-2">
+            {plan
+              ? `${session.exercises.length} exercises · ${totalSets(plan)} sets to log`
+              : 'This session cannot be logged yet.'}
+          </p>
+          <Button
+            variant="primary"
+            size="lg"
+            block
             onClick={onStart}
             disabled={!plan || starting}
-            className="inline-flex items-center gap-1.5 rounded-control bg-blue px-4 py-2.5 text-[13px] font-bold text-offwhite transition-opacity duration-150 disabled:cursor-not-allowed disabled:opacity-40"
+            className="mt-4"
           >
             {starting ? (
-              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              <Loader2 className="size-[18px] animate-spin" aria-hidden="true" />
             ) : (
-              <Play className="size-4" aria-hidden="true" />
+              <Play className="size-[18px]" aria-hidden="true" />
             )}
             Start workout
-          </button>
+          </Button>
+          <p className="mt-2.5 text-xs text-ink-3">
+            Starting freezes today’s programme into this workout. Later programme edits will
+            not change it.
+          </p>
         </div>
       )}
 
       {status === 'ready' && started && progress && (
         <div>
-          <p className="text-[15px] font-bold text-offwhite">Resume workout</p>
-          <p className="mt-0.5 text-[13px] text-ink-faint">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            {finished ? (
+              <Badge tone="done" icon={CheckCircle2}>
+                Workout complete
+              </Badge>
+            ) : (
+              <Badge tone="current">In progress</Badge>
+            )}
+          </div>
+          <p className="text-[15px] font-bold text-ink">
+            {finished ? 'Every set is resolved' : 'Resume workout'}
+          </p>
+          <p className="mt-0.5 text-[13px] text-ink-2">
             Workout in progress · {progress.resolved} / {progress.total} sets resolved
           </p>
-          <p className="mt-1 text-[12px] font-semibold text-ink-faint">
+          {/*
+            Completed and skipped are reported SEPARATELY and never added
+            together: a skip is not a smaller success, and nothing downstream
+            may read one as training that happened.
+          */}
+          <p className="mt-1 text-[13px] font-semibold text-ink-2">
             {progress.completed} completed · {progress.skipped} skipped
           </p>
           <ProgressBar resolved={progress.resolved} total={progress.total} />
@@ -334,7 +377,7 @@ function WorkoutBar({
             <button
               type="button"
               onClick={() => setConfirming(true)}
-              className="mt-3 inline-flex items-center gap-1.5 rounded-control border border-edge-strong px-3 py-1.5 text-[12px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite"
+              className="mt-3 inline-flex items-center gap-1.5 rounded-control border border-line-strong px-3 py-1.5 text-[12px] font-bold text-ink-2 transition-colors duration-fast hover:text-ink"
             >
               <Trash2 className="size-3.5" aria-hidden="true" />
               Cancel workout start
@@ -342,9 +385,9 @@ function WorkoutBar({
           )}
 
           {cancelable && confirming && (
-            <div className="mt-3 rounded-control border border-edge-strong bg-surface-overlay/60 p-3">
-              <p className="text-[13px] font-bold text-offwhite">Cancel this workout?</p>
-              <p className="mt-0.5 text-[12px] text-ink-faint">
+            <div className="mt-4 rounded-control border border-danger-ink/25 bg-danger-soft p-4">
+              <p className="text-[13px] font-bold text-ink">Cancel this workout?</p>
+              <p className="mt-0.5 text-[12px] text-ink-3">
                 No sets have been recorded. This will return the workout to Not
                 started.
               </p>
@@ -356,7 +399,7 @@ function WorkoutBar({
                     void cancelStart()
                   }}
                   disabled={cancelling}
-                  className="inline-flex items-center gap-1.5 rounded-control bg-coral px-3 py-1.5 text-[12px] font-bold text-offwhite transition-opacity duration-150 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="inline-flex items-center gap-1.5 rounded-control bg-danger-ink px-3 py-1.5 text-[12px] font-bold text-ink transition-opacity duration-fast disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {cancelling ? (
                     <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
@@ -369,7 +412,7 @@ function WorkoutBar({
                   type="button"
                   onClick={() => setConfirming(false)}
                   disabled={cancelling}
-                  className="rounded-control px-3 py-1.5 text-[12px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite disabled:cursor-not-allowed disabled:opacity-40"
+                  className="rounded-control px-3 py-1.5 text-[12px] font-bold text-ink-2 transition-colors duration-fast hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Keep workout
                 </button>
@@ -380,11 +423,11 @@ function WorkoutBar({
       )}
 
       {mutationError && (
-        <p role="alert" className="mt-3 text-[13px] font-semibold text-coral">
+        <p role="alert" className="mt-3 text-[13px] font-semibold text-danger-ink">
           {mutationError}
         </p>
       )}
-    </Card>
+    </HeroCard>
   )
 }
 
@@ -397,9 +440,9 @@ function ProgressBar({ resolved, total }: { resolved: number; total: number }) {
       aria-valuemax={total}
       aria-valuenow={resolved}
       aria-label="Sets resolved"
-      className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-surface-overlay"
+      className="mt-3 h-2 w-full overflow-hidden rounded-full bg-surface-sunken"
     >
-      <div className="h-full rounded-full bg-blue" style={{ width: `${percent}%` }} />
+      <div className="h-full rounded-full bg-accent-edge" style={{ width: `${percent}%` }} />
     </div>
   )
 }
@@ -412,7 +455,7 @@ function BackToTraining() {
   return (
     <Link
       to="/training"
-      className="mb-4 inline-flex items-center gap-1.5 rounded-control text-[13px] font-semibold text-ink-faint transition-colors duration-150 hover:text-offwhite"
+      className="mb-4 inline-flex items-center gap-1.5 rounded-control text-[13px] font-semibold text-ink-3 transition-colors duration-fast hover:text-ink"
     >
       <ArrowLeft className="size-4" aria-hidden="true" />
       Training week

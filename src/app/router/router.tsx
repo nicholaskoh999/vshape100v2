@@ -5,6 +5,7 @@ import { AchievementsPage } from '@/features/achievements/AchievementsPage'
 import { LoginPage } from '@/features/auth/LoginPage'
 import { RequireAuth } from '@/features/auth/RequireAuth'
 import { CalendarPage } from '@/features/calendar/CalendarPage'
+import { ProgrammePage } from '@/features/programme/ProgrammePage'
 import { ProgrammeProvider } from '@/features/programme/ProgrammeProvider'
 import { ProgressPage } from '@/features/progress/ProgressPage'
 import { ExerciseLibraryPage } from '@/features/settings/ExerciseLibraryPage'
@@ -58,6 +59,10 @@ export const routes = [
           { path: '/calendar', element: <CalendarPage /> },
           { path: '/achievements', element: <AchievementsPage /> },
           { path: '/settings', element: <SettingsPage /> },
+          // ROUND 24 (Q3, approved). The training week gets a screen of its
+          // own. Before this route the programme editor was reachable ONLY
+          // through Exercise Library → an exercise → its media editor.
+          { path: '/settings/programme', element: <ProgrammePage /> },
           { path: '/settings/exercises', element: <ExerciseLibraryPage /> },
           { path: '/settings/exercises/:id', element: <ExerciseMediaEditorPage /> },
           { path: '*', element: <NotFoundPage /> },

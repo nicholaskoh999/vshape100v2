@@ -1,5 +1,11 @@
 # Round 24 — deferred items and controller decisions
 
+> **CONTROLLER DECISIONS ARE NOW LOCKED.** Q1, Q2, Q3, Q5, Q6 and Q8 were approved;
+> Q4 was decided against the goal-weight line (removed, deferred); Q7 set the Fresh
+> Reset target as a FULL ACTIVITY FRESH START with **execution not authorized**.
+> The recommendations below are kept as the reasoning that was put to the controller.
+> What was built against them is in `11_IMPLEMENTATION_REPORT.md`.
+
 Two lists. **§1 needs a decision before the redesign can be implemented.** §2 is deferred to
 Development Directions / Backlog and is explicitly not part of this round.
 

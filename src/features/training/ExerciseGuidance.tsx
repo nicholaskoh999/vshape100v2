@@ -40,12 +40,12 @@ const STATE_LABEL: Record<LaneRecommendation['state'], string> = {
  */
 const STATE_TONE: Record<LaneRecommendation['state'], string> = {
   calibrate: 'border-cyan/40 bg-cyan/10 text-cyan',
-  build_reps: 'border-blue/40 bg-blue/10 text-blue',
+  build_reps: 'border-blue/40 bg-accent/10 text-info-ink',
   increase_load: 'border-energy/40 bg-energy/10 text-energy',
-  hold: 'border-edge-strong bg-surface-overlay text-ink-dim',
-  reduce_load: 'border-late/40 bg-late/10 text-late',
-  quality: 'border-edge-strong bg-surface-overlay text-ink-dim',
-  unavailable: 'border-edge-strong bg-surface-overlay text-ink-faint',
+  hold: 'border-line-strong bg-surface-soft text-ink-2',
+  reduce_load: 'border-warn-ink/40 bg-warn-soft/10 text-warn-ink',
+  quality: 'border-line-strong bg-surface-soft text-ink-2',
+  unavailable: 'border-line-strong bg-surface-soft text-ink-3',
 }
 
 const FEEDBACK_LABEL: Record<CalibrationFeedback, string> = {
@@ -97,12 +97,12 @@ export function ExerciseGuidance({
       aria-label={`Guidance for ${lane.exerciseName}`}
       aria-busy={!confirmed || undefined}
       className={cn(
-        'mt-3.5 rounded-control border border-edge bg-surface-overlay/40 p-3',
+        'mt-3.5 rounded-control border border-line bg-surface-soft/40 p-3',
         !confirmed && 'opacity-70',
       )}
     >
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
-        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-ink-faint">
+        <p className="text-[11px] font-bold uppercase tracking-[0.09em] text-ink-3">
           Guidance
         </p>
         <span
@@ -115,17 +115,17 @@ export function ExerciseGuidance({
           {STATE_LABEL[lane.state]}
         </span>
         {(busy || !confirmed) && (
-          <Loader2 className="size-3.5 animate-spin text-ink-faint" aria-hidden="true" />
+          <Loader2 className="size-3.5 animate-spin text-ink-3" aria-hidden="true" />
         )}
       </div>
 
-      <p className="mt-2 text-[13px] leading-snug text-ink-dim">{lane.reason}</p>
+      <p className="mt-2 text-[13px] leading-snug text-ink-2">{lane.reason}</p>
 
       {!confirmed && (
         <p
           role="status"
           data-testid={`guidance-refreshing-${lane.exerciseOrder}`}
-          className="mt-2 text-[12px] font-semibold text-ink-faint"
+          className="mt-2 text-[12px] font-semibold text-ink-3"
         >
           Rechecking against your logged sets…
         </p>
@@ -148,7 +148,7 @@ export function ExerciseGuidance({
       )}
 
       {error && (
-        <p role="alert" className="mt-2 text-[12px] font-semibold text-coral">
+        <p role="alert" className="mt-2 text-[12px] font-semibold text-danger-ink">
           {error}
         </p>
       )}
@@ -167,8 +167,8 @@ function LastResult({ lane }: { lane: LaneRecommendation }) {
 
   return (
     <dl className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[12px]">
-      <dt className="font-bold uppercase tracking-[0.1em] text-ink-faint">Last</dt>
-      <dd className="font-semibold text-ink-dim">
+      <dt className="font-bold uppercase tracking-[0.1em] text-ink-3">Last</dt>
+      <dd className="font-semibold text-ink-2">
         {last.date} · {last.results.join(' / ')}
         {unitWord}
         {perSide}
@@ -224,8 +224,8 @@ function Calibration({
     calibration.stage === 'settled' && calibration.feedback !== 'good' && unit !== null
 
   return (
-    <div className="mt-3 border-t border-edge pt-3">
-      <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-ink-faint">
+    <div className="mt-3 border-t border-line pt-3">
+      <p className="text-[11px] font-bold uppercase tracking-[0.09em] text-ink-3">
         How did that set feel?
       </p>
 
@@ -240,10 +240,10 @@ function Calibration({
               disabled={locked}
               onClick={() => submit(feedback)}
               className={cn(
-                'inline-flex items-center gap-1.5 rounded-control border px-3 py-1.5 text-[12px] font-bold transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40',
+                'inline-flex items-center gap-1.5 rounded-control border px-3 py-1.5 text-[12px] font-bold transition-colors duration-fast disabled:cursor-not-allowed disabled:opacity-40',
                 active
                   ? 'border-cyan/60 bg-cyan/15 text-cyan'
-                  : 'border-edge-strong text-ink-dim hover:text-offwhite',
+                  : 'border-line-strong text-ink-2 hover:text-ink',
               )}
             >
               {active && <Check className="size-3.5" aria-hidden="true" />}
@@ -258,7 +258,7 @@ function Calibration({
           <div className="min-w-0">
             <label
               htmlFor={fieldId}
-              className="block text-[11px] font-bold uppercase tracking-[0.14em] text-ink-faint"
+              className="block text-[11px] font-bold uppercase tracking-[0.09em] text-ink-3"
             >
               {`Load you moved to (${loadUnitLabel(unit)})`}
             </label>
@@ -272,8 +272,8 @@ function Calibration({
               onChange={(event) => setLoadInput(event.target.value)}
               aria-invalid={!loadValid || undefined}
               className={cn(
-                'mt-1 w-24 rounded-control border bg-surface px-2.5 py-1.5 text-[15px] font-bold text-offwhite outline-offset-[-2px]',
-                loadValid ? 'border-edge-strong' : 'border-coral',
+                'mt-1 w-24 rounded-control border bg-surface px-2.5 py-1.5 text-[15px] font-bold text-ink outline-offset-[-2px]',
+                loadValid ? 'border-line-strong' : 'border-danger-ink',
               )}
             />
           </div>
@@ -281,7 +281,7 @@ function Calibration({
             type="button"
             disabled={locked || !loadValid || calibration.feedback === null}
             onClick={() => calibration.feedback && submit(calibration.feedback)}
-            className="rounded-control border border-edge-strong px-3 py-2 text-[12px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-control border border-line-strong px-3 py-2 text-[12px] font-bold text-ink-2 transition-colors duration-fast hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
           >
             Save load
           </button>

@@ -12,27 +12,27 @@ export const statusMeta: Record<TodayStatus, StatusMeta> = {
   NOW: {
     label: 'Now',
     icon: Play,
-    className: 'bg-blue text-navy',
+    className: 'bg-ink text-ink-on-dark',
   },
   LATE: {
     label: 'Late',
     icon: TriangleAlert,
-    className: 'bg-late/15 text-late ring-1 ring-late/45',
+    className: 'bg-warn-soft text-warn-ink ring-1 ring-warn-ink/25',
   },
   NEXT: {
     label: 'Next',
     icon: Clock,
-    className: 'bg-surface-overlay text-ink-dim ring-1 ring-edge-strong',
+    className: 'bg-surface-soft text-ink-2 ring-1 ring-line-strong',
   },
   LATER: {
     label: 'Later',
     icon: Clock,
-    className: 'text-ink-faint',
+    className: 'text-ink-3',
   },
   DONE_EARLIER: {
     label: 'Done earlier',
     icon: Check,
-    className: 'bg-completed/15 text-completed',
+    className: 'bg-success-soft text-success-ink',
   },
 }
 

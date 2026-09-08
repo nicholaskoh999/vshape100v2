@@ -1,6 +1,10 @@
 import { Check, Loader2, RotateCcw, SkipForward, Wand2 } from 'lucide-react'
 import { useId, useState } from 'react'
 
+import { Badge } from '@/components/ui/Badge'
+import { Button } from '@/components/ui/Button'
+import { Banner } from '@/components/ui/Feedback'
+import { Field, Stepper } from '@/components/ui/Field'
 import { cn } from '@/lib/utils'
 import {
   isSetLoad,
@@ -34,6 +38,23 @@ import { setKey, type SetKey } from './useWorkoutLog'
  * the DRAFT load field. It is an explicit action and nothing more — the field
  * is still empty on render, the number is still editable, and only pressing
  * Complete records anything. A suggestion never becomes history on its own.
+ *
+ * ROUND 24 — WHAT CHANGED, AND WHAT DID NOT.
+ *
+ * What changed is the ergonomics. This used to be a `flex-wrap` row of ~30px
+ * text inputs with a ~34px Complete beside them, repeated identically for every
+ * set — pressed one-handed, standing, in a gym. Now:
+ *
+ *   - the FIRST unresolved set is promoted to a current-set card, so "which set
+ *     am I on" is answered by the layout rather than by scanning colours
+ *   - every numeric value gets a 56px stepper beside a 56px field
+ *   - Complete is a full-width 56px primary; Skip is plainly secondary
+ *   - a refused set states its refusal in a banner, not in a caption
+ *
+ * What did NOT change is the contract. Every pending set still owns its own
+ * labelled inputs and its own Complete, because logging out of order is
+ * legitimate; the field is still never prefilled; and the modality still comes
+ * from the frozen snapshot.
  */
 
 export type WorkoutSetListProps = {
@@ -74,12 +95,17 @@ export function WorkoutSetList({
 }: WorkoutSetListProps) {
   if (sets.length === 0) return null
 
+  // The set the user is on: the first one still unresolved. Nothing else about
+  // it is special — it is promoted visually, not privileged functionally.
+  const currentIndex = sets.findIndex((set) => set.status === 'pending')
+
   return (
     <ol className="mt-4 flex flex-col gap-2.5">
-      {sets.map((set) => (
+      {sets.map((set, index) => (
         <WorkoutSetRow
           key={setKey(set.exerciseOrder, set.setIndex)}
           set={set}
+          current={index === currentIndex}
           busy={busySet === setKey(set.exerciseOrder, set.setIndex)}
           // Any mutation anywhere locks the others, so a second submit cannot
           // start while one is in flight.
@@ -97,6 +123,7 @@ export function WorkoutSetList({
 
 function WorkoutSetRow({
   set,
+  current,
   busy,
   locked,
   suggestedLoad,
@@ -106,6 +133,7 @@ function WorkoutSetRow({
   onUndo,
 }: {
   set: WorkoutSet
+  current: boolean
   busy: boolean
   locked: boolean
   suggestedLoad: WorkoutLoad | null
@@ -188,114 +216,130 @@ function WorkoutSetRow({
     )
   }
 
+  const resultIsTime = set.resultKind === 'seconds'
+
   return (
     <li
       className={cn(
-        'rounded-control border border-edge bg-surface-overlay/60 p-3',
+        'vs-bordered rounded-control border bg-surface p-4',
+        current ? 'border-2 border-accent-edge' : 'border-line',
         busy && 'opacity-70',
       )}
     >
-      <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
-        <p className="min-w-14 text-[13px] font-bold text-ink-dim">{label}</p>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[15px] font-bold text-ink">{label}</p>
+        {current && <Badge tone="current">Current set</Badge>}
+      </div>
 
+      {unreadable && (
+        <Banner tone="warn" live="alert" className="mb-3" title="This set cannot be logged">
+          This set’s input type could not be read, so it cannot be logged. Nothing is assumed
+          about how it was loaded.
+        </Banner>
+      )}
+
+      <div className="flex flex-col gap-3.5">
         {isBand && (
-          <>
-            <div className="min-w-0">
-              <Field
-                id={`${fieldId}-band-label`}
-                label="Band"
-                value={bandLabelInput}
-                onChange={setBandLabelInput}
-                placeholder="e.g. Black"
-                invalid={!bandLabelValid}
-                wide
-              />
-            </div>
-            <div className="min-w-0">
-              <Field
-                id={`${fieldId}-band-count`}
-                label="How many"
-                value={bandCountInput}
-                onChange={setBandCountInput}
-                inputMode="numeric"
-                placeholder="—"
-                invalid={!bandCountValid}
-              />
-            </div>
-          </>
+          <div className="grid grid-cols-2 gap-3">
+            <Field
+              id={`${fieldId}-band-label`}
+              label="Band"
+              value={bandLabelInput}
+              onChange={setBandLabelInput}
+              placeholder="e.g. Black"
+              invalid={!bandLabelValid}
+              disabled={unreadable}
+            />
+            <Field
+              id={`${fieldId}-band-count`}
+              label="How many"
+              value={bandCountInput}
+              onChange={setBandCountInput}
+              inputMode="numeric"
+              placeholder="—"
+              invalid={!bandCountValid}
+              disabled={unreadable}
+            />
+          </div>
         )}
 
         {takesLoad && unit && (
-          <div className="min-w-0">
-            <Field
+          <div>
+            <Stepper
               id={`${fieldId}-load`}
               label={`Load (${loadUnitLabel(unit)})`}
               value={loadInput}
               onChange={setLoadInput}
               inputMode="decimal"
               placeholder="—"
+              // 2.5 kg is the smallest plate step most home setups have. The
+              // typed value remains the authority; this is only an input aid.
+              step={2.5}
+              from={2.5}
+              decimals={1}
               invalid={!loadValid}
+              error="Enter a load between 0 and 1000."
+              disabled={unreadable}
+              hint={
+                unit === 'kg_each'
+                  ? 'Per dumbbell — never a combined weight.'
+                  : undefined
+              }
             />
             {offered && (
-              <button
-                type="button"
+              <Button
+                size="sm"
                 onClick={() => setLoadInput(String(offered.value))}
                 disabled={locked || suggestionLocked}
-                className="mt-1.5 inline-flex items-center gap-1 rounded-control border border-edge-strong px-2 py-1 text-[11px] font-bold text-ink-faint transition-colors duration-150 hover:text-offwhite disabled:cursor-not-allowed disabled:opacity-40"
+                className="mt-2"
               >
-                <Wand2 className="size-3" aria-hidden="true" />
+                <Wand2 className="size-3.5" aria-hidden="true" />
                 {`Use ${offered.value}${loadUnitLabel(offered.unit)}`}
-              </button>
+              </Button>
             )}
           </div>
         )}
 
-        <Field
+        <Stepper
           id={`${fieldId}-result`}
           label={resultLabel(set.resultKind, set.perSide)}
           value={resultInput}
           onChange={setResultInput}
           inputMode="numeric"
           placeholder={target || '—'}
+          step={resultIsTime ? 5 : 1}
+          from={resultIsTime ? 30 : 8}
           invalid={resultInput.trim() !== '' && !resultValid}
+          error="Enter a whole number above zero."
+          disabled={unreadable}
         />
 
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
+        <div className="flex items-center gap-2.5">
+          <Button
+            variant="primary"
+            size="lg"
             onClick={handleComplete}
             disabled={!canComplete}
-            className="inline-flex items-center gap-1.5 rounded-control bg-blue px-3.5 py-2 text-[13px] font-bold text-offwhite transition-opacity duration-150 disabled:cursor-not-allowed disabled:opacity-40"
+            aria-busy={busy}
+            className="flex-1"
           >
             {busy ? (
-              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              <Loader2 className="size-[18px] animate-spin" aria-hidden="true" />
             ) : (
-              <Check className="size-4" aria-hidden="true" />
+              <Check className="size-[18px]" aria-hidden="true" />
             )}
             Complete
-          </button>
+          </Button>
 
-          <button
-            type="button"
-            onClick={() => onSkip(set.exerciseOrder, set.setIndex)}
-            disabled={locked}
-            className="inline-flex items-center gap-1.5 rounded-control border border-edge-strong px-3.5 py-2 text-[13px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <SkipForward className="size-4" aria-hidden="true" />
+          <Button size="lg" onClick={() => onSkip(set.exerciseOrder, set.setIndex)} disabled={locked}>
+            <SkipForward className="size-[18px]" aria-hidden="true" />
             Skip
-          </button>
+          </Button>
         </div>
       </div>
 
-      {unreadable && (
-        <p className="mt-2 text-[12px] font-semibold text-late">
-          This set’s input type could not be read, so it cannot be logged. Nothing
-          is assumed about how it was loaded.
-        </p>
-      )}
-
       {busy && (
-        <p role="status" className="mt-2 text-[12px] font-semibold text-ink-faint">
+        <p role="status" className="mt-2.5 text-xs font-semibold text-ink-2">
           Saving…
         </p>
       )}
@@ -322,30 +366,43 @@ function ResolvedSetRow({
   return (
     <li
       className={cn(
-        'flex flex-wrap items-center gap-x-4 gap-y-2 rounded-control border p-3',
+        'vs-bordered flex flex-wrap items-center gap-x-3 gap-y-2 rounded-control border p-3.5',
         completed
-          ? 'border-completed/40 bg-completed/10'
-          : 'border-late/40 bg-late/10',
+          ? 'border-success-ink/30 bg-success-soft'
+          : 'border-warn-ink/30 bg-warn-soft',
         busy && 'opacity-70',
       )}
     >
-      <p className="min-w-14 text-[13px] font-bold text-ink-dim">{label}</p>
+      <span
+        aria-hidden="true"
+        className={cn(
+          'grid size-8 shrink-0 place-items-center rounded-[10px] text-xs font-bold text-white',
+          completed ? 'bg-success-ink' : 'bg-warn-ink',
+        )}
+      >
+        {set.setIndex + 1}
+      </span>
+
+      <p className="min-w-14 text-[13px] font-bold text-ink-2">{label}</p>
 
       <p
         className={cn(
-          'min-w-0 flex-1 text-[13px] font-bold',
-          completed ? 'text-completed' : 'text-late',
+          'min-w-0 flex-1 text-[13.5px] font-bold',
+          completed ? 'text-success-ink' : 'text-warn-ink',
         )}
       >
         {completed ? `Completed · ${describeResult(set)}` : 'Skipped'}
+        {/* A skip is never a smaller success. It says what it is. */}
+        {!completed && (
+          <span className="block text-xs font-semibold">Not a completed set</span>
+        )}
       </p>
 
-      <button
-        type="button"
+      <Button
+        size="sm"
         onClick={() => onUndo(set.exerciseOrder, set.setIndex)}
         disabled={locked}
         aria-label={`Undo ${label}`}
-        className="inline-flex items-center gap-1.5 rounded-control border border-edge-strong px-3 py-1.5 text-[12px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite disabled:cursor-not-allowed disabled:opacity-40"
       >
         {busy ? (
           <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
@@ -353,7 +410,7 @@ function ResolvedSetRow({
           <RotateCcw className="size-3.5" aria-hidden="true" />
         )}
         Undo
-      </button>
+      </Button>
     </li>
   )
 }
@@ -373,53 +430,4 @@ function describeResult(set: WorkoutSet): string {
   if (set.band) return `${result} · ${set.band.label} ×${set.band.count}`
   if (!set.load) return result
   return `${result} · ${set.load.value}${loadUnitLabel(set.load.unit)}`
-}
-
-function Field({
-  id,
-  label,
-  value,
-  onChange,
-  // Text by default: a band is named, not measured, so it is the one field
-  // here that does not want a numeric keypad.
-  inputMode = 'text',
-  placeholder,
-  invalid,
-  wide = false,
-}: {
-  id: string
-  label: string
-  value: string
-  onChange: (next: string) => void
-  inputMode?: 'numeric' | 'decimal' | 'text'
-  placeholder: string
-  invalid: boolean
-  wide?: boolean
-}) {
-  return (
-    <div className="min-w-0">
-      <label
-        htmlFor={id}
-        className="block text-[11px] font-bold uppercase tracking-[0.14em] text-ink-faint"
-      >
-        {label}
-      </label>
-      <input
-        id={id}
-        type="text"
-        inputMode={inputMode}
-        autoComplete="off"
-        value={value}
-        placeholder={placeholder}
-        onChange={(event) => onChange(event.target.value)}
-        aria-invalid={invalid || undefined}
-        className={cn(
-          'mt-1 rounded-control border bg-surface px-2.5 py-1.5 text-[15px] font-bold text-offwhite outline-offset-[-2px]',
-          // A band label is a word, not a two-digit number.
-          wide ? 'w-32' : 'w-20',
-          invalid ? 'border-coral' : 'border-edge-strong',
-        )}
-      />
-    </div>
-  )
 }

@@ -57,7 +57,7 @@ export function ExerciseDetailPage() {
       <Link
         to={back.to}
         aria-label={`Back to ${back.label}`}
-        className="mb-4 inline-flex items-center gap-1.5 rounded-control text-[13px] font-semibold text-ink-faint transition-colors duration-150 hover:text-offwhite"
+        className="mb-4 inline-flex items-center gap-1.5 rounded-control text-[13px] font-semibold text-ink-3 transition-colors duration-fast hover:text-ink"
       >
         <ArrowLeft className="size-4" aria-hidden="true" />
         {back.label}
@@ -81,7 +81,7 @@ export function ExerciseDetailPage() {
               <motion.span
                 {...press}
                 tabIndex={-1}
-                className="inline-flex items-center gap-1.5 rounded-control border border-edge bg-surface-overlay px-3 py-2 text-[13px] font-bold text-ink-dim transition-colors duration-150 hover:border-edge-strong hover:text-offwhite"
+                className="inline-flex items-center gap-1.5 rounded-control border border-line bg-surface-soft px-3 py-2 text-[13px] font-bold text-ink-2 transition-colors duration-fast hover:border-line-strong hover:text-ink"
               >
                 <Pencil className="size-4" aria-hidden="true" />
                 Edit media
@@ -132,7 +132,7 @@ export function ExerciseDetailPage() {
             resolution={media.status}
           />
 
-          <Card className="divide-y divide-edge">
+          <Card className="divide-y divide-line">
             {appearances.map((session) => {
               const entry = session.exercises.find(
                 (exercise) => exercise.id === id,
@@ -142,8 +142,8 @@ export function ExerciseDetailPage() {
                   key={session.id}
                   className="flex items-center justify-between gap-4 px-5 py-3.5"
                 >
-                  <p className="text-sm font-bold text-ink-dim">{session.day}</p>
-                  <p className="text-sm text-ink-faint">
+                  <p className="text-sm font-bold text-ink-2">{session.day}</p>
+                  <p className="text-sm text-ink-3">
                     {entry?.sets}
                     {entry?.equipment ? ` · ${entry.equipment}` : ''}
                   </p>

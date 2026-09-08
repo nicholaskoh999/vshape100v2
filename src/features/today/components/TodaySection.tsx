@@ -32,16 +32,16 @@ export function TodaySection({
       <div className="mb-2.5 flex items-center gap-2 px-0.5">
         <h2
           className={cn(
-            'text-[11px] font-extrabold uppercase tracking-[0.16em]',
-            tone === 'alert' ? 'text-late' : 'text-ink-faint',
+            'text-[17px] font-bold tracking-[-0.01em]',
+            tone === 'alert' ? 'text-warn-ink' : 'text-ink',
           )}
         >
           {title}
         </h2>
         <span
           className={cn(
-            'grid h-[18px] min-w-[18px] place-items-center rounded-full px-1 text-[10px] font-extrabold',
-            tone === 'alert' ? 'bg-late/20 text-late' : 'bg-surface-overlay text-ink-faint',
+            'grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-[11px] font-bold',
+            tone === 'alert' ? 'bg-warn-soft text-warn-ink' : 'bg-surface-soft text-ink-2',
           )}
         >
           {entries.length}

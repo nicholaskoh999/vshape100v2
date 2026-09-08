@@ -134,13 +134,13 @@ function FoundationOverview({
       <div data-foundation-phase={status.phase}>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-blue">
+            <p className="text-[11px] font-bold uppercase tracking-[0.09em] text-info-ink">
               Foundation 100
             </p>
-            <p className="mt-1 text-[26px] font-extrabold tracking-tight text-offwhite">
+            <p className="mt-1 text-[26px] font-bold tracking-tight text-ink">
               {foundationLabel(status)}
             </p>
-            <p className="mt-1 text-[13px] text-ink-faint">
+            <p className="mt-1 text-[13px] text-ink-3">
               {upcoming
                 ? // No Day 0: before the start there is nothing running yet.
                   `Starts in ${status.daysUntilStart} ${
@@ -155,7 +155,7 @@ function FoundationOverview({
 
           <span
             aria-hidden="true"
-            className="grid size-11 shrink-0 place-items-center rounded-2xl bg-surface-overlay text-ink-faint"
+            className="grid size-11 shrink-0 place-items-center rounded-2xl bg-surface-soft text-ink-3"
           >
             <CalendarDays className="size-5" />
           </span>
@@ -166,7 +166,7 @@ function FoundationOverview({
         )}
 
         {latest && (
-          <p className="mt-3 text-[12px] font-semibold text-ink-faint">
+          <p className="mt-3 text-[12px] font-semibold text-ink-3">
             Last recorded workout · {formatWorkoutDate(latest.date)}
           </p>
         )}
@@ -186,10 +186,10 @@ function FoundationBar({ day, total }: { day: number; total: number }) {
       aria-valuemax={total}
       aria-valuenow={shown}
       aria-label="Foundation day"
-      className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-surface-overlay"
+      className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-surface-soft"
     >
       <div
-        className="h-full rounded-full bg-blue"
+        className="h-full rounded-full bg-accent"
         style={{ width: `${percent}%` }}
       />
     </div>
@@ -214,7 +214,7 @@ function RecordedOverview({
       <Card className="p-5">
         <p
           role="status"
-          className="flex items-center gap-2 text-[13px] font-semibold text-ink-dim"
+          className="flex items-center gap-2 text-[13px] font-semibold text-ink-2"
         >
           <Loader2 className="size-4 animate-spin" aria-hidden="true" />
           Loading your recorded training…
@@ -227,13 +227,13 @@ function RecordedOverview({
     return (
       <Card className="p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p role="alert" className="text-[13px] font-semibold text-coral">
+          <p role="alert" className="text-[13px] font-semibold text-danger-ink">
             Could not load your recorded training. Nothing has been lost.
           </p>
           <button
             type="button"
             onClick={onRetry}
-            className="inline-flex items-center gap-1.5 rounded-control border border-edge-strong px-3.5 py-2 text-[13px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite"
+            className="inline-flex items-center gap-1.5 rounded-control border border-line-strong px-3.5 py-2 text-[13px] font-bold text-ink-2 transition-colors duration-fast hover:text-ink"
           >
             <RefreshCw className="size-4" aria-hidden="true" />
             Try again
@@ -247,7 +247,7 @@ function RecordedOverview({
 
   return (
     <Card className="p-5">
-      <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-ink-faint">
+      <p className="text-[15px] font-bold tracking-[-0.01em] text-ink">
         Recorded training
       </p>
       <dl className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -277,17 +277,17 @@ function Stat({
 }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[11px] font-bold uppercase tracking-[0.14em] text-ink-faint">
+      <dt className="text-[11px] font-bold uppercase tracking-[0.09em] text-ink-3">
         {label}
       </dt>
       <dd
         className={cn(
-          "mt-0.5 text-[22px] font-extrabold tabular-nums",
+          "mt-0.5 text-[22px] font-bold tabular-nums",
           tone === "completed"
-            ? "text-completed"
+            ? "text-success-ink"
             : tone === "skipped"
-              ? "text-late"
-              : "text-offwhite",
+              ? "text-warn-ink"
+              : "text-ink",
         )}
       >
         {value}
@@ -319,22 +319,22 @@ function RecentWorkouts({
     return (
       <Card className="p-5">
         <div data-history-state="empty">
-          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-ink-faint">
+          <p className="text-[15px] font-bold tracking-[-0.01em] text-ink">
             Recent workouts
           </p>
           <div className="mt-3 flex items-start gap-3">
             <span
               aria-hidden="true"
-              className="grid size-11 shrink-0 place-items-center rounded-2xl bg-surface-overlay text-ink-faint"
+              className="grid size-11 shrink-0 place-items-center rounded-2xl bg-surface-soft text-ink-3"
             >
               <Dumbbell className="size-5" />
             </span>
             <div className="min-w-0">
               {/* Neutral and honest: nothing recorded yet is not a failure. */}
-              <p className="text-sm font-bold text-ink-dim">
+              <p className="text-sm font-bold text-ink-2">
                 No workouts recorded yet
               </p>
-              <p className="mt-1 text-[13px] leading-relaxed text-ink-faint">
+              <p className="mt-1 text-[13px] leading-relaxed text-ink-3">
                 Start a workout from Training and every set you log will appear
                 here.
               </p>
@@ -348,10 +348,10 @@ function RecentWorkouts({
   return (
     <Card>
       <div data-history-state="populated">
-        <p className="px-5 pb-3 pt-5 text-[11px] font-bold uppercase tracking-[0.16em] text-ink-faint">
+        <p className="px-5 pb-3 pt-5 text-[11px] font-bold uppercase tracking-[0.09em] text-ink-3">
           Recent workouts
         </p>
-        <ol className="divide-y divide-edge border-t border-edge">
+        <ol className="divide-y divide-line border-t border-line">
           {history.workouts.map((workout) => (
             <li
               key={`${workout.date}:${workout.sessionId}`}
@@ -359,7 +359,7 @@ function RecentWorkouts({
             >
               <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5">
                 <div className="min-w-0">
-                  <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-bold text-offwhite">
+                  <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-bold text-ink">
                     {/*
                       Provenance first, and read from the persisted `kind`
                       rather than from the session slug. A history row must
@@ -367,7 +367,7 @@ function RecentWorkouts({
                       it was merely copied from.
                     */}
                     {workout.kind === "extra" && (
-                      <span className="rounded-full bg-blue/15 px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.12em] text-blue">
+                      <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.09em] text-info-ink">
                         Extra
                       </span>
                     )}
@@ -378,7 +378,7 @@ function RecentWorkouts({
                       is the part we withhold.
                     */}
                     {workout.kind === null && (
-                      <span className="rounded-full bg-surface-overlay px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-faint">
+                      <span className="rounded-full bg-surface-soft px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.09em] text-ink-3">
                         Unverified
                       </span>
                     )}
@@ -390,12 +390,12 @@ function RecentWorkouts({
                       */}
                       {workout.day || workout.sessionId}
                     </span>
-                    <span className="text-[13px] font-semibold text-ink-faint">
+                    <span className="text-[13px] font-semibold text-ink-3">
                       {formatWorkoutDate(workout.date)}
                     </span>
                   </p>
                   {workout.focus && (
-                    <p className="mt-0.5 text-[13px] text-ink-faint">
+                    <p className="mt-0.5 text-[13px] text-ink-3">
                       {workout.kind === "extra"
                         ? `${workout.focus} · extra, not the scheduled session`
                         : workout.kind === null
@@ -453,15 +453,15 @@ function SetSummary({ progress }: { progress: WorkoutProgress }) {
 
   return (
     <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] font-semibold">
-      <span className="text-ink-dim">
+      <span className="text-ink-2">
         {pending === 0 && progress.total > 0
           ? `All ${progress.total} sets resolved`
           : `${progress.resolved} / ${progress.total} sets resolved`}
       </span>
-      <span aria-hidden="true" className="text-ink-faint">
+      <span aria-hidden="true" className="text-ink-3">
         ·
       </span>
-      <span className="text-ink-faint">{parts.join(" · ")}</span>
+      <span className="text-ink-3">{parts.join(" · ")}</span>
     </p>
   );
 }

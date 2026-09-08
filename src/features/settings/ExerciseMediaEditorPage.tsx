@@ -239,7 +239,7 @@ function Editor({
 
         <Card className="flex flex-col gap-5 p-5">
           <fieldset className="min-w-0">
-            <legend className="mb-2 text-[13px] font-bold text-ink-dim">Media type</legend>
+            <legend className="mb-2 text-[13px] font-bold text-ink-2">Media type</legend>
             <div role="radiogroup" aria-label="Media type" className="flex flex-wrap gap-2">
               {MEDIA_KINDS.map((option) => (
                 <motion.button
@@ -250,10 +250,10 @@ function Editor({
                   aria-checked={kind === option}
                   onClick={() => setKind(option)}
                   className={cn(
-                    'rounded-control border px-4 py-2 text-sm font-bold transition-colors duration-150',
+                    'rounded-control border px-4 py-2 text-sm font-bold transition-colors duration-fast',
                     kind === option
-                      ? 'border-blue bg-blue text-offwhite'
-                      : 'border-edge bg-surface-overlay text-ink-dim hover:border-edge-strong',
+                      ? 'border-accent-edge bg-accent text-ink'
+                      : 'border-line bg-surface-soft text-ink-2 hover:border-line-strong',
                   )}
                 >
                   {KIND_LABEL[option]}
@@ -265,7 +265,7 @@ function Editor({
           <div className="flex min-w-0 flex-col gap-1.5">
             <label
               htmlFor={`${fieldId}-url`}
-              className="text-[13px] font-bold text-ink-dim"
+              className="text-[13px] font-bold text-ink-2"
             >
               Media URL
             </label>
@@ -281,13 +281,13 @@ function Editor({
               aria-invalid={url.length > 0 && !urlValid}
               aria-describedby={`${fieldId}-url-help`}
               placeholder="https://…"
-              className="w-full min-w-0 rounded-control border border-edge bg-surface-overlay px-3.5 py-2.5 text-sm text-offwhite placeholder:text-ink-faint focus:border-blue focus:outline-none"
+              className="w-full min-w-0 rounded-control border border-line bg-surface-soft px-3.5 py-2.5 text-sm text-ink placeholder:text-ink-3 focus:border-accent-edge focus:outline-none"
             />
             <p
               id={`${fieldId}-url-help`}
               className={cn(
                 'text-[12px]',
-                url.length > 0 && !urlValid ? 'text-coral' : 'text-ink-faint',
+                url.length > 0 && !urlValid ? 'text-danger-ink' : 'text-ink-3',
               )}
             >
               {url.length > 0 && !urlValid
@@ -299,7 +299,7 @@ function Editor({
           <div className="flex min-w-0 flex-col gap-1.5">
             <label
               htmlFor={`${fieldId}-alt`}
-              className="text-[13px] font-bold text-ink-dim"
+              className="text-[13px] font-bold text-ink-2"
             >
               Alt / Label
             </label>
@@ -311,11 +311,11 @@ function Editor({
               onChange={(event) => edit({ alt: event.target.value })}
               aria-invalid={!altValid}
               aria-describedby={`${fieldId}-alt-help`}
-              className="w-full min-w-0 rounded-control border border-edge bg-surface-overlay px-3.5 py-2.5 text-sm text-offwhite placeholder:text-ink-faint focus:border-blue focus:outline-none"
+              className="w-full min-w-0 rounded-control border border-line bg-surface-soft px-3.5 py-2.5 text-sm text-ink placeholder:text-ink-3 focus:border-accent-edge focus:outline-none"
             />
             <p
               id={`${fieldId}-alt-help`}
-              className={cn('text-[12px]', altValid ? 'text-ink-faint' : 'text-coral')}
+              className={cn('text-[12px]', altValid ? 'text-ink-3' : 'text-danger-ink')}
             >
               {altValid
                 ? 'What the media shows, for anyone who cannot see it.'
@@ -330,7 +330,7 @@ function Editor({
             type="button"
             onClick={handleSave}
             disabled={!canSave}
-            className="flex flex-1 items-center justify-center gap-2.5 rounded-card border border-blue bg-blue px-5 py-4 text-sm font-bold text-offwhite transition-opacity duration-150 disabled:opacity-50"
+            className="flex flex-1 items-center justify-center gap-2.5 rounded-card border border-accent-edge bg-accent px-5 py-4 text-sm font-bold text-ink transition-opacity duration-fast disabled:opacity-50"
           >
             {feedback.state === 'saving' ? (
               <>
@@ -351,7 +351,7 @@ function Editor({
               type="button"
               onClick={handleRemove}
               disabled={busy}
-              className="flex items-center justify-center gap-2.5 rounded-card border border-edge bg-surface px-5 py-4 text-sm font-bold text-coral transition-colors duration-150 hover:border-coral/40 disabled:opacity-50"
+              className="flex items-center justify-center gap-2.5 rounded-card border border-line bg-surface px-5 py-4 text-sm font-bold text-danger-ink transition-colors duration-fast hover:border-danger-ink/40 disabled:opacity-50"
             >
               {feedback.state === 'removing' ? (
                 <>
@@ -392,7 +392,7 @@ function StatusLine({
       className="flex min-h-6 flex-wrap items-center gap-2 text-[13px]"
     >
       {media.status === 'loading' && (
-        <span className="flex items-center gap-2 text-ink-faint">
+        <span className="flex items-center gap-2 text-ink-3">
           <Loader2 className="size-4 animate-spin" aria-hidden="true" />
           Loading current media
         </span>
@@ -400,11 +400,11 @@ function StatusLine({
 
       {loadFailed && (
         <>
-          <span className="text-coral">Current media could not be loaded.</span>
+          <span className="text-danger-ink">Current media could not be loaded.</span>
           <button
             type="button"
             onClick={media.reload}
-            className="rounded-control font-bold text-blue underline-offset-2 hover:underline"
+            className="rounded-control font-bold text-info-ink underline-offset-2 hover:underline"
           >
             Retry
           </button>
@@ -413,13 +413,13 @@ function StatusLine({
 
       {!loadFailed && media.status === 'ready' && (
         <>
-          {feedback.state === 'saving' && <span className="text-ink-faint">Saving…</span>}
-          {feedback.state === 'saved' && <span className="text-completed">Saved</span>}
-          {feedback.state === 'removing' && <span className="text-ink-faint">Removing…</span>}
-          {feedback.state === 'removed' && <span className="text-ink-dim">Removed</span>}
-          {feedback.state === 'error' && <span className="text-coral">{feedback.message}</span>}
+          {feedback.state === 'saving' && <span className="text-ink-3">Saving…</span>}
+          {feedback.state === 'saved' && <span className="text-success-ink">Saved</span>}
+          {feedback.state === 'removing' && <span className="text-ink-3">Removing…</span>}
+          {feedback.state === 'removed' && <span className="text-ink-2">Removed</span>}
+          {feedback.state === 'error' && <span className="text-danger-ink">{feedback.message}</span>}
           {feedback.state === 'idle' && (
-            <span className="text-ink-faint">
+            <span className="text-ink-3">
               {media.record ? 'Media set for this exercise.' : 'No media set yet.'}
             </span>
           )}
@@ -434,7 +434,7 @@ function BackToLibrary() {
     <Link
       to="/settings/exercises"
       aria-label="Back to Exercise Library"
-      className="mb-4 inline-flex items-center gap-1.5 rounded-control text-[13px] font-semibold text-ink-faint transition-colors duration-150 hover:text-offwhite"
+      className="mb-4 inline-flex items-center gap-1.5 rounded-control text-[13px] font-semibold text-ink-3 transition-colors duration-fast hover:text-ink"
     >
       <ArrowLeft className="size-4" aria-hidden="true" />
       Exercise Library

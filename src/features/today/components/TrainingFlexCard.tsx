@@ -1,7 +1,6 @@
-import { CalendarCheck, Dumbbell, Gamepad2, Loader2, Moon, RefreshCw } from 'lucide-react'
+import { Dumbbell, Gamepad2, Loader2, Moon, RefreshCw } from 'lucide-react'
 import { motion } from 'motion/react'
 
-import { Card } from '@/components/ui/Card'
 import { press } from '@/design/motion'
 import { cn } from '@/lib/utils'
 import {
@@ -83,30 +82,21 @@ export function TrainingFlexCard({
   const { status, choice, saving, saveError } = flex
 
   return (
-    <Card className="p-5">
+    <div className="rounded-card border border-line bg-surface p-4">
       {/* Card does not forward extra props, so the markers live here. */}
       <div data-training-flex data-training-flex-state={status} />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-[11px] font-bold uppercase tracking-[0.16em] text-ink-faint">
-            Today&rsquo;s training
-          </h2>
-          <p className="mt-0.5 text-[13px] text-ink-faint">
+          <h2 className="text-[13px] font-semibold text-ink-2">
             Not up for the session? Say so — it is not a missed day.
-          </p>
+          </h2>
         </div>
-        <span
-          aria-hidden="true"
-          className="grid size-11 shrink-0 place-items-center rounded-2xl bg-surface-overlay text-ink-faint"
-        >
-          <CalendarCheck className="size-5" />
-        </span>
       </div>
 
       {status === 'loading' && (
         <p
           role="status"
-          className="mt-4 flex items-center gap-2 text-[13px] font-semibold text-ink-dim"
+          className="mt-4 flex items-center gap-2 text-[13px] font-semibold text-ink-2"
         >
           <Loader2 className="size-4 animate-spin" aria-hidden="true" />
           Loading today&rsquo;s choice…
@@ -115,13 +105,13 @@ export function TrainingFlexCard({
 
       {status === 'error' && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <p role="alert" className="text-[13px] font-semibold text-coral">
+          <p role="alert" className="text-[13px] font-semibold text-danger-ink">
             Could not load today&rsquo;s choice.
           </p>
           <button
             type="button"
             onClick={flex.reload}
-            className="inline-flex items-center gap-1.5 rounded-control border border-edge-strong px-3.5 py-2 text-[13px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite"
+            className="inline-flex items-center gap-1.5 rounded-control border border-line-strong px-3.5 py-2 text-[13px] font-bold text-ink-2 transition-colors duration-fast hover:text-ink"
           >
             <RefreshCw className="size-4" aria-hidden="true" />
             Try again
@@ -157,17 +147,17 @@ export function TrainingFlexCard({
                     void flex.choose(option.value)
                   }}
                   className={cn(
-                    'flex min-h-11 flex-col items-start gap-1 rounded-control border p-3 text-left transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-60',
+                    'flex min-h-11 flex-col items-start gap-1 rounded-control border p-3 text-left transition-colors duration-fast disabled:cursor-not-allowed disabled:opacity-60',
                     active
-                      ? 'border-blue bg-blue/12 text-offwhite'
-                      : 'border-edge-strong text-ink-dim hover:border-edge-strong hover:text-offwhite',
+                      ? 'border-blue bg-accent/12 text-ink'
+                      : 'border-line-strong text-ink-2 hover:border-line-strong hover:text-ink',
                   )}
                 >
                   <span className="flex items-center gap-1.5">
                     <Icon className="size-4 shrink-0" aria-hidden="true" />
                     <span className="text-[13px] font-bold">{option.label}</span>
                   </span>
-                  <span className="text-[12px] leading-snug text-ink-faint">
+                  <span className="text-[12px] leading-snug text-ink-3">
                     {option.description}
                   </span>
                 </motion.button>
@@ -175,7 +165,7 @@ export function TrainingFlexCard({
             })}
           </div>
 
-          <p role="status" className="mt-3 text-[12px] font-semibold text-ink-faint">
+          <p role="status" className="mt-3 text-[12px] font-semibold text-ink-3">
             {saving ? (
               <span className="inline-flex items-center gap-1.5">
                 <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
@@ -192,12 +182,12 @@ export function TrainingFlexCard({
           </p>
 
           {saveError && (
-            <p role="alert" className="mt-2 text-[13px] font-semibold text-coral">
+            <p role="alert" className="mt-2 text-[13px] font-semibold text-danger-ink">
               {saveError}
             </p>
           )}
         </>
       )}
-    </Card>
+    </div>
   )
 }

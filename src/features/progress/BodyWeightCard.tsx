@@ -58,16 +58,16 @@ export function BodyWeightCard() {
       <div data-body-weight data-body-weight-state={status}>
         <header className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-ink-faint">
+            <p className="text-[15px] font-bold tracking-[-0.01em] text-ink">
               Body weight
             </p>
-            <p className="mt-0.5 text-[13px] text-ink-faint">
+            <p className="mt-0.5 text-[13px] text-ink-3">
               Kilograms, to one decimal place.
             </p>
           </div>
           <span
             aria-hidden="true"
-            className="grid size-11 shrink-0 place-items-center rounded-2xl bg-surface-overlay text-ink-faint"
+            className="grid size-11 shrink-0 place-items-center rounded-2xl bg-surface-soft text-ink-3"
           >
             <Scale className="size-5" />
           </span>
@@ -76,7 +76,7 @@ export function BodyWeightCard() {
         {status === "loading" && (
           <p
             role="status"
-            className="mt-4 flex items-center gap-2 text-[13px] font-semibold text-ink-dim"
+            className="mt-4 flex items-center gap-2 text-[13px] font-semibold text-ink-2"
           >
             <Loader2 className="size-4 animate-spin" aria-hidden="true" />
             Loading your measurements…
@@ -85,13 +85,13 @@ export function BodyWeightCard() {
 
         {status === "error" && (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <p role="alert" className="text-[13px] font-semibold text-coral">
+            <p role="alert" className="text-[13px] font-semibold text-danger-ink">
               Could not load your measurements. Nothing has been lost.
             </p>
             <button
               type="button"
               onClick={reload}
-              className="inline-flex items-center gap-1.5 rounded-control border border-edge-strong px-3.5 py-2 text-[13px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite"
+              className="inline-flex items-center gap-1.5 rounded-control border border-line-strong px-3.5 py-2 text-[13px] font-bold text-ink-2 transition-colors duration-fast hover:text-ink"
             >
               <RefreshCw className="size-4" aria-hidden="true" />
               Try again
@@ -106,7 +106,7 @@ export function BodyWeightCard() {
             <RangeTabs range={range} onChange={setRange} count={history.points.length} />
 
             {history.points.length === 0 ? (
-              <p className="mt-3 text-[13px] leading-relaxed text-ink-faint">
+              <p className="mt-3 text-[13px] leading-relaxed text-ink-3">
                 {range === "all"
                   ? "No measurements recorded yet. Add one below and it will appear here."
                   : `No measurements in the last ${RANGE_LABELS[range].replace("D", " days")}. Switch to All to see everything recorded.`}
@@ -119,7 +119,7 @@ export function BodyWeightCard() {
                   unitLabel="Weight (kg)"
                 />
                 {history.points.length === 1 && (
-                  <p className="mt-2 text-[12px] font-semibold text-ink-faint">
+                  <p className="mt-2 text-[12px] font-semibold text-ink-3">
                     {/* One real point, and no line drawn through it. */}
                     One measurement so far — not enough for a trend yet.
                   </p>
@@ -167,21 +167,21 @@ function Summary({ history }: { history: WeightHistory }) {
   return (
     <dl className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
       <div className="min-w-0">
-        <dt className="text-[11px] font-bold uppercase tracking-[0.14em] text-ink-faint">
+        <dt className="text-[11px] font-bold uppercase tracking-[0.09em] text-ink-3">
           Latest
         </dt>
-        <dd className="mt-0.5 text-[26px] font-extrabold tabular-nums text-offwhite">
+        <dd className="mt-0.5 text-[26px] font-bold tabular-nums text-ink">
           {latest ? (
             <>
               {formatWeight(latest.tenths)}
-              <span className="ml-1 text-[15px] font-bold text-ink-faint">kg</span>
+              <span className="ml-1 text-[15px] font-bold text-ink-3">kg</span>
             </>
           ) : (
-            <span className="text-[15px] font-bold text-ink-faint">No measurement</span>
+            <span className="text-[15px] font-bold text-ink-3">No measurement</span>
           )}
         </dd>
         {latest && (
-          <p className="mt-0.5 text-[12px] font-semibold text-ink-faint">
+          <p className="mt-0.5 text-[12px] font-semibold text-ink-3">
             {formatLocalDate(latest.date)}
           </p>
         )}
@@ -223,27 +223,27 @@ function Change({
 }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[11px] font-bold uppercase tracking-[0.14em] text-ink-faint">
+      <dt className="text-[11px] font-bold uppercase tracking-[0.09em] text-ink-3">
         {label}
       </dt>
       <dd
-        className="mt-0.5 text-[26px] font-extrabold tabular-nums text-offwhite"
+        className="mt-0.5 text-[26px] font-bold tabular-nums text-ink"
         data-change={tenths ?? "unavailable"}
       >
         {tenths === null ? (
-          <span className="text-[15px] font-bold text-ink-faint">
+          <span className="text-[15px] font-bold text-ink-3">
             {/* Not "0.0": with one measurement there is nothing to compare. */}
             {count === 0 ? "—" : "Needs two measurements"}
           </span>
         ) : (
           <>
             {formatWeightChange(tenths)}
-            <span className="ml-1 text-[15px] font-bold text-ink-faint">kg</span>
+            <span className="ml-1 text-[15px] font-bold text-ink-3">kg</span>
           </>
         )}
       </dd>
       {tenths !== null && from && (
-        <p className="mt-0.5 text-[12px] font-semibold text-ink-faint">
+        <p className="mt-0.5 text-[12px] font-semibold text-ink-3">
           {tenths === 0 ? "Unchanged from" : "From"} {formatLocalDate(from)}
         </p>
       )}
@@ -279,17 +279,17 @@ function RangeTabs({
             onClick={() => onChange(option)}
             aria-pressed={active}
             className={cn(
-              "rounded-control border px-3 py-1.5 text-[12px] font-bold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue",
+              "rounded-control border px-3 py-1.5 text-[12px] font-bold transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink",
               active
-                ? "border-blue bg-blue/12 text-blue"
-                : "border-edge-strong text-ink-dim hover:text-offwhite",
+                ? "border-accent-edge bg-accent/12 text-info-ink"
+                : "border-line-strong text-ink-2 hover:text-ink",
             )}
           >
             {RANGE_LABELS[option]}
           </button>
         );
       })}
-      <span className="ml-auto text-[12px] font-semibold tabular-nums text-ink-faint">
+      <span className="ml-auto text-[12px] font-semibold tabular-nums text-ink-3">
         {count} {count === 1 ? "measurement" : "measurements"}
       </span>
     </div>
@@ -390,14 +390,14 @@ function MeasurementForm({
     <form
       onSubmit={submit}
       noValidate
-      className="mt-5 border-t border-edge pt-4"
+      className="mt-5 border-t border-line pt-4"
       data-weight-form
     >
       <div className="flex flex-wrap items-end gap-3">
         <div className="min-w-0 flex-1 basis-40">
           <label
             htmlFor="weight-date"
-            className="block text-[11px] font-bold uppercase tracking-[0.14em] text-ink-faint"
+            className="block text-[11px] font-bold uppercase tracking-[0.09em] text-ink-3"
           >
             Date
           </label>
@@ -407,14 +407,14 @@ function MeasurementForm({
             value={date}
             max={today}
             onChange={(event) => chooseDate(event.target.value)}
-            className="mt-1 w-full rounded-control border border-edge-strong bg-surface-overlay px-3 py-2 text-[14px] font-semibold text-offwhite focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue"
+            className="mt-1 w-full rounded-control border border-line-strong bg-surface-soft px-3 py-2 text-[14px] font-semibold text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink"
           />
         </div>
 
         <div className="min-w-0 flex-1 basis-32">
           <label
             htmlFor="weight-value"
-            className="block text-[11px] font-bold uppercase tracking-[0.14em] text-ink-faint"
+            className="block text-[11px] font-bold uppercase tracking-[0.09em] text-ink-3"
           >
             Weight (kg)
           </label>
@@ -430,33 +430,33 @@ function MeasurementForm({
             onChange={(event) => setDraft(event.target.value)}
             aria-describedby={problem ? "weight-problem" : undefined}
             aria-invalid={problem !== null}
-            className="mt-1 w-full rounded-control border border-edge-strong bg-surface-overlay px-3 py-2 text-[14px] font-semibold tabular-nums text-offwhite focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue"
+            className="mt-1 w-full rounded-control border border-line-strong bg-surface-soft px-3 py-2 text-[14px] font-semibold tabular-nums text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink"
           />
         </div>
 
         <button
           type="submit"
           disabled={saving}
-          className="rounded-control bg-blue px-4 py-2 text-[13px] font-bold text-ink-inverse transition-opacity duration-150 hover:opacity-90 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue"
+          className="rounded-control bg-accent px-4 py-2 text-[13px] font-bold text-ink-inverse transition-opacity duration-fast hover:opacity-90 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink"
         >
           {saving ? "Saving…" : existing ? "Update" : "Add measurement"}
         </button>
       </div>
 
       {problem && (
-        <p id="weight-problem" role="alert" className="mt-2 text-[12px] font-semibold text-coral">
+        <p id="weight-problem" role="alert" className="mt-2 text-[12px] font-semibold text-danger-ink">
           {problem}
         </p>
       )}
 
       {write.status === "failed" && (
-        <p role="alert" className="mt-2 text-[12px] font-semibold text-coral">
+        <p role="alert" className="mt-2 text-[12px] font-semibold text-danger-ink">
           {write.message}
         </p>
       )}
 
       {write.status === "saved" && !problem && (
-        <p role="status" className="mt-2 text-[12px] font-semibold text-completed">
+        <p role="status" className="mt-2 text-[12px] font-semibold text-success-ink">
           Saved {formatLocalDate(write.date)}.
         </p>
       )}
@@ -465,7 +465,7 @@ function MeasurementForm({
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {confirmingDelete ? (
             <>
-              <p className="text-[12px] font-semibold text-ink-dim">
+              <p className="text-[12px] font-semibold text-ink-2">
                 {/* Names exactly what will go, so it cannot be a surprise. */}
                 Delete the {formatWeight(existing.tenths)} kg measurement on{" "}
                 {formatLocalDate(existing.date)}?
@@ -478,7 +478,7 @@ function MeasurementForm({
                   setDraft(null);
                   onDelete(existing.date);
                 }}
-                className="inline-flex items-center gap-1.5 rounded-control border border-coral px-3 py-1.5 text-[12px] font-bold text-coral transition-colors duration-150 hover:bg-coral/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-coral"
+                className="inline-flex items-center gap-1.5 rounded-control border border-danger-ink px-3 py-1.5 text-[12px] font-bold text-danger-ink transition-colors duration-fast hover:bg-danger-ink/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-coral"
               >
                 <Trash2 className="size-3.5" aria-hidden="true" />
                 Delete it
@@ -486,7 +486,7 @@ function MeasurementForm({
               <button
                 type="button"
                 onClick={() => setConfirmingDelete(false)}
-                className="rounded-control px-3 py-1.5 text-[12px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue"
+                className="rounded-control px-3 py-1.5 text-[12px] font-bold text-ink-2 transition-colors duration-fast hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink"
               >
                 Keep it
               </button>
@@ -495,7 +495,7 @@ function MeasurementForm({
             <button
               type="button"
               onClick={() => setConfirmingDelete(true)}
-              className="inline-flex items-center gap-1.5 rounded-control border border-edge-strong px-3 py-1.5 text-[12px] font-bold text-ink-dim transition-colors duration-150 hover:text-coral focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue"
+              className="inline-flex items-center gap-1.5 rounded-control border border-line-strong px-3 py-1.5 text-[12px] font-bold text-ink-2 transition-colors duration-fast hover:text-danger-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink"
             >
               <Trash2 className="size-3.5" aria-hidden="true" />
               Delete this measurement

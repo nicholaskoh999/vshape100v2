@@ -81,7 +81,7 @@ export function NotificationSettingsCard() {
       {/* Card does not forward extra props, so the marker lives here. */}
       <div data-notification-settings data-notification-state={state.status}>
         <div className="flex items-start gap-4">
-          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-surface-overlay text-ink-dim">
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-surface-soft text-ink-2">
             {state.status === 'on' ? (
               <Bell className="size-5" aria-hidden="true" />
             ) : (
@@ -94,10 +94,10 @@ export function NotificationSettingsCard() {
               {/* A heading, not a bold paragraph: every settings card is a
                   section, and assistive technology should be able to jump
                   between them. */}
-              <h2 className="text-sm font-bold text-offwhite">Routine reminders</h2>
-              <p className="text-[13px] font-semibold text-ink-dim">{copy.value}</p>
+              <h2 className="text-sm font-bold text-ink">Routine reminders</h2>
+              <p className="text-[13px] font-semibold text-ink-2">{copy.value}</p>
             </div>
-            <p className="mt-1 text-[13px] leading-relaxed text-ink-faint">{copy.note}</p>
+            <p className="mt-1 text-[13px] leading-relaxed text-ink-3">{copy.note}</p>
 
             {copy.action && (
               <motion.button
@@ -106,7 +106,7 @@ export function NotificationSettingsCard() {
                 onClick={copy.action === 'enable' ? enable : disable}
                 disabled={working}
                 data-notification-action={copy.action}
-                className="mt-3 inline-flex h-10 items-center justify-center gap-1.5 rounded-control border border-edge-strong px-3.5 text-[13px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite disabled:cursor-not-allowed disabled:opacity-40"
+                className="mt-3 inline-flex h-10 items-center justify-center gap-1.5 rounded-control border border-line-strong px-3.5 text-[13px] font-bold text-ink-2 transition-colors duration-fast hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {working && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
                 {copy.action === 'enable'
@@ -115,7 +115,7 @@ export function NotificationSettingsCard() {
               </motion.button>
             )}
 
-            <p className="mt-2 text-[12px] leading-relaxed text-ink-faint">
+            <p className="mt-2 text-[12px] leading-relaxed text-ink-3">
               Only this device. Flexible items like Free time never notify.
             </p>
           </div>

@@ -208,7 +208,7 @@ export function ExerciseProgrammeCard({ exerciseId }: { exerciseId: string }) {
       <div>
         <label
           htmlFor="exercise-name"
-          className="block text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint"
+          className="block text-[10px] font-bold uppercase tracking-[0.09em] text-ink-3"
         >
           Name
         </label>
@@ -219,9 +219,9 @@ export function ExerciseProgrammeCard({ exerciseId }: { exerciseId: string }) {
           maxLength={MAX_EXERCISE_NAME_LENGTH}
           disabled={busy}
           onChange={(event) => update({ name: event.target.value })}
-          className="mt-1 w-full rounded-control border border-edge bg-surface-overlay px-3 py-2 text-sm font-bold text-offwhite outline-none focus-visible:border-blue"
+          className="mt-1 w-full rounded-control border border-line bg-surface-soft px-3 py-2 text-sm font-bold text-ink outline-none focus-visible:border-accent-edge"
         />
-        <p className="mt-1.5 text-[12px] text-ink-faint">
+        <p className="mt-1.5 text-[12px] text-ink-3">
           Renaming changes what you see from now on. Your recorded history keeps
           the name it was performed under.
         </p>
@@ -229,9 +229,9 @@ export function ExerciseProgrammeCard({ exerciseId }: { exerciseId: string }) {
 
       {/* ---------------- weekdays ---------------- */}
       <fieldset className="min-w-0" disabled={busy || current.archived}>
-        <legend className="mb-2 text-[13px] font-bold text-ink-dim">Programme</legend>
+        <legend className="mb-2 text-[13px] font-bold text-ink-2">Programme</legend>
         {current.archived ? (
-          <p className="text-[13px] text-ink-faint">
+          <p className="text-[13px] text-ink-3">
             Archived exercises hold no weekday. Restore it below to put it back
             into your week.
           </p>
@@ -246,10 +246,10 @@ export function ExerciseProgrammeCard({ exerciseId }: { exerciseId: string }) {
                 <li
                   key={sessionId}
                   data-weekday={sessionId}
-                  className="rounded-control border border-edge bg-surface-overlay/40 p-3"
+                  className="rounded-control border border-line bg-surface-soft/40 p-3"
                 >
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                    <label className="flex items-center gap-2 text-[13px] font-bold text-offwhite">
+                    <label className="flex items-center gap-2 text-[13px] font-bold text-ink">
                       <input
                         type="checkbox"
                         checked={slot !== undefined}
@@ -262,11 +262,11 @@ export function ExerciseProgrammeCard({ exerciseId }: { exerciseId: string }) {
 
                     {slot && (
                       <>
-                        <span className="text-[12px] text-ink-faint">
+                        <span className="text-[12px] text-ink-3">
                           {formatPrescription(slot)}
                         </span>
                         <span className="ml-auto flex items-center gap-1">
-                          <span className="text-[11px] font-semibold text-ink-faint">
+                          <span className="text-[11px] font-semibold text-ink-3">
                             Step {index + 1} of {slots.length}
                           </span>
                           <button
@@ -274,7 +274,7 @@ export function ExerciseProgrammeCard({ exerciseId }: { exerciseId: string }) {
                             aria-label={`Move ${current.name || 'this exercise'} up on ${meta.day}`}
                             disabled={index <= 0}
                             onClick={() => move(sessionId, -1)}
-                            className="rounded-control border border-edge-strong p-1 text-ink-dim transition-colors duration-150 hover:text-offwhite disabled:cursor-not-allowed disabled:opacity-30"
+                            className="rounded-control border border-line-strong p-1 text-ink-2 transition-colors duration-fast hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
                           >
                             <ArrowUp className="size-3.5" aria-hidden="true" />
                           </button>
@@ -283,7 +283,7 @@ export function ExerciseProgrammeCard({ exerciseId }: { exerciseId: string }) {
                             aria-label={`Move ${current.name || 'this exercise'} down on ${meta.day}`}
                             disabled={index === -1 || index >= slots.length - 1}
                             onClick={() => move(sessionId, 1)}
-                            className="rounded-control border border-edge-strong p-1 text-ink-dim transition-colors duration-150 hover:text-offwhite disabled:cursor-not-allowed disabled:opacity-30"
+                            className="rounded-control border border-line-strong p-1 text-ink-2 transition-colors duration-fast hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
                           >
                             <ArrowDown className="size-3.5" aria-hidden="true" />
                           </button>
@@ -319,7 +319,7 @@ export function ExerciseProgrammeCard({ exerciseId }: { exerciseId: string }) {
                         onChange={(value) => patchSlot(sessionId, { targetMax: value })}
                       />
                       <div>
-                        <span className="block text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">
+                        <span className="block text-[10px] font-bold uppercase tracking-[0.09em] text-ink-3">
                           Measured in
                         </span>
                         <div
@@ -337,8 +337,8 @@ export function ExerciseProgrammeCard({ exerciseId }: { exerciseId: string }) {
                               className={cn(
                                 'rounded-control border px-2 py-1 text-[11px] font-bold',
                                 slot.resultKind === kind
-                                  ? 'border-blue bg-blue/15 text-offwhite'
-                                  : 'border-edge-strong text-ink-dim',
+                                  ? 'border-accent-edge bg-accent/15 text-ink'
+                                  : 'border-line-strong text-ink-2',
                               )}
                             >
                               {kind === 'reps' ? 'Reps' : 'Seconds'}
@@ -347,7 +347,7 @@ export function ExerciseProgrammeCard({ exerciseId }: { exerciseId: string }) {
                         </div>
                       </div>
 
-                      <label className="col-span-2 flex items-center gap-2 text-[12px] font-semibold text-ink-dim">
+                      <label className="col-span-2 flex items-center gap-2 text-[12px] font-semibold text-ink-2">
                         <input
                           type="checkbox"
                           checked={slot.perSide}
@@ -363,7 +363,7 @@ export function ExerciseProgrammeCard({ exerciseId }: { exerciseId: string }) {
                       <div className="col-span-2">
                         <label
                           htmlFor={`${sessionId}-equipment`}
-                          className="block text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint"
+                          className="block text-[10px] font-bold uppercase tracking-[0.09em] text-ink-3"
                         >
                           Equipment
                         </label>
@@ -377,7 +377,7 @@ export function ExerciseProgrammeCard({ exerciseId }: { exerciseId: string }) {
                               equipment: event.target.value.trim() === '' ? null : event.target.value,
                             })
                           }
-                          className="mt-1 w-full rounded-control border border-edge bg-surface px-2.5 py-1.5 text-[13px] text-offwhite outline-none focus-visible:border-blue"
+                          className="mt-1 w-full rounded-control border border-line bg-surface px-2.5 py-1.5 text-[13px] text-ink outline-none focus-visible:border-accent-edge"
                         />
                       </div>
                     </div>
@@ -391,19 +391,19 @@ export function ExerciseProgrammeCard({ exerciseId }: { exerciseId: string }) {
 
       {/* ---------------- status ---------------- */}
       {issues.length > 0 && (
-        <p role="alert" className="text-[12px] font-semibold text-coral" data-programme-invalid>
+        <p role="alert" className="text-[12px] font-semibold text-danger-ink" data-programme-invalid>
           {describeIssue(issues[0])}
         </p>
       )}
 
       {feedback === 'conflict' && (
-        <p role="alert" className="text-[12px] font-semibold text-coral" data-programme-conflict>
+        <p role="alert" className="text-[12px] font-semibold text-danger-ink" data-programme-conflict>
           Your programme changed in another tab. Reload the latest version before
           saving.{' '}
           <button
             type="button"
             onClick={reload}
-            className="rounded-control font-bold text-blue underline-offset-2 hover:underline"
+            className="rounded-control font-bold text-info-ink underline-offset-2 hover:underline"
           >
             Reload latest
           </button>
@@ -411,19 +411,19 @@ export function ExerciseProgrammeCard({ exerciseId }: { exerciseId: string }) {
       )}
 
       {feedback === 'error' && (
-        <p role="alert" className="text-[12px] font-semibold text-coral">
+        <p role="alert" className="text-[12px] font-semibold text-danger-ink">
           Could not save. Nothing was changed.
         </p>
       )}
 
       {feedback === 'saved' && !dirty && (
-        <p className="text-[12px] font-semibold text-completed" data-programme-saved>
+        <p className="text-[12px] font-semibold text-success-ink" data-programme-saved>
           Saved.
         </p>
       )}
 
       {dirty && feedback !== 'conflict' && (
-        <p className="text-[12px] font-semibold text-ink-faint" data-programme-dirty>
+        <p className="text-[12px] font-semibold text-ink-3" data-programme-dirty>
           Unsaved changes.
         </p>
       )}
@@ -433,7 +433,7 @@ export function ExerciseProgrammeCard({ exerciseId }: { exerciseId: string }) {
           type="button"
           onClick={() => void commit(current)}
           disabled={!canSave}
-          className="inline-flex items-center gap-1.5 rounded-control bg-blue px-3 py-1.5 text-[12px] font-bold text-offwhite transition-opacity duration-150 disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex items-center gap-1.5 rounded-control bg-accent px-3 py-1.5 text-[12px] font-bold text-ink transition-opacity duration-fast disabled:cursor-not-allowed disabled:opacity-40"
         >
           {busy && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
           Save changes
@@ -446,7 +446,7 @@ export function ExerciseProgrammeCard({ exerciseId }: { exerciseId: string }) {
               setFeedback('idle')
             }}
             disabled={busy}
-            className="rounded-control px-3 py-1.5 text-[12px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-control px-3 py-1.5 text-[12px] font-bold text-ink-2 transition-colors duration-fast hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
           >
             Discard
           </button>
@@ -454,10 +454,10 @@ export function ExerciseProgrammeCard({ exerciseId }: { exerciseId: string }) {
       </div>
 
       {/* ---------------- lifecycle ---------------- */}
-      <div className="border-t border-edge pt-4">
+      <div className="border-t border-line pt-4">
         {current.archived ? (
           <>
-            <p className="text-[12px] text-ink-faint">
+            <p className="text-[12px] text-ink-3">
               Restoring makes it available again. It will not go back onto the
               weekdays it used to be on — you choose those again.
             </p>
@@ -465,15 +465,15 @@ export function ExerciseProgrammeCard({ exerciseId }: { exerciseId: string }) {
               type="button"
               disabled={busy}
               onClick={() => void commit({ ...current, archived: false })}
-              className="mt-2 rounded-control border border-edge-strong px-2.5 py-1 text-[11px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite disabled:cursor-not-allowed disabled:opacity-40"
+              className="mt-2 rounded-control border border-line-strong px-2.5 py-1 text-[11px] font-bold text-ink-2 transition-colors duration-fast hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
             >
               Restore exercise
             </button>
           </>
         ) : confirmingArchive ? (
-          <div className="rounded-control border border-edge-strong bg-surface-overlay/60 p-2.5">
-            <p className="text-[12px] font-bold text-offwhite">Archive this exercise?</p>
-            <p className="mt-0.5 text-[11px] text-ink-faint">
+          <div className="rounded-control border border-line-strong bg-surface-soft/60 p-2.5">
+            <p className="text-[12px] font-bold text-ink">Archive this exercise?</p>
+            <p className="mt-0.5 text-[11px] text-ink-3">
               It leaves every weekday from now on. Your recorded history, media
               and input type are all kept.
             </p>
@@ -482,7 +482,7 @@ export function ExerciseProgrammeCard({ exerciseId }: { exerciseId: string }) {
                 type="button"
                 disabled={busy}
                 onClick={archive}
-                className="inline-flex items-center gap-1.5 rounded-control bg-coral px-2.5 py-1 text-[11px] font-bold text-offwhite disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex items-center gap-1.5 rounded-control bg-danger-ink px-2.5 py-1 text-[11px] font-bold text-ink disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {busy && <Loader2 className="size-3 animate-spin" aria-hidden="true" />}
                 Archive
@@ -491,7 +491,7 @@ export function ExerciseProgrammeCard({ exerciseId }: { exerciseId: string }) {
                 type="button"
                 disabled={busy}
                 onClick={() => setConfirmingArchive(false)}
-                className="rounded-control px-2.5 py-1 text-[11px] font-bold text-ink-dim hover:text-offwhite"
+                className="rounded-control px-2.5 py-1 text-[11px] font-bold text-ink-2 hover:text-ink"
               >
                 Keep it
               </button>
@@ -503,12 +503,12 @@ export function ExerciseProgrammeCard({ exerciseId }: { exerciseId: string }) {
               type="button"
               disabled={busy || archiveWouldEmpty}
               onClick={() => setConfirmingArchive(true)}
-              className="rounded-control border border-edge-strong px-2.5 py-1 text-[11px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-control border border-line-strong px-2.5 py-1 text-[11px] font-bold text-ink-2 transition-colors duration-fast hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
             >
               Archive exercise
             </button>
             {archiveWouldEmpty && (
-              <p className="mt-1.5 text-[11px] text-ink-faint" data-archive-blocked>
+              <p className="mt-1.5 text-[11px] text-ink-3" data-archive-blocked>
                 It is the only exercise left on a weekday. Add another to that day
                 first — a training day cannot be empty.
               </p>
@@ -539,7 +539,7 @@ function Field({
     <div>
       <label
         htmlFor={id}
-        className="block text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint"
+        className="block text-[10px] font-bold uppercase tracking-[0.09em] text-ink-3"
       >
         {label}
       </label>
@@ -551,7 +551,7 @@ function Field({
         max={max}
         value={value}
         onChange={(event) => onChange(Number(event.target.value))}
-        className="mt-1 w-full rounded-control border border-edge bg-surface px-2.5 py-1.5 text-[13px] font-bold text-offwhite outline-none focus-visible:border-blue"
+        className="mt-1 w-full rounded-control border border-line bg-surface px-2.5 py-1.5 text-[13px] font-bold text-ink outline-none focus-visible:border-accent-edge"
       />
     </div>
   )

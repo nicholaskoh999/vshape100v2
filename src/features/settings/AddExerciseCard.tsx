@@ -94,19 +94,19 @@ export function AddExerciseCard() {
         type="button"
         onClick={() => setOpen(true)}
         data-add-exercise="closed"
-        className="mt-4 flex w-full items-center gap-3 rounded-card border border-dashed border-edge px-4.5 py-4 text-left transition-colors duration-150 hover:border-edge-strong"
+        className="mt-4 flex w-full items-center gap-3 rounded-card border border-dashed border-line px-4.5 py-4 text-left transition-colors duration-fast hover:border-line-strong"
       >
         <span
           aria-hidden="true"
-          className="grid size-10 shrink-0 place-items-center rounded-xl bg-surface-overlay text-ink-dim"
+          className="grid size-10 shrink-0 place-items-center rounded-xl bg-surface-soft text-ink-2"
         >
           <Plus className="size-5" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block font-extrabold tracking-tight text-offwhite">
+          <span className="block font-bold tracking-tight text-ink">
             Add exercise
           </span>
-          <span className="mt-0.5 block text-[13px] text-ink-faint">
+          <span className="mt-0.5 block text-[13px] text-ink-3">
             One of your own, with its own name and input type
           </span>
         </span>
@@ -116,8 +116,8 @@ export function AddExerciseCard() {
 
   return (
     <Card className="mt-4 p-4.5" data-add-exercise="open">
-      <h2 className="text-sm font-extrabold tracking-tight text-offwhite">Add exercise</h2>
-      <p className="mt-0.5 text-[13px] text-ink-faint">
+      <h2 className="text-sm font-bold tracking-tight text-ink">Add exercise</h2>
+      <p className="mt-0.5 text-[13px] text-ink-3">
         It joins your library straight away. You choose which weekdays it belongs
         to next.
       </p>
@@ -125,7 +125,7 @@ export function AddExerciseCard() {
       <div className="mt-3.5">
         <label
           htmlFor="new-exercise-name"
-          className="block text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint"
+          className="block text-[10px] font-bold uppercase tracking-[0.09em] text-ink-3"
         >
           Name
         </label>
@@ -136,12 +136,12 @@ export function AddExerciseCard() {
           maxLength={MAX_EXERCISE_NAME_LENGTH}
           onChange={(event) => setName(event.target.value)}
           placeholder="e.g. Cable Crossover"
-          className="mt-1 w-full rounded-control border border-edge bg-surface-overlay px-3 py-2 text-sm font-bold text-offwhite outline-none focus-visible:border-blue"
+          className="mt-1 w-full rounded-control border border-line bg-surface-soft px-3 py-2 text-sm font-bold text-ink outline-none focus-visible:border-accent-edge"
         />
       </div>
 
       <fieldset className="mt-3.5">
-        <legend className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">
+        <legend className="text-[10px] font-bold uppercase tracking-[0.09em] text-ink-3">
           Input type
         </legend>
         <div role="radiogroup" aria-label="Input type" className="mt-1 flex flex-wrap gap-1.5">
@@ -154,29 +154,29 @@ export function AddExerciseCard() {
               disabled={busy}
               onClick={() => setInputType(type)}
               className={cn(
-                'rounded-control border px-2.5 py-1 text-[12px] font-bold transition-colors duration-150',
+                'rounded-control border px-2.5 py-1 text-[12px] font-bold transition-colors duration-fast',
                 inputType === type
-                  ? 'border-blue bg-blue/15 text-offwhite'
-                  : 'border-edge-strong text-ink-dim hover:text-offwhite',
+                  ? 'border-accent-edge bg-accent/15 text-ink'
+                  : 'border-line-strong text-ink-2 hover:text-ink',
               )}
             >
               {WORKOUT_INPUT_TYPE_LABELS[type]}
             </button>
           ))}
         </div>
-        <p className="mt-1.5 text-[12px] text-ink-faint">
+        <p className="mt-1.5 text-[12px] text-ink-3">
           Required: it decides what this exercise records, and it is frozen into
           every workout you start with it.
         </p>
       </fieldset>
 
       {conflict && (
-        <p role="alert" className="mt-3 text-[12px] font-semibold text-coral">
+        <p role="alert" className="mt-3 text-[12px] font-semibold text-danger-ink">
           Your programme changed in another tab. Nothing was created.{' '}
           <button
             type="button"
             onClick={reload}
-            className="rounded-control font-bold text-blue underline-offset-2 hover:underline"
+            className="rounded-control font-bold text-info-ink underline-offset-2 hover:underline"
           >
             Reload latest
           </button>
@@ -184,7 +184,7 @@ export function AddExerciseCard() {
       )}
 
       {error && (
-        <p role="alert" className="mt-3 text-[12px] font-semibold text-coral">
+        <p role="alert" className="mt-3 text-[12px] font-semibold text-danger-ink">
           {error}
         </p>
       )}
@@ -194,7 +194,7 @@ export function AddExerciseCard() {
           type="button"
           onClick={() => void save()}
           disabled={!canSave}
-          className="inline-flex items-center gap-1.5 rounded-control bg-blue px-3 py-1.5 text-[12px] font-bold text-offwhite transition-opacity duration-150 disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex items-center gap-1.5 rounded-control bg-accent px-3 py-1.5 text-[12px] font-bold text-ink transition-opacity duration-fast disabled:cursor-not-allowed disabled:opacity-40"
         >
           {busy && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
           Add exercise
@@ -203,7 +203,7 @@ export function AddExerciseCard() {
           type="button"
           onClick={close}
           disabled={busy}
-          className="rounded-control px-3 py-1.5 text-[12px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-control px-3 py-1.5 text-[12px] font-bold text-ink-2 transition-colors duration-fast hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
         >
           Cancel
         </button>

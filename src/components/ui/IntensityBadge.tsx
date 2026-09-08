@@ -1,29 +1,8 @@
-import { cn } from '@/lib/utils'
-import type { SessionIntensity } from '@/features/training/sessions'
-
-const styles: Record<SessionIntensity, string> = {
-  HARD: 'bg-hard/15 text-hard',
-  LIGHT: 'bg-light-day/15 text-light-day',
-  PUMP: 'bg-pump/15 text-pump',
-}
-
-/** Session intensity chip — semantic colors are locked (HARD/LIGHT/PUMP). */
-export function IntensityBadge({
-  intensity,
-  className,
-}: {
-  intensity: SessionIntensity
-  className?: string
-}) {
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.12em]',
-        styles[intensity],
-        className,
-      )}
-    >
-      {intensity}
-    </span>
-  )
-}
+/**
+ * Session intensity chip — HARD / LIGHT / PUMP.
+ *
+ * Round 24 consolidated every badge into `./Badge`, where the "icon and a word,
+ * never colour alone" rule is enforced for all of them. The locked intensity
+ * semantics are unchanged; only their luminance moved, because the ground did.
+ */
+export { IntensityBadge } from './Badge'

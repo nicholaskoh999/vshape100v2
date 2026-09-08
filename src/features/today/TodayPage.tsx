@@ -1,22 +1,44 @@
-import { CalendarRange, Dumbbell, Loader2, Palmtree, RefreshCw, Scale } from 'lucide-react'
+import {
+  CalendarRange,
+  Dumbbell,
+  Flame,
+  Palmtree,
+  RefreshCw,
+  Scale,
+  Target,
+} from 'lucide-react'
 import { useMemo } from 'react'
 import { Link } from 'react-router'
 
-import { Card } from '@/components/ui/Card'
-import { EmptyShell } from '@/components/ui/EmptyShell'
-import { PageHeader } from '@/components/ui/PageHeader'
+import { Badge } from '@/components/ui/Badge'
+import { ButtonLink, Button } from '@/components/ui/Button'
+import { Banner, Skeleton } from '@/components/ui/Feedback'
+import {
+  Card,
+  HeroCard,
+  ListRow,
+  MetricCard,
+  PageHeader,
+  RowList,
+} from '@/components/ui/Layout'
 import type { HolidayStatus } from '@/features/calendar/useHolidays'
 import { foundationStatus } from '@/features/progress/foundation'
+import { useWorkoutHistory } from '@/features/progress/useWorkoutHistory'
 import { useFoundationStart } from '@/features/settings/FoundationStartContext'
-import { localDateOf } from '@shared/localDate'
+import { useProgramme } from '@/features/programme/programmeContext'
+import { toTrainingSession } from '@/features/programme/programmeApi'
+import { buildWorkoutPlan } from '@/features/training/workoutPlan'
+import { addLocalDays, localDateOf } from '@shared/localDate'
 import type { Route } from './model/types'
 import { GYM_ITEM_ID } from '@shared/notifications/due'
 import { TodayHero } from './components/TodayHero'
-import { TrainingFlexCard } from './components/TrainingFlexCard'
 import { TodaySection } from './components/TodaySection'
 import { TodayStatusNotice } from './components/TodayStatusNotice'
+import { TodayTrainingHero } from './components/TodayTrainingHero'
+import { WeekStrip, type WeekDayMark } from './components/WeekStrip'
 import { useScheduledStarted } from './useScheduledStarted'
 import { useTrainingFlex } from './useTrainingFlex'
+import { useTrainingFlexRange } from './useTrainingFlexRange'
 import { useToday } from './useToday'
 
 /**
@@ -62,28 +84,37 @@ function foundationEyebrow(now: Date, startDate: string, ready: boolean): string
 /** Small live readout — also the visible proof the page follows the clock. */
 function ClockChip({ now }: { now: Date }) {
   return (
-    <div className="flex shrink-0 items-center gap-2 rounded-full border border-edge bg-surface px-3 py-1.5">
-      <span className="size-1.5 animate-pulse rounded-full bg-lime" aria-hidden="true" />
-      <span className="text-sm font-bold tabular-nums text-ink-dim">
+    <Badge tone="neutral" className="shrink-0 px-3 py-2">
+      <span
+        className="size-1.5 animate-pulse rounded-full bg-accent-edge"
+        aria-hidden="true"
+      />
+      <span className="text-[13px] font-bold tabular-nums">
         {now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
       </span>
-    </div>
+    </Badge>
   )
 }
 
 /**
  * Today.
  *
- * Layout follows priority, not the clock: what is happening leads, unfinished
- * overdue work sits right behind it, then the rest of the day, then what is
- * already done.
+ * ROUND 24. On a day that plans training, the training hero leads — above the
+ * routine — because for a training app that is what "what matters most right
+ * now" means, and the gym item otherwise sat in "Later today" behind up to
+ * eight rows until 20:30.
  *
- * - mobile: one column, sections ordered NOW → LATE → NEXT → LATER → DONE
- * - tablet: same column, wider rows and a two-up "Later today" grid
+ * The gym item is PROMOTED, NOT DUPLICATED: it is withdrawn from the agenda
+ * below while the hero is shown, exactly as the existing Recovery path already
+ * withdraws it. Nothing is completed, nothing is written, and the hero carries
+ * the item's own window so no fact is lost.
+ *
+ * Below the hero the day is still ordered by priority, not by the clock: what
+ * is happening leads, unfinished overdue work sits right behind it, then the
+ * rest of the day, then what is already done.
+ *
+ * - mobile: one column
  * - desktop: schedule on the left, needs-attention + done in a lighter rail
- *
- * The mobile order is expressed with `order-*` on a `display: contents`
- * wrapper, so both layouts share one set of DOM nodes.
  */
 export function TodayPage() {
   const {
@@ -129,9 +160,24 @@ export function TodayPage() {
     return match ? match[1] : null
   }, [gymEntry])
 
-  // Whether that session has already been started. Only used to stop offering
-  // alternatives the server would refuse.
+  // Whether that session has already been started, and how far in it is.
   const scheduled = useScheduledStarted(flex.today, gymSessionId)
+
+  // The account's own programme, for the hero's session identity and counts.
+  const { programme } = useProgramme()
+  const heroSession = useMemo(
+    () => (programme && gymSessionId ? toTrainingSession(programme, gymSessionId) : undefined),
+    [programme, gymSessionId],
+  )
+  const heroPlan = useMemo(() => {
+    if (!heroSession) return null
+    const plan = buildWorkoutPlan(heroSession)
+    if (!plan) return null
+    return {
+      exercises: heroSession.exercises.length,
+      sets: plan.reduce((sum, exercise) => sum + exercise.setCount, 0),
+    }
+  }, [heroSession])
 
   // Completing something before saved progress has loaded would be acting on
   // state we have not read yet, so the controls wait for hydration.
@@ -159,9 +205,19 @@ export function TodayPage() {
    * the server now refuses to let them act on anyway.
    *
    * Withdrawn from view only. Nothing is completed, nothing is written, the
-   * programme is unchanged, and choosing "Do scheduled workout" in the card
+   * programme is unchanged, and choosing "Do scheduled workout" in the hero
    * above brings it straight back.
+   *
+   * ROUND 24 DELIBERATELY DOES NOT WITHDRAW IT FOR THE HERO. The hero and this
+   * row are two different facts: the hero starts and continues the WORKOUT —
+   * session truth, sets, server-authoritative — while the row is the 20:30
+   * slot in the day, and its tick marks that ROUTINE slot done without logging
+   * a single set. The audit's finding was that those two writes were presented
+   * as primary and secondary of one card, which made the more prominent button
+   * the one that records nothing. Separating them is the fix. Removing one of
+   * them would take away a write the user still has.
    */
+  const heroOwnsGym = plansGym && gymSessionId !== null
   const shown = useMemo(() => {
     if (flex.status !== 'ready' || flex.choice === null) return groups
     const withoutGym = (entries: typeof groups.NOW) =>
@@ -180,6 +236,23 @@ export function TodayPage() {
   const hero = shown.NOW[0] ?? shown.NEXT[0] ?? null
   const alsoNow = shown.NOW.slice(1)
   const upNext = shown.NOW.length > 0 ? shown.NEXT : []
+
+  const week = useWeekMarks(flex.today)
+
+  /*
+   * Two metrics, and only two, because these are the only ones this page can
+   * state without making a request it does not already make. A body-weight
+   * tile would need a read Today does not perform, and a number on the landing
+   * screen that is sometimes a skeleton is worse than no tile.
+   */
+  const foundationDay = foundationStatus(localDateOf(now), foundationStart.startDate)
+  const trainedThisWeek = useMemo(
+    () =>
+      [...week.marks.values()].filter(
+        (mark) => mark === 'completed' || mark === 'extra',
+      ).length,
+    [week.marks],
+  )
 
   return (
     <>
@@ -207,106 +280,210 @@ export function TodayPage() {
       {holidayStatus === 'ready' && agenda.holiday && <HolidayToday route={agenda.route} />}
 
       {holidayStatus === 'ready' && (
-      <>
-      <TodayStatusNotice
-        hydration={hydration}
-        failureMessage={failureMessage}
-        onRetry={retryHydration}
-        onDismiss={dismissFailure}
-      />
+        <>
+          <TodayStatusNotice
+            hydration={hydration}
+            failureMessage={failureMessage}
+            onRetry={retryHydration}
+            onDismiss={dismissFailure}
+          />
 
-      <div className="flex flex-col gap-5 xl:grid xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] xl:items-start xl:gap-6">
-        {/* Schedule column */}
-        <div className="contents xl:flex xl:flex-col xl:gap-5">
-          <div className="order-1 flex flex-col gap-2.5 xl:order-none">
-            {plansGym && (
-              <TrainingFlexCard flex={flex} scheduledStarted={scheduled.started} />
-            )}
-            <TodayHero
-              entry={hero}
-              nowMinutes={agenda.nowMinutes}
-              onToggle={toggle}
-              routeSummary={agenda.route.summary}
-              pending={hero ? pending.has(hero.key) : false}
-              disabled={controlsDisabled}
-            />
-            <TodaySection
-              title="Also now"
-              entries={alsoNow}
-              onToggle={toggle}
-              pendingKeys={pending}
-              disabled={controlsDisabled}
-            />
+          <div className="mb-5">
+            <WeekStrip today={flex.today} marks={week.marks} pending={week.pending} />
           </div>
 
-          <TodaySection
-            title="Up next"
-            entries={upNext}
-            onToggle={toggle}
-            pendingKeys={pending}
-            disabled={controlsDisabled}
-            className="order-3 xl:order-none"
-          />
+          <div className="flex flex-col gap-5 xl:grid xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] xl:items-start xl:gap-6">
+            {/* Schedule column */}
+            <div className="contents xl:flex xl:flex-col xl:gap-5">
+              <div className="order-1 flex flex-col gap-4 xl:order-none">
+                {heroOwnsGym && gymSessionId && (
+                  <TodayTrainingHero
+                    sessionId={gymSessionId}
+                    focus={heroSession?.focus ?? 'Today’s training'}
+                    intensity={heroSession?.intensity ?? null}
+                    plan={heroPlan}
+                    scheduled={scheduled}
+                    flex={flex}
+                  />
+                )}
 
-          <TodaySection
-            title="Later today"
-            entries={shown.LATER}
-            onToggle={toggle}
-            pendingKeys={pending}
-            disabled={controlsDisabled}
-            className="order-4 xl:order-none"
-            listClassName="md:grid md:grid-cols-2 md:items-start xl:grid-cols-1"
-          />
-        </div>
+                <TodayHero
+                  entry={hero}
+                  nowMinutes={agenda.nowMinutes}
+                  onToggle={toggle}
+                  routeSummary={agenda.route.summary}
+                  pending={hero ? pending.has(hero.key) : false}
+                  disabled={controlsDisabled}
+                />
+                <TodaySection
+                  title="Also now"
+                  entries={alsoNow}
+                  onToggle={toggle}
+                  pendingKeys={pending}
+                  disabled={controlsDisabled}
+                />
+              </div>
 
-        {/* Attention + archive rail */}
-        <div className="contents xl:flex xl:flex-col xl:gap-5">
-          <TodaySection
-            title="Needs attention"
-            entries={shown.LATE}
-            onToggle={toggle}
-            pendingKeys={pending}
-            disabled={controlsDisabled}
-            tone="alert"
-            className="order-2 xl:order-none"
-          />
+              {/*
+                Both tiles are derived from reads this page already performs,
+                and both say plainly when they do not know. `—` is not a zero.
+              */}
+              <div className="order-2 grid grid-cols-2 gap-3 xl:order-none">
+                <MetricCard
+                  icon={Target}
+                  tone="accent"
+                  value={week.pending ? '—' : trainedThisWeek}
+                  label={week.pending ? 'Sessions this week' : 'Trained in the last 7 days'}
+                />
+                <MetricCard
+                  icon={Flame}
+                  tone="warn"
+                  value={
+                    foundationStart.status === 'ready' && foundationDay?.day !== null
+                      ? (foundationDay?.day ?? '—')
+                      : '—'
+                  }
+                  label="Foundation day"
+                />
+              </div>
 
-          <TodaySection
-            title="Done earlier"
-            entries={shown.DONE_EARLIER}
-            onToggle={toggle}
-            pendingKeys={pending}
-            disabled={controlsDisabled}
-            className="order-5 xl:order-none"
-          />
+              <TodaySection
+                title="Up next"
+                entries={upNext}
+                onToggle={toggle}
+                pendingKeys={pending}
+                disabled={controlsDisabled}
+                className="order-4 xl:order-none"
+              />
 
-          <EmptyShell
-            icon={Scale}
-            title="Weight check-in"
-            note="Optional daily weight check-in comes in a later round."
-            className="order-6 xl:order-none"
-          />
-        </div>
-      </div>
-      </>
+              <TodaySection
+                title="Later today"
+                entries={shown.LATER}
+                onToggle={toggle}
+                pendingKeys={pending}
+                disabled={controlsDisabled}
+                className="order-4 xl:order-none"
+                listClassName="md:grid md:grid-cols-2 md:items-start xl:grid-cols-1"
+              />
+            </div>
+
+            {/* Attention + archive rail */}
+            <div className="contents xl:flex xl:flex-col xl:gap-5">
+              <TodaySection
+                title="Needs attention"
+                entries={shown.LATE}
+                onToggle={toggle}
+                pendingKeys={pending}
+                disabled={controlsDisabled}
+                tone="alert"
+                className="order-2 xl:order-none"
+              />
+
+              <TodaySection
+                title="Done earlier"
+                entries={shown.DONE_EARLIER}
+                onToggle={toggle}
+                pendingKeys={pending}
+                disabled={controlsDisabled}
+                className="order-5 xl:order-none"
+              />
+
+              {/*
+                ROUND 24. This was an EmptyShell reading "Optional daily weight
+                check-in comes in a later round" — for a feature that shipped in
+                Round 15. A shipped screen said a feature did not exist, in
+                roadmap language, on the app's landing page. It is now a real
+                link to the screen that owns weight.
+              */}
+              <RowList className="order-6 xl:order-none" label="Progress">
+                <li>
+                  <ListRow
+                    to="/progress"
+                    linkLabel="Log today’s weight"
+                    icon={Scale}
+                    title="Log today's weight"
+                    subtitle="Body weight, personal bests and your training history"
+                  />
+                </li>
+              </RowList>
+            </div>
+          </div>
+        </>
       )}
     </>
   )
 }
 
+/**
+ * What the last seven days are known to be.
+ *
+ * Built from reads that already exist elsewhere in the app — the account's
+ * workout history and its explicit training choices — so the strip adds no new
+ * API surface. While either is loading nothing is marked, and a failed read
+ * marks nothing rather than marking a day as untouched.
+ */
+function useWeekMarks(today: string): {
+  marks: ReadonlyMap<string, WeekDayMark>
+  pending: boolean
+} {
+  const from = addLocalDays(today, -6)
+  const history = useWorkoutHistory()
+  const flexRange = useTrainingFlexRange(from ? { from, to: today } : null)
+
+  return useMemo(() => {
+    const marks = new Map<string, WeekDayMark>()
+
+    // A resolved day is a fact about the day itself, and survives whatever the
+    // workout history says.
+    if (flexRange.status === 'ready') {
+      for (const [date, _kind] of flexRange.flex) {
+        void _kind
+        marks.set(date, 'resolved')
+      }
+    }
+
+    /*
+     * `complete` is the server's own statement that the read covered every
+     * workout it was asked about. While it is false a missing row proves
+     * nothing, so no workout mark is drawn at all rather than drawing a
+     * partial picture that reads as a full one.
+     */
+    if (history.status === 'ready' && history.history?.complete) {
+      for (const workout of history.history.workouts) {
+        if (workout.progress.completed === 0) continue
+        marks.set(workout.date, workout.kind === 'extra' ? 'extra' : 'completed')
+      }
+    }
+
+    return {
+      marks,
+      pending: history.status === 'loading' || flexRange.status === 'loading',
+    }
+  }, [history.status, history.history, flexRange.status, flexRange.flex])
+}
+
 /** The day's mode is not known yet, so neither mode is presented. */
 function TodayChecking() {
   return (
-    <Card className="p-5">
+    <Card>
       {/* Card does not forward extra props, so the marker lives here. */}
       <div data-today-checking>
-      <p
-        role="status"
-        className="flex items-center gap-2 text-[13px] font-semibold text-ink-dim"
-      >
-        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-        Checking whether today is a Holiday…
-      </p>
+        <div className="flex items-center gap-4">
+          <Skeleton className="size-10 rounded-[13px]" />
+          <div className="min-w-0 flex-1">
+            <Skeleton className="h-3.5 w-3/5" />
+            <Skeleton className="mt-2 h-3 w-2/5" />
+          </div>
+        </div>
+        {/*
+          The signal is the solid skeleton ground and this sentence, not the
+          pulse: the app's reduced-motion rule freezes every animation, and a
+          loading state carried only by movement disappears for the users most
+          likely to have that setting on.
+        */}
+        <p role="status" className="mt-4 text-[13px] font-semibold text-ink-2">
+          Checking whether today is a Holiday…
+        </p>
       </div>
     </Card>
   )
@@ -321,24 +498,21 @@ function TodayChecking() {
  */
 function TodayHolidayError({ onRetry }: { onRetry: () => void }) {
   return (
-    <Card className="p-5">
-      {/* Card does not forward extra props, so the marker lives here. */}
-      <div data-today-holiday-error>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p role="alert" className="text-[13px] font-semibold text-coral">
-          Could not check whether today is a Holiday. Nothing has been lost.
-        </p>
-        <button
-          type="button"
-          onClick={onRetry}
-          className="inline-flex items-center gap-1.5 rounded-control border border-edge-strong px-3.5 py-2 text-[13px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite"
-        >
-          <RefreshCw className="size-4" aria-hidden="true" />
-          Try again
-        </button>
-      </div>
-      </div>
-    </Card>
+    <div data-today-holiday-error>
+      <Banner
+        tone="danger"
+        live="alert"
+        title="Could not check whether today is a Holiday"
+        actions={
+          <Button size="sm" onClick={onRetry}>
+            <RefreshCw className="size-4" aria-hidden="true" />
+            Try again
+          </Button>
+        }
+      >
+        Your routine is not being guessed at, and nothing has been lost.
+      </Banner>
+    </div>
   )
 }
 
@@ -355,53 +529,56 @@ function TodayHolidayError({ onRetry }: { onRetry: () => void }) {
 function HolidayToday({ route }: { route: Route }) {
   const trainingOn = route.trainingOn === true
   return (
-    <Card className="p-5 md:p-6">
-      {/* Card does not forward extra props, so the marker lives here. */}
+    <HeroCard tone="holiday" className="mb-5">
+      {/* HeroCard does not forward extra props, so the marker lives here. */}
       <div data-today-holiday data-today-training={trainingOn ? 'on' : 'off'}>
-      <div className="flex items-start gap-4">
-        <span
-          aria-hidden="true"
-          className="grid size-12 shrink-0 place-items-center rounded-2xl bg-holiday/15 text-holiday md:size-14"
-        >
-          <Palmtree className="size-6" />
-        </span>
-        <div className="min-w-0">
-          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-holiday">
-            Holiday · {trainingOn ? 'Training on' : 'Exempt'}
-          </p>
-          <h2 className="mt-1 text-xl font-extrabold tracking-tight text-offwhite md:text-2xl">
-            {route.name || 'A planned pause from the normal routine.'}
-          </h2>
-          <p className="mt-1.5 text-[13px] leading-relaxed text-ink-faint">
-            {trainingOn
-              ? 'Your work routine stays paused, and the recovery-day schedule stays in place with today’s training session added. Foundation Day keeps counting.'
-              : 'Your work routine is paused and today follows the recovery-day schedule. No training is required, and nothing is counted as missed. Foundation Day keeps counting.'}
-          </p>
-          <p className="mt-2 inline-flex items-center rounded-control border border-edge px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-faint">
-            {trainingOn ? 'Training on' : 'Training off'}
-          </p>
+        <div className="flex items-start gap-4">
+          <span
+            aria-hidden="true"
+            className="grid size-12 shrink-0 place-items-center rounded-2xl bg-surface text-holiday-ink md:size-14"
+          >
+            <Palmtree className="size-6" />
+          </span>
+          <div className="min-w-0">
+            {/*
+              The accepted wording, unchanged. "Exempt" and "Training on" are
+              genuinely different days and the difference decides whether a
+              streak moves, so the mode is stated in one unambiguous line
+              rather than split across two chips a reader has to combine.
+            */}
+            <p className="text-[11px] font-bold uppercase tracking-[0.09em] text-holiday-ink">
+              Holiday · {trainingOn ? 'Training on' : 'Exempt'}
+            </p>
+            <h2 className="mt-1 text-xl font-bold tracking-[-0.015em] text-ink md:text-2xl">
+              {route.name || 'A planned pause from the normal routine.'}
+            </h2>
+            <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-2">
+              {trainingOn
+                ? 'Your work routine stays paused, and the recovery-day schedule stays in place with today’s training session added. Foundation Day keeps counting.'
+                : 'Your work routine is paused and today follows the recovery-day schedule. No training is required, and nothing is counted as missed. Foundation Day keeps counting.'}
+            </p>
+            <p className="mt-2 inline-flex items-center rounded-control border border-line px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.09em] text-ink-3">
+              {trainingOn ? 'Training on' : 'Training off'}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-5 flex flex-wrap items-center gap-2">
+          <ButtonLink to="/calendar">
+            <CalendarRange className="size-4" aria-hidden="true" />
+            Open Calendar
+          </ButtonLink>
+          {!trainingOn && (
+            <Link
+              to="/training"
+              className="inline-flex min-h-tap items-center gap-1.5 rounded-control px-4 text-sm font-bold text-ink-2 no-underline transition-colors duration-fast hover:text-ink"
+            >
+              <Dumbbell className="size-4" aria-hidden="true" />
+              Train anyway
+            </Link>
+          )}
         </div>
       </div>
-
-      <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center">
-        <Link
-          to="/calendar"
-          className="inline-flex h-11 items-center justify-center gap-1.5 rounded-control border border-edge-strong px-4 text-[13px] font-bold text-ink-dim transition-colors duration-150 hover:border-blue/60 hover:text-offwhite"
-        >
-          <CalendarRange className="size-4" aria-hidden="true" />
-          Open Calendar
-        </Link>
-        {!trainingOn && (
-          <Link
-            to="/training"
-            className="inline-flex h-11 items-center justify-center gap-1.5 rounded-control border border-edge px-4 text-[13px] font-bold text-ink-faint transition-colors duration-150 hover:border-edge-strong hover:text-offwhite"
-          >
-            <Dumbbell className="size-4" aria-hidden="true" />
-            Train anyway
-          </Link>
-        )}
-      </div>
-      </div>
-    </Card>
+    </HeroCard>
   )
 }

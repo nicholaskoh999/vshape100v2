@@ -1,11 +1,17 @@
 # Round 24 — UI/UX Redesign Blueprint + Fresh Reset Plan v1
 
-**Status: BLUEPRINT COMPLETE — READY FOR INDEPENDENT DESIGN REVIEW**
-**Round 24 is still active. No production deployment. No destructive reset.**
+**Status: BLUEPRINT ACCEPTED · SOURCE IMPLEMENTED — READY FOR INDEPENDENT SOURCE + UI REVIEW**
+**Round 24 is still active. No production deployment. No destructive reset. No merge.**
 
 Baseline: `7213f3b15fc0af6597e0ee236802357e16985084`
 Checkpoint: `checkpoint/pre-round24-redesign` → that exact SHA
-Application source changed: **none**
+Blueprint reviewed at: `1753862e2978dc744c745ce24f83f401d31f7c8f`
+
+> **This document described the blueprint stage.** The blueprint passed independent
+> review and the controller extended the same Round 24 into source implementation
+> (Q8, approved), so the "no application source changed" property below applied to the
+> blueprint commit only. See `11_IMPLEMENTATION_REPORT.md` for what was actually built,
+> and `10_DEFERRED_AND_APPROVALS.md` §1 for the locked decisions it was built against.
 
 ---
 

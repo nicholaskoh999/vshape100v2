@@ -71,7 +71,7 @@ export function ExerciseLibraryPage() {
       <Link
         to="/settings"
         aria-label="Back to Settings"
-        className="mb-4 inline-flex items-center gap-1.5 rounded-control text-[13px] font-semibold text-ink-faint transition-colors duration-150 hover:text-offwhite"
+        className="mb-4 inline-flex items-center gap-1.5 rounded-control text-[13px] font-semibold text-ink-3 transition-colors duration-fast hover:text-ink"
       >
         <ArrowLeft className="size-4" aria-hidden="true" />
         Settings
@@ -86,7 +86,7 @@ export function ExerciseLibraryPage() {
       <div
         role="status"
         aria-live="polite"
-        className="mb-4 flex items-center gap-2 text-[13px] text-ink-faint"
+        className="mb-4 flex items-center gap-2 text-[13px] text-ink-3"
       >
         {library.status === 'loading' && (
           <>
@@ -96,11 +96,11 @@ export function ExerciseLibraryPage() {
         )}
         {library.status === 'error' && (
           <>
-            <span className="text-coral">Media status could not be loaded.</span>
+            <span className="text-danger-ink">Media status could not be loaded.</span>
             <button
               type="button"
               onClick={library.reload}
-              className="rounded-control font-bold text-blue underline-offset-2 hover:underline"
+              className="rounded-control font-bold text-info-ink underline-offset-2 hover:underline"
             >
               Retry
             </button>
@@ -108,11 +108,11 @@ export function ExerciseLibraryPage() {
         )}
         {programmeStatus === 'error' && (
           <>
-            <span className="text-coral">Your programme could not be loaded.</span>
+            <span className="text-danger-ink">Your programme could not be loaded.</span>
             <button
               type="button"
               onClick={reloadProgramme}
-              className="rounded-control font-bold text-blue underline-offset-2 hover:underline"
+              className="rounded-control font-bold text-info-ink underline-offset-2 hover:underline"
             >
               Retry
             </button>
@@ -152,11 +152,11 @@ export function ExerciseLibraryPage() {
 
       {archived.length > 0 && (
         <section className="mt-6" data-archived-section>
-          <h2 className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em] text-ink-faint">
+          <h2 className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.09em] text-ink-3">
             <Archive className="size-3.5" aria-hidden="true" />
             Archived
           </h2>
-          <p className="mb-3 text-[13px] text-ink-faint">
+          <p className="mb-3 text-[13px] text-ink-3">
             Kept, with all their history and media. They hold no place in any
             weekday until you put them back.
           </p>
@@ -166,15 +166,15 @@ export function ExerciseLibraryPage() {
                 <Link
                   to={`/settings/exercises/${exercise.exerciseId}`}
                   aria-label={`Edit settings for ${exercise.name}`}
-                  className="flex items-center gap-3 rounded-card border border-dashed border-edge px-4 py-3 transition-colors duration-150 hover:border-edge-strong"
+                  className="flex items-center gap-3 rounded-card border border-dashed border-line px-4 py-3 transition-colors duration-fast hover:border-line-strong"
                 >
-                  <span className="min-w-0 flex-1 truncate text-sm font-bold text-ink-dim">
+                  <span className="min-w-0 flex-1 truncate text-sm font-bold text-ink-2">
                     {exercise.name}
                   </span>
-                  <span className="shrink-0 rounded-full bg-surface-overlay px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-[0.1em] text-ink-faint">
+                  <span className="shrink-0 rounded-full bg-surface-soft px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-[0.09em] text-ink-3">
                     Archived
                   </span>
-                  <ChevronRight className="size-4 shrink-0 text-ink-faint" aria-hidden="true" />
+                  <ChevronRight className="size-4 shrink-0 text-ink-3" aria-hidden="true" />
                 </Link>
               </li>
             ))}
@@ -209,19 +209,19 @@ function ExerciseRow({
       className="block rounded-card"
     >
       <motion.div {...press} tabIndex={-1}>
-        <Card className="flex items-center gap-4 p-4.5 transition-colors duration-150 hover:border-edge-strong">
+        <Card className="flex items-center gap-4 p-4.5 transition-colors duration-fast hover:border-line-strong">
           <span
             aria-hidden="true"
-            className="grid size-10 shrink-0 place-items-center rounded-xl bg-surface-overlay text-ink-dim"
+            className="grid size-10 shrink-0 place-items-center rounded-xl bg-surface-soft text-ink-2"
           >
             {hasMedia ? <Images className="size-5" /> : <ImageOff className="size-5" />}
           </span>
 
           <div className="min-w-0 flex-1">
-            <p className="truncate font-extrabold tracking-tight text-offwhite">
+            <p className="truncate font-bold tracking-tight text-ink">
               {entry.name}
             </p>
-            <p className="mt-0.5 truncate text-[13px] text-ink-faint">
+            <p className="mt-0.5 truncate text-[13px] text-ink-3">
               Used in {usedInSummary(entry)}
             </p>
             <p
@@ -229,7 +229,7 @@ function ExerciseRow({
                 'mt-0.5 truncate text-[12px] font-semibold',
                 // An unreadable setting is a problem, not a blank. Saying "not
                 // set" would hide that this exercise's workouts are refused.
-                inputTypeUnreadable ? 'text-coral' : 'text-ink-faint',
+                inputTypeUnreadable ? 'text-danger-ink' : 'text-ink-3',
               )}
             >
               {!inputTypeKnown
@@ -245,14 +245,14 @@ function ExerciseRow({
           <span
             className={
               known && hasMedia
-                ? 'shrink-0 rounded-full bg-surface-overlay px-3 py-1 text-[12px] font-bold text-completed'
-                : 'shrink-0 rounded-full bg-surface-overlay px-3 py-1 text-[12px] font-bold text-ink-faint'
+                ? 'shrink-0 rounded-full bg-surface-soft px-3 py-1 text-[12px] font-bold text-success-ink'
+                : 'shrink-0 rounded-full bg-surface-soft px-3 py-1 text-[12px] font-bold text-ink-3'
             }
           >
             {known ? (hasMedia ? 'Media set' : 'No media') : 'Checking'}
           </span>
 
-          <ChevronRight className="size-5 shrink-0 text-ink-faint" aria-hidden="true" />
+          <ChevronRight className="size-5 shrink-0 text-ink-3" aria-hidden="true" />
         </Card>
       </motion.div>
     </Link>

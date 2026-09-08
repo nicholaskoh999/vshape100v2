@@ -1,3 +1,11 @@
+/*
+ * ROUND 24 (Q6). This suite drives a real SQLite database through `node:sqlite`,
+ * which Vite refuses to bundle for the client environment — the whole file
+ * failed to load under the project's default jsdom environment, so none of its
+ * tests had ever run here. It needs Node, not a DOM.
+ *
+ * @vitest-environment node
+ */
 import { DatabaseSync } from 'node:sqlite'
 
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -16,6 +24,7 @@ import migration0011 from '../../migrations/0011_account_settings.sql?raw'
 import migration0012 from '../../migrations/0012_training_flex.sql?raw'
 import migration0013 from '../../migrations/0013_workout_input_types.sql?raw'
 import migration0014 from '../../migrations/0014_workout_recovery_and_corrections.sql?raw'
+import migration0015 from '../../migrations/0015_programme_builder.sql?raw'
 
 import { runFreshStart } from '../../scripts/fresh-start.mjs'
 
@@ -43,10 +52,16 @@ import { runFreshStart } from '../../scripts/fresh-start.mjs'
  * transaction" are the same thing — which is what makes a half-reset impossible.
  */
 
+/*
+ * ROUND 24 (Q6 A). The chain stopped at 0014, so the operator path had never
+ * been executed against the schema as it actually stands — 0015 adds the three
+ * programme tables, which a Fresh Start must leave completely untouched. A
+ * reset is approved against this test; it has to build the real database.
+ */
 const CHAIN = [
   migration0001, migration0002, migration0003, migration0004, migration0005, migration0006,
   migration0007, migration0008, migration0009, migration0010, migration0011, migration0012,
-  migration0013, migration0014,
+  migration0013, migration0014, migration0015,
 ]
 
 const CUTOFF = '2026-09-01'

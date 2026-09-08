@@ -37,16 +37,23 @@ export function AppShell() {
         <SideNav variant="full" />
       </div>
 
+      {/*
+        ROUND 24 container rhythm. Mobile used a 448px column, which leaves a
+        phone's edges unused; it is now the full width minus a real 20px
+        gutter, with a usable 720px intermediate at tablet and 1120px at
+        desktop. Screens differ in gutter and section gap only — never in the
+        internal rhythm of a card.
+      */}
       <main
         id="main"
-        className="min-h-dvh pb-24 pt-safe md:pb-10 md:pl-[76px] xl:pl-60"
+        className="min-h-dvh pb-24 pt-safe md:pb-12 md:pl-24 xl:pl-60"
       >
         <motion.div
           key={pathname}
           variants={pageVariants}
           initial="initial"
           animate="enter"
-          className="mx-auto w-full max-w-md px-4 pt-4 md:max-w-2xl md:px-8 md:pt-8 xl:max-w-4xl"
+          className="mx-auto w-full max-w-[46rem] px-5 pt-4.5 md:px-8 md:pt-7 xl:max-w-[70rem] xl:px-10 xl:pt-8"
         >
           <Outlet />
         </motion.div>

@@ -10,19 +10,19 @@ import { itemIcons } from './itemIcons'
 import { statusLabel } from './statusMeta'
 
 const surface: Record<TodayStatus, string> = {
-  NOW: 'border-blue/45 bg-surface-raised',
-  LATE: 'border-late/35 bg-late/[0.05]',
-  NEXT: 'border-edge-strong bg-surface',
-  LATER: 'border-edge bg-surface/60',
-  DONE_EARLIER: 'border-edge/70 bg-surface/35',
+  NOW: 'border-accent-edge/45 bg-accent-soft/45',
+  LATE: 'border-warn-ink/25 bg-warn-soft',
+  NEXT: 'border-line-strong bg-surface',
+  LATER: 'border-line bg-surface',
+  DONE_EARLIER: 'border-line bg-surface',
 }
 
 const iconTone: Record<TodayStatus, string> = {
-  NOW: 'bg-blue/15 text-blue',
-  LATE: 'bg-late/15 text-late',
-  NEXT: 'bg-surface-overlay text-ink-dim',
-  LATER: 'bg-surface-overlay text-ink-faint',
-  DONE_EARLIER: 'bg-completed/15 text-completed',
+  NOW: 'bg-accent text-ink border border-accent-edge',
+  LATE: 'bg-surface text-warn-ink',
+  NEXT: 'bg-surface-soft text-ink-2',
+  LATER: 'bg-surface-soft text-ink-3',
+  DONE_EARLIER: 'bg-success-soft text-success-ink',
 }
 
 /**
@@ -83,8 +83,8 @@ export function TodayItemRow({
                 label stay one unit so a narrow column never orphans it. */}
             <span
               className={cn(
-                'inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-[0.1em]',
-                entry.status === 'LATE' ? 'text-late' : 'text-ink-faint',
+                'inline-flex items-center gap-1 text-[12px] font-semibold',
+                entry.status === 'LATE' ? 'text-warn-ink' : 'text-ink-3',
               )}
             >
               {entry.status === 'LATE' && (
@@ -93,10 +93,10 @@ export function TodayItemRow({
               {entry.timeLabel}
             </span>
             {entry.spillover ? (
-              <span className="text-[11px] font-semibold text-ink-faint">· yesterday</span>
+              <span className="text-[12px] font-semibold text-ink-3">· yesterday</span>
             ) : (
               afterMidnight && (
-                <span className="text-[11px] font-semibold text-ink-faint">
+                <span className="text-[12px] font-semibold text-ink-3">
                   · after midnight
                 </span>
               )
@@ -106,8 +106,8 @@ export function TodayItemRow({
 
           <p
             className={cn(
-              'line-clamp-2 text-[15px] font-bold tracking-tight',
-              done ? 'text-ink-dim line-through decoration-completed/60' : 'text-offwhite',
+              'line-clamp-2 text-[15px] font-semibold',
+              done ? 'text-ink-3 line-through decoration-success-ink/60' : 'text-ink',
             )}
           >
             {entry.item.to && !done ? (
@@ -123,12 +123,12 @@ export function TodayItemRow({
           </p>
 
           {entry.item.note && (
-            <p className="line-clamp-2 text-[12.5px] text-ink-faint">{entry.item.note}</p>
+            <p className="line-clamp-2 text-[13px] text-ink-2">{entry.item.note}</p>
           )}
         </div>
 
         {entry.item.to && !done && (
-          <ChevronRight className="size-4 shrink-0 text-ink-faint" aria-hidden="true" />
+          <ChevronRight className="size-4 shrink-0 text-ink-4" aria-hidden="true" />
         )}
         <CompleteToggle
           entry={entry}

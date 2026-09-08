@@ -88,28 +88,28 @@ function StreakSummary({
     <Card className="p-5">
       {/* Card does not forward extra props, so the marker lives here. */}
       <div data-streak-summary data-streak-state={streak.status}>
-        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-ink-faint">
+        <p className="text-[11px] font-bold uppercase tracking-[0.09em] text-ink-3">
           Training streak
         </p>
 
         {streak.status === 'checking' && (
-          <p className="mt-2 text-[13px] leading-relaxed text-ink-faint">
+          <p className="mt-2 text-[13px] leading-relaxed text-ink-3">
             Checking streak
           </p>
         )}
 
         {streak.status === 'unavailable' && (
           <div className="mt-2">
-            <p className="text-[15px] font-extrabold tracking-tight text-offwhite">
+            <p className="text-[15px] font-bold tracking-tight text-ink">
               Streak unavailable
             </p>
-            <p className="mt-1 text-[12px] leading-relaxed text-ink-faint">
+            <p className="mt-1 text-[12px] leading-relaxed text-ink-3">
               {UNAVAILABLE_COPY[streak.reason]} Nothing has been counted as missed.
             </p>
             <button
               type="button"
               onClick={onRetry}
-              className="mt-3 inline-flex items-center rounded-control border border-edge-strong px-3.5 py-2 text-[13px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite"
+              className="mt-3 inline-flex items-center rounded-control border border-line-strong px-3.5 py-2 text-[13px] font-bold text-ink-2 transition-colors duration-fast hover:text-ink"
             >
               Try again
             </button>
@@ -128,7 +128,7 @@ function StreakSummary({
           </dl>
         )}
 
-        <p className="mt-4 text-[12px] leading-relaxed text-ink-faint">
+        <p className="mt-4 text-[12px] leading-relaxed text-ink-3">
           Weekends and Holidays are exempt — they never break a streak.
         </p>
       </div>
@@ -139,10 +139,10 @@ function StreakSummary({
 function Stat({ label, value, unit }: { label: string; value: number; unit: string }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[12px] font-semibold text-ink-faint">{label}</dt>
-      <dd className="mt-0.5 text-[22px] font-extrabold tabular-nums tracking-tight text-offwhite">
+      <dt className="text-[12px] font-semibold text-ink-3">{label}</dt>
+      <dd className="mt-0.5 text-[22px] font-bold tabular-nums tracking-tight text-ink">
         {value}
-        <span className="ml-1 text-[11px] font-semibold text-ink-faint">
+        <span className="ml-1 text-[11px] font-semibold text-ink-3">
           {value === 1 ? unit.replace(/s$/, '') : unit}
         </span>
       </dd>
@@ -166,14 +166,14 @@ function MilestoneCard({ milestone }: { milestone: Milestone }) {
       className={cn(
         'flex h-full flex-col items-center gap-2.5 rounded-card border px-3 py-6 text-center',
         unlocked
-          ? 'border-edge-strong bg-surface'
-          : 'border-dashed border-edge bg-surface/50',
+          ? 'border-line-strong bg-surface'
+          : 'border-dashed border-line bg-surface/50',
       )}
     >
       <span
         className={cn(
           'grid size-11 shrink-0 place-items-center rounded-full',
-          unlocked ? 'bg-blue/15 text-blue' : 'bg-surface-overlay text-ink-faint',
+          unlocked ? 'bg-accent/15 text-info-ink' : 'bg-surface-soft text-ink-3',
         )}
       >
         {unlocked ? (
@@ -188,14 +188,14 @@ function MilestoneCard({ milestone }: { milestone: Milestone }) {
       <p
         className={cn(
           'text-[13px] font-bold',
-          unlocked ? 'text-offwhite' : 'text-ink-faint',
+          unlocked ? 'text-ink' : 'text-ink-3',
         )}
       >
         {milestone.label}
       </p>
 
       {/* One status line, never a fabricated unlock date. */}
-      <p className="text-[11px] font-semibold text-ink-faint">
+      <p className="text-[11px] font-semibold text-ink-3">
         {unlocked ? 'Unlocked' : state === 'unresolved' ? 'Checking' : progress}
       </p>
 

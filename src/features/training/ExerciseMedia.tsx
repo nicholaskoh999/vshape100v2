@@ -212,14 +212,14 @@ function Skeleton() {
   return (
     <div
       aria-hidden="true"
-      className="absolute inset-0 animate-pulse bg-surface-raised"
+      className="absolute inset-0 animate-pulse bg-surface"
     />
   )
 }
 
 function Fallback({ label }: { label: string }) {
   return (
-    <div className="relative flex flex-col items-center gap-2 text-ink-faint">
+    <div className="relative flex flex-col items-center gap-2 text-ink-3">
       <ImageOff className="size-7" aria-hidden="true" />
       <p className="text-[13px] font-semibold">{label}</p>
     </div>

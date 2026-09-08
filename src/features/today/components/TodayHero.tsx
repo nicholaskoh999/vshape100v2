@@ -34,15 +34,15 @@ export function TodayHero({
 }) {
   if (!entry) {
     return (
-      <div className="flex items-center gap-4 rounded-card border border-edge bg-surface p-5 md:p-6">
-        <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-surface-overlay text-ink-faint">
+      <div className="flex items-center gap-4 rounded-card border border-line bg-surface p-5 shadow-card md:p-6">
+        <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-surface-soft text-ink-3">
           <Coffee className="size-5" aria-hidden="true" />
         </span>
         <div className="min-w-0">
-          <h2 className="text-lg font-extrabold tracking-tight text-offwhite">
+          <h2 className="text-lg font-bold tracking-[-0.015em] text-ink">
             Nothing scheduled right now
           </h2>
-          <p className="mt-0.5 text-[13px] text-ink-faint">{routeSummary}</p>
+          <p className="mt-0.5 text-[13px] text-ink-2">{routeSummary}</p>
         </div>
       </div>
     )
@@ -59,28 +59,19 @@ export function TodayHero({
       transition={{ layout: spring.snappy, ...tween.enter }}
       className={cn(
         'relative overflow-hidden rounded-card border p-5 shadow-card md:p-6',
-        isNext ? 'border-edge-strong bg-surface' : 'border-blue/50 bg-surface-raised',
-        done && 'border-completed/45',
+        isNext ? 'border-line-strong bg-surface' : 'border-accent-edge/45 bg-surface',
+        done && 'border-success-ink/35',
       )}
     >
-      {/* One restrained tint, in the same language as the app background. */}
-      <span
-        aria-hidden="true"
-        className={cn(
-          'pointer-events-none absolute -right-16 -top-24 size-56 rounded-full blur-3xl',
-          done ? 'bg-completed/10' : isNext ? 'bg-blue/[0.07]' : 'bg-blue/15',
-        )}
-      />
-
       <div className="relative flex items-start gap-4">
         <span
           className={cn(
             'grid size-12 shrink-0 place-items-center rounded-2xl md:size-14',
             done
-              ? 'bg-completed/15 text-completed'
+              ? 'bg-success-soft text-success-ink'
               : isNext
-                ? 'bg-surface-overlay text-ink-dim'
-                : 'bg-blue/15 text-blue',
+                ? 'bg-surface-soft text-ink-2'
+                : 'border border-accent-edge bg-accent text-ink',
           )}
         >
           <Icon className="size-6" aria-hidden="true" />
@@ -89,34 +80,32 @@ export function TodayHero({
         <div className="min-w-0 flex-1">
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <StatusBadge status={entry.status} />
-            <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-faint">
-              {entry.timeLabel}
-            </span>
+            <span className="text-[12px] font-semibold text-ink-2">{entry.timeLabel}</span>
             {isNext && (
-              <span className="text-[11px] font-semibold text-blue">
+              <span className="text-[12px] font-semibold text-accent-ink">
                 {formatLead(entry.start - nowMinutes)}
               </span>
             )}
             {entry.spillover ? (
-              <span className="text-[11px] font-semibold text-ink-faint">from yesterday</span>
+              <span className="text-[12px] font-semibold text-ink-3">from yesterday</span>
             ) : (
               afterMidnight && (
-                <span className="text-[11px] font-semibold text-ink-faint">after midnight</span>
+                <span className="text-[12px] font-semibold text-ink-3">after midnight</span>
               )
             )}
           </div>
 
           <h2
             className={cn(
-              'text-xl font-extrabold tracking-tight md:text-2xl',
-              done ? 'text-ink-dim line-through decoration-completed/60' : 'text-offwhite',
+              'text-xl font-bold tracking-[-0.015em] md:text-2xl',
+              done ? 'text-ink-3 line-through decoration-success-ink/60' : 'text-ink',
             )}
           >
             {entry.item.title}
           </h2>
 
           {entry.item.note && (
-            <p className="mt-1 text-[13px] text-ink-faint">{entry.item.note}</p>
+            <p className="mt-1 text-[13px] text-ink-2">{entry.item.note}</p>
           )}
         </div>
       </div>
@@ -135,7 +124,7 @@ export function TodayHero({
               whileTap={press.whileTap}
               tabIndex={-1}
               transition={press.transition}
-              className="inline-flex h-12 w-full items-center justify-center gap-1 rounded-control border border-edge-strong px-4 text-sm font-bold text-ink-dim transition-colors duration-150 hover:border-blue/60 hover:text-offwhite sm:w-auto"
+              className="inline-flex min-h-tap w-full items-center justify-center gap-1 rounded-control border border-line-strong bg-surface px-4 text-sm font-bold text-ink transition-colors duration-fast hover:border-ink-4 sm:w-auto"
             >
               Open session
               <ChevronRight className="size-4" aria-hidden="true" />

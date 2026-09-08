@@ -133,7 +133,7 @@ export function ExtraWorkoutPage() {
         <Card className="mb-4 p-4">
           <p
             role="status"
-            className="flex items-center gap-2 text-[13px] font-semibold text-ink-dim"
+            className="flex items-center gap-2 text-[13px] font-semibold text-ink-2"
           >
             <Loader2 className="size-4 animate-spin" aria-hidden="true" />
             Checking today's extra workout…
@@ -144,13 +144,13 @@ export function ExtraWorkoutPage() {
       {status === 'error' && (
         <Card className="mb-4 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p role="alert" className="text-[13px] font-semibold text-coral">
+            <p role="alert" className="text-[13px] font-semibold text-danger-ink">
               Could not load your extra workout. Nothing has been lost.
             </p>
             <button
               type="button"
               onClick={workout.reload}
-              className="inline-flex items-center gap-1.5 rounded-control border border-edge-strong px-3.5 py-2 text-[13px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite"
+              className="inline-flex items-center gap-1.5 rounded-control border border-line-strong px-3.5 py-2 text-[13px] font-bold text-ink-2 transition-colors duration-fast hover:text-ink"
             >
               <RefreshCw className="size-4" aria-hidden="true" />
               Try again
@@ -183,7 +183,7 @@ export function ExtraWorkoutPage() {
       )}
 
       {workout.mutationError && (
-        <p role="alert" className="mb-4 text-[13px] font-semibold text-coral">
+        <p role="alert" className="mb-4 text-[13px] font-semibold text-danger-ink">
           {workout.mutationError}
         </p>
       )}
@@ -249,7 +249,7 @@ function TemplateChooser({
   return (
     <>
       <Card className="mb-4 p-4">
-        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-ink-faint">
+        <p className="text-[11px] font-bold uppercase tracking-[0.09em] text-ink-3">
           Based on
         </p>
         <ul className="mt-3 flex flex-col gap-2" role="radiogroup" aria-label="Foundation session">
@@ -265,29 +265,29 @@ function TemplateChooser({
                   whileTap={press.whileTap}
                   transition={press.transition}
                   className={cn(
-                    'flex w-full items-center gap-3 rounded-card border px-4 py-3 text-left transition-colors duration-150',
+                    'flex w-full items-center gap-3 rounded-card border px-4 py-3 text-left transition-colors duration-fast',
                     active
-                      ? 'border-blue/45 bg-surface-raised'
-                      : 'border-edge hover:border-edge-strong',
+                      ? 'border-blue/45 bg-surface'
+                      : 'border-line hover:border-line-strong',
                   )}
                 >
                   <span
                     aria-hidden="true"
                     className={cn(
-                      'grid size-5 shrink-0 place-items-center rounded-full border transition-colors duration-150',
-                      active ? 'border-blue bg-blue text-offwhite' : 'border-edge-strong',
+                      'grid size-5 shrink-0 place-items-center rounded-full border transition-colors duration-fast',
+                      active ? 'border-blue bg-accent text-ink' : 'border-line-strong',
                     )}
                   >
                     {active && <Check className="size-3.5" />}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-2">
-                      <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-ink-faint">
+                      <span className="text-[11px] font-bold uppercase tracking-[0.09em] text-ink-3">
                         {session.day}
                       </span>
                       <IntensityBadge intensity={session.intensity} />
                     </span>
-                    <span className="mt-0.5 block truncate font-bold text-offwhite">
+                    <span className="mt-0.5 block truncate font-bold text-ink">
                       {session.focus}
                     </span>
                   </span>
@@ -300,14 +300,14 @@ function TemplateChooser({
 
       <Card className="mb-4 p-4">
         {selected === null ? (
-          <p className="text-[13px] text-ink-faint">Choose a session to preview it.</p>
+          <p className="text-[13px] text-ink-3">Choose a session to preview it.</p>
         ) : (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-[15px] font-bold text-offwhite">
+              <p className="text-[15px] font-bold text-ink">
                 {plan ? 'Preview' : 'Cannot be logged'}
               </p>
-              <p className="mt-0.5 text-[13px] text-ink-faint">
+              <p className="mt-0.5 text-[13px] text-ink-3">
                 {plan
                   ? `${selected.exercises.length} exercises · ${totalSets} sets to log · nothing is recorded until you start`
                   : 'This session cannot be logged yet.'}
@@ -319,7 +319,7 @@ function TemplateChooser({
                 if (plan) onStart(selected, plan)
               }}
               disabled={!plan || starting}
-              className="inline-flex items-center gap-1.5 rounded-control bg-blue px-4 py-2.5 text-[13px] font-bold text-offwhite transition-opacity duration-150 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 rounded-control bg-accent px-4 py-2.5 text-[13px] font-bold text-ink transition-opacity duration-fast disabled:cursor-not-allowed disabled:opacity-40"
             >
               {starting ? (
                 <Loader2 className="size-4 animate-spin" aria-hidden="true" />
@@ -334,10 +334,10 @@ function TemplateChooser({
 
       {selected && plan && (
         <Card className="mb-4">
-          <p className="px-4 pb-3 pt-4 text-[11px] font-bold uppercase tracking-[0.16em] text-ink-faint">
+          <p className="px-4 pb-3 pt-4 text-[11px] font-bold uppercase tracking-[0.09em] text-ink-3">
             What you would do
           </p>
-          <ol className="divide-y divide-edge border-t border-edge">
+          <ol className="divide-y divide-line border-t border-line">
             {plan.map((exercise, index) => (
               <li
                 key={`${exercise.exerciseId}-${index}`}
@@ -345,15 +345,15 @@ function TemplateChooser({
               >
                 <span
                   aria-hidden="true"
-                  className="grid size-7 shrink-0 place-items-center rounded-lg bg-surface-overlay text-[12px] font-extrabold text-ink-dim"
+                  className="grid size-7 shrink-0 place-items-center rounded-lg bg-surface-soft text-[12px] font-extrabold text-ink-2"
                 >
                   {index + 1}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-bold text-offwhite">
+                  <span className="block truncate font-bold text-ink">
                     {exercise.name}
                   </span>
-                  <span className="mt-0.5 block text-[13px] text-ink-faint">
+                  <span className="mt-0.5 block text-[13px] text-ink-3">
                     {exercise.prescription}
                     {exercise.equipment ? ` · ${exercise.equipment}` : ''}
                   </span>
@@ -390,22 +390,22 @@ function StartedExtra({
   return (
     <Card className="mb-4 p-4">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="rounded-full bg-blue/15 px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.12em] text-blue">
+        <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.09em] text-info-ink">
           Extra
         </span>
-        <p className="text-[15px] font-bold text-offwhite">Resume extra workout</p>
+        <p className="text-[15px] font-bold text-ink">Resume extra workout</p>
       </div>
 
-      <p className="mt-1 text-[13px] text-ink-faint">
+      <p className="mt-1 text-[13px] text-ink-3">
         Based on {sourceLabel ?? day}
       </p>
 
       {progress && (
         <>
-          <p className="mt-2 text-[13px] text-ink-faint">
+          <p className="mt-2 text-[13px] text-ink-3">
             {progress.resolved} / {progress.total} sets resolved
           </p>
-          <p className="mt-1 text-[12px] font-semibold text-ink-faint">
+          <p className="mt-1 text-[12px] font-semibold text-ink-3">
             {progress.completed} completed · {progress.skipped} skipped
           </p>
           <div
@@ -414,10 +414,10 @@ function StartedExtra({
             aria-valuemax={progress.total}
             aria-valuenow={progress.resolved}
             aria-label="Sets resolved"
-            className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-surface-overlay"
+            className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-surface-soft"
           >
             <div
-              className="h-full rounded-full bg-blue"
+              className="h-full rounded-full bg-accent"
               style={{
                 width: `${progress.total === 0 ? 0 : Math.round((progress.resolved / progress.total) * 100)}%`,
               }}
@@ -426,7 +426,7 @@ function StartedExtra({
         </>
       )}
 
-      <p className="mt-3 text-[12px] leading-relaxed text-ink-faint">
+      <p className="mt-3 text-[12px] leading-relaxed text-ink-3">
         This does not replace your scheduled session, and it does not count
         toward streaks.
       </p>
@@ -438,7 +438,7 @@ function BackToTraining() {
   return (
     <Link
       to="/training"
-      className="mb-4 inline-flex items-center gap-1.5 rounded-control text-[13px] font-semibold text-ink-faint transition-colors duration-150 hover:text-offwhite"
+      className="mb-4 inline-flex items-center gap-1.5 rounded-control text-[13px] font-semibold text-ink-3 transition-colors duration-fast hover:text-ink"
     >
       <ArrowLeft className="size-4" aria-hidden="true" />
       Training week

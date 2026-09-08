@@ -337,7 +337,7 @@ function MonthHeader({
       <MonthButton label="Previous month" onClick={onPrev}>
         <ChevronLeft className="size-5" aria-hidden="true" />
       </MonthButton>
-      <h2 className="text-[17px] font-extrabold tracking-tight text-offwhite md:text-xl">
+      <h2 className="text-[17px] font-bold tracking-tight text-ink md:text-xl">
         {label}
       </h2>
       <MonthButton label="Next month" onClick={onNext}>
@@ -361,7 +361,7 @@ function MonthButton({
       type="button"
       aria-label={label}
       onClick={onClick}
-      className="grid size-10 shrink-0 place-items-center rounded-control border border-edge text-ink-dim transition-colors duration-150 hover:border-edge-strong hover:text-offwhite"
+      className="grid size-10 shrink-0 place-items-center rounded-control border border-line text-ink-2 transition-colors duration-fast hover:border-line-strong hover:text-ink"
     >
       {children}
     </button>
@@ -369,13 +369,13 @@ function MonthButton({
 }
 
 const TYPE_STYLES: Record<DayType | 'unknown', string> = {
-  training: 'text-ink-dim',
-  saturday: 'text-cyan',
-  sunday: 'text-purple',
+  training: 'text-ink-2',
+  saturday: 'text-light-ink',
+  sunday: 'text-pump-ink',
   // Holiday is the override, so it is the only one with a filled surface.
-  holiday: 'bg-holiday/20 text-holiday',
+  holiday: 'bg-holiday-ink/20 text-holiday-ink',
   // Not a day type — the state before we know one.
-  unknown: 'text-ink-faint',
+  unknown: 'text-ink-3',
 }
 
 /** Short badges, so a dense grid can still say WHICH kind of day this was. */
@@ -405,7 +405,7 @@ function MonthGrid({
         {WEEKDAY_LABELS.map((label) => (
           <div
             key={label}
-            className="py-1 text-center text-[10px] font-bold uppercase tracking-[0.1em] text-ink-faint"
+            className="py-1 text-center text-[10px] font-bold uppercase tracking-[0.09em] text-ink-3"
           >
             {label}
           </div>
@@ -441,24 +441,24 @@ function MonthGrid({
               whileTap={press.whileTap}
               transition={press.transition}
               className={cn(
-                'flex aspect-square min-w-0 flex-col items-center justify-center rounded-control border text-[13px] font-bold transition-colors duration-150',
-                day.inMonth ? 'border-edge' : 'border-transparent opacity-40',
+                'flex aspect-square min-w-0 flex-col items-center justify-center rounded-control border text-[13px] font-bold transition-colors duration-fast',
+                day.inMonth ? 'border-line' : 'border-transparent opacity-40',
                 TYPE_STYLES[shown],
                 // A resolved day reads as deliberate, never as a gap.
-              chosen && 'border-lime/50 bg-lime/10 text-lime',
-              selected && 'border-blue bg-blue/15 text-offwhite',
-                day.date === today && !selected && 'border-blue/60',
+              chosen && 'border-accent-edge/50 bg-accent/10 text-accent-ink',
+              selected && 'border-accent-edge bg-accent/15 text-ink',
+                day.date === today && !selected && 'border-accent-edge/60',
                 !resolved && 'cursor-progress',
               )}
             >
               <span className="tabular-nums">{day.dayOfMonth}</span>
               {shown === 'holiday' && (
-                <span aria-hidden="true" className="mt-0.5 text-[9px] font-extrabold uppercase">
+                <span aria-hidden="true" className="mt-0.5 text-[9px] font-bold uppercase">
                   Hol
                 </span>
               )}
               {chosen && (
-                <span aria-hidden="true" className="mt-0.5 text-[9px] font-extrabold uppercase text-lime">
+                <span aria-hidden="true" className="mt-0.5 text-[9px] font-bold uppercase text-accent-ink">
                   {FLEX_BADGE[chosen]}
                 </span>
               )}
@@ -468,7 +468,7 @@ function MonthGrid({
       </div>
 
       {!resolved && (
-        <p role="status" className="mt-3 flex items-center gap-2 text-[12px] font-semibold text-ink-faint">
+        <p role="status" className="mt-3 flex items-center gap-2 text-[12px] font-semibold text-ink-3">
           <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
           Loading your calendar…
         </p>
@@ -480,13 +480,13 @@ function MonthGrid({
 function LoadError({ onRetry }: { onRetry: () => void }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 py-6">
-      <p role="alert" className="text-[13px] font-semibold text-coral">
+      <p role="alert" className="text-[13px] font-semibold text-danger-ink">
         Could not load your calendar. Nothing has been changed.
       </p>
       <button
         type="button"
         onClick={onRetry}
-        className="inline-flex items-center gap-1.5 rounded-control border border-edge-strong px-3.5 py-2 text-[13px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite"
+        className="inline-flex items-center gap-1.5 rounded-control border border-line-strong px-3.5 py-2 text-[13px] font-bold text-ink-2 transition-colors duration-fast hover:text-ink"
       >
         <RefreshCw className="size-4" aria-hidden="true" />
         Try again
@@ -509,13 +509,13 @@ function Legend() {
           <span
             aria-hidden="true"
             className={cn('size-2.5 rounded-full', {
-              training: 'bg-ink-faint',
-              saturday: 'bg-cyan',
-              sunday: 'bg-purple',
-              holiday: 'bg-holiday',
+              training: 'bg-ink-4',
+              saturday: 'bg-light-ink',
+              sunday: 'bg-pump-ink',
+              holiday: 'bg-holiday-ink',
             }[entry.type])}
           />
-          <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-ink-faint">
+          <span className="text-[11px] font-bold uppercase tracking-[0.09em] text-ink-3">
             {entry.label}
           </span>
         </li>
@@ -563,17 +563,17 @@ function HolidayEditor({
       <div className="flex items-start gap-3">
         <span
           aria-hidden="true"
-          className="grid size-11 shrink-0 place-items-center rounded-2xl bg-surface-overlay text-holiday"
+          className="grid size-11 shrink-0 place-items-center rounded-2xl bg-surface-soft text-holiday-ink"
         >
           <Plane className="size-5" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-ink-faint">
+          <p className="text-[11px] font-bold uppercase tracking-[0.09em] text-ink-3">
             {company ? 'Company Holiday' : 'Holiday Mode'}
           </p>
 
           {!selection ? (
-            <p className="mt-1 text-[13px] leading-relaxed text-ink-faint">
+            <p className="mt-1 text-[13px] leading-relaxed text-ink-3">
               Pick a day to mark it Holiday, or pick two to cover a range. Holiday is
               exempt — the routine pauses and Foundation keeps counting.
             </p>
@@ -581,21 +581,21 @@ function HolidayEditor({
             <>
               {/* The name leads when there is one — it is what the day IS. */}
               {editing?.name ? (
-                <p className="mt-1 text-[17px] font-extrabold tracking-tight text-offwhite">
+                <p className="mt-1 text-[17px] font-bold tracking-tight text-ink">
                   {editing.name}
                 </p>
               ) : null}
               <p
                 className={cn(
-                  'tracking-tight text-offwhite',
+                  'tracking-tight text-ink',
                   editing?.name
-                    ? 'mt-0.5 text-[13px] font-semibold text-ink-dim'
-                    : 'mt-1 text-[17px] font-extrabold',
+                    ? 'mt-0.5 text-[13px] font-semibold text-ink-2'
+                    : 'mt-1 text-[17px] font-bold',
                 )}
               >
                 {formatRange(selection.start, selection.end)}
               </p>
-              <p className="mt-0.5 text-[12px] font-semibold text-ink-faint">
+              <p className="mt-0.5 text-[12px] font-semibold text-ink-3">
                 {selectionLength(selection.start, selection.end)}{' '}
                 {selectionLength(selection.start, selection.end) === 1 ? 'day' : 'days'}
                 {company
@@ -611,7 +611,7 @@ function HolidayEditor({
               {editing && (
                 <p
                   data-holiday-training={editing.trainingOn ? 'on' : 'off'}
-                  className="mt-2 inline-flex items-center rounded-control border border-edge px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-faint"
+                  className="mt-2 inline-flex items-center rounded-control border border-line px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.09em] text-ink-3"
                 >
                   {editing.trainingOn ? 'Training on' : 'Training off'}
                 </p>
@@ -624,7 +624,7 @@ function HolidayEditor({
       {/* Naming is only meaningful for a Holiday the user owns. */}
       {selection && !company && (
         <label className="mt-4 block">
-          <span className="text-[12px] font-semibold text-ink-faint">Name (optional)</span>
+          <span className="text-[12px] font-semibold text-ink-3">Name (optional)</span>
           <input
             type="text"
             value={name}
@@ -632,7 +632,7 @@ function HolidayEditor({
             onChange={(event) => onNameChange(event.target.value)}
             placeholder="e.g. Family trip"
             data-holiday-name-input
-            className="mt-1 w-full rounded-control border border-edge bg-surface-overlay px-3 py-2.5 text-[13px] font-semibold text-offwhite placeholder:text-ink-faint focus:border-blue/60 focus:outline-none"
+            className="mt-1 w-full rounded-control border border-line bg-surface-soft px-3 py-2.5 text-[13px] font-semibold text-ink placeholder:text-ink-3 focus:border-accent-edge/60 focus:outline-none"
           />
         </label>
       )}
@@ -653,10 +653,10 @@ function HolidayEditor({
               aria-pressed={editing.trainingOn === value}
               data-training-option={value ? 'on' : 'off'}
               className={cn(
-                'inline-flex items-center rounded-control border px-3.5 py-2.5 text-[13px] font-bold transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40',
+                'inline-flex items-center rounded-control border px-3.5 py-2.5 text-[13px] font-bold transition-colors duration-fast disabled:cursor-not-allowed disabled:opacity-40',
                 editing.trainingOn === value
-                  ? 'border-blue bg-blue/15 text-offwhite'
-                  : 'border-edge-strong text-ink-dim hover:text-offwhite',
+                  ? 'border-accent-edge bg-accent/15 text-ink'
+                  : 'border-line-strong text-ink-2 hover:text-ink',
               )}
             >
               {value ? 'Training on' : 'Training off'}
@@ -671,7 +671,7 @@ function HolidayEditor({
             type="button"
             onClick={onSave}
             disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-control bg-blue px-4 py-2.5 text-[13px] font-bold text-offwhite transition-opacity duration-150 disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex items-center gap-1.5 rounded-control bg-accent px-4 py-2.5 text-[13px] font-bold text-ink transition-opacity duration-fast disabled:cursor-not-allowed disabled:opacity-40"
           >
             {busy && feedback.state === 'saving' && (
               <Loader2 className="size-4 animate-spin" aria-hidden="true" />
@@ -684,7 +684,7 @@ function HolidayEditor({
               type="button"
               onClick={onDelete}
               disabled={busy}
-              className="inline-flex items-center gap-1.5 rounded-control border border-edge-strong px-3.5 py-2.5 text-[13px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 rounded-control border border-line-strong px-3.5 py-2.5 text-[13px] font-bold text-ink-2 transition-colors duration-fast hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
             >
               {busy && feedback.state === 'deleting' ? (
                 <Loader2 className="size-4 animate-spin" aria-hidden="true" />
@@ -708,7 +708,7 @@ function EditorFeedback({ feedback }: { feedback: Feedback }) {
 
   if (feedback.state === 'conflict') {
     return (
-      <p role="alert" className="mt-3 text-[13px] font-semibold text-late">
+      <p role="alert" className="mt-3 text-[13px] font-semibold text-warn-ink">
         That overlaps an existing Holiday ({feedback.range}). Edit that one instead, or
         pick dates outside it.
       </p>
@@ -717,7 +717,7 @@ function EditorFeedback({ feedback }: { feedback: Feedback }) {
 
   if (feedback.state === 'error') {
     return (
-      <p role="alert" className="mt-3 text-[13px] font-semibold text-coral">
+      <p role="alert" className="mt-3 text-[13px] font-semibold text-danger-ink">
         {feedback.message}
       </p>
     )
@@ -731,7 +731,7 @@ function EditorFeedback({ feedback }: { feedback: Feedback }) {
   }[feedback.state]
 
   return (
-    <p role="status" className="mt-3 text-[13px] font-semibold text-ink-faint">
+    <p role="status" className="mt-3 text-[13px] font-semibold text-ink-3">
       {label}
     </p>
   )

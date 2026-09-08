@@ -136,10 +136,10 @@ export function RecordedWorkoutSets({
           setOpen(next)
           if (next && state.status === 'idle') void load()
         }}
-        className="inline-flex items-center gap-1 rounded-control text-[12px] font-bold text-ink-faint transition-colors duration-150 hover:text-offwhite"
+        className="inline-flex items-center gap-1 rounded-control text-[12px] font-bold text-ink-3 transition-colors duration-fast hover:text-ink"
       >
         <ChevronDown
-          className={cn('size-3.5 transition-transform duration-150', open && 'rotate-180')}
+          className={cn('size-3.5 transition-transform duration-fast', open && 'rotate-180')}
           aria-hidden="true"
         />
         {`Recorded sets · ${formatShortDate(date)}`}
@@ -148,19 +148,19 @@ export function RecordedWorkoutSets({
       {open && (
         <div className="mt-2">
           {state.status === 'loading' && (
-            <p className="flex items-center gap-2 text-[12px] text-ink-faint">
+            <p className="flex items-center gap-2 text-[12px] text-ink-3">
               <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
               Loading recorded sets
             </p>
           )}
 
           {state.status === 'error' && (
-            <p className="flex flex-wrap items-center gap-2 text-[12px] text-coral">
+            <p className="flex flex-wrap items-center gap-2 text-[12px] text-danger-ink">
               Recorded sets could not be loaded.
               <button
                 type="button"
                 onClick={() => void load()}
-                className="rounded-control font-bold text-blue underline-offset-2 hover:underline"
+                className="rounded-control font-bold text-info-ink underline-offset-2 hover:underline"
               >
                 Retry
               </button>
@@ -168,7 +168,7 @@ export function RecordedWorkoutSets({
           )}
 
           {state.status === 'ready' && completed.length === 0 && (
-            <p className="text-[12px] text-ink-faint">
+            <p className="text-[12px] text-ink-3">
               No completed sets in this workout.
             </p>
           )}
@@ -177,7 +177,7 @@ export function RecordedWorkoutSets({
             <button
               type="button"
               onClick={() => setConfirming(true)}
-              className="mt-2 inline-flex items-center gap-1.5 rounded-control border border-edge-strong px-2.5 py-1 text-[11px] font-bold text-ink-faint transition-colors duration-150 hover:text-offwhite"
+              className="mt-2 inline-flex items-center gap-1.5 rounded-control border border-line-strong px-2.5 py-1 text-[11px] font-bold text-ink-3 transition-colors duration-fast hover:text-ink"
             >
               <Trash2 className="size-3" aria-hidden="true" />
               Cancel workout start
@@ -185,9 +185,9 @@ export function RecordedWorkoutSets({
           )}
 
           {state.status === 'ready' && state.cancelable && confirming && (
-            <div className="mt-2 rounded-control border border-edge-strong bg-surface-overlay/60 p-2.5">
-              <p className="text-[12px] font-bold text-offwhite">Cancel this workout?</p>
-              <p className="mt-0.5 text-[11px] text-ink-faint">
+            <div className="mt-2 rounded-control border border-line-strong bg-surface-soft/60 p-2.5">
+              <p className="text-[12px] font-bold text-ink">Cancel this workout?</p>
+              <p className="mt-0.5 text-[11px] text-ink-3">
                 No sets have been recorded. This will return the workout to Not
                 started, and remove it from this list.
               </p>
@@ -196,7 +196,7 @@ export function RecordedWorkoutSets({
                   type="button"
                   onClick={() => void cancelStart()}
                   disabled={cancelling}
-                  className="inline-flex items-center gap-1.5 rounded-control bg-coral px-2.5 py-1 text-[11px] font-bold text-offwhite transition-opacity duration-150 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="inline-flex items-center gap-1.5 rounded-control bg-danger-ink px-2.5 py-1 text-[11px] font-bold text-ink transition-opacity duration-fast disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {cancelling && <Loader2 className="size-3 animate-spin" aria-hidden="true" />}
                   Cancel workout
@@ -205,7 +205,7 @@ export function RecordedWorkoutSets({
                   type="button"
                   onClick={() => setConfirming(false)}
                   disabled={cancelling}
-                  className="rounded-control px-2.5 py-1 text-[11px] font-bold text-ink-dim transition-colors duration-150 hover:text-offwhite disabled:cursor-not-allowed disabled:opacity-40"
+                  className="rounded-control px-2.5 py-1 text-[11px] font-bold text-ink-2 transition-colors duration-fast hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Keep workout
                 </button>
@@ -214,7 +214,7 @@ export function RecordedWorkoutSets({
           )}
 
           {cancelError && (
-            <p role="alert" className="mt-2 text-[11px] font-semibold text-coral">
+            <p role="alert" className="mt-2 text-[11px] font-semibold text-danger-ink">
               {cancelError}
             </p>
           )}
@@ -224,20 +224,20 @@ export function RecordedWorkoutSets({
               {completed.map((set) => (
                 <li
                   key={`${set.exerciseOrder}:${set.setIndex}`}
-                  className="rounded-control border border-edge bg-surface-overlay/40 p-2.5"
+                  className="rounded-control border border-line bg-surface-soft/40 p-2.5"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                     <div className="min-w-0">
-                      <p className="truncate text-[12px] font-bold text-offwhite">
+                      <p className="truncate text-[12px] font-bold text-ink">
                         {set.exerciseName}
-                        <span className="ml-1.5 font-semibold text-ink-faint">
+                        <span className="ml-1.5 font-semibold text-ink-3">
                           set {set.setIndex + 1}
                         </span>
                       </p>
-                      <p className="mt-0.5 text-[12px] text-ink-dim">
+                      <p className="mt-0.5 text-[12px] text-ink-2">
                         {describeRecorded(set)}
                         {set.correctedAt !== null && (
-                          <span className="ml-1.5 rounded-full bg-surface px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-ink-faint">
+                          <span className="ml-1.5 rounded-full bg-surface px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.09em] text-ink-3">
                             Corrected
                           </span>
                         )}

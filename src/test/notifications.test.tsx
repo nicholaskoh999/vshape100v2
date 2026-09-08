@@ -198,10 +198,18 @@ describe('1. installable app', () => {
     expect(icons.some((icon) => icon.purpose === 'maskable')).toBe(true)
   })
 
-  it('keeps the existing theme language', () => {
+  it('keeps the theme language the app actually paints', () => {
     const manifest = JSON.parse(manifestSource) as Record<string, string>
-    expect(manifest.theme_color).toBe('#0B1220')
-    expect(manifest.background_color).toBe('#0B1220')
+    /*
+     * ROUND 24 (Q1, approved). The dark navy palette is superseded by the
+     * light system, so the installed app's chrome moves with it. The
+     * assertion is unchanged in strength: BOTH manifest colours must equal
+     * the canvas the app paints, and #F5F6F2 is `--color-canvas` in
+     * src/design/tokens.css. An installed app whose splash and status bar
+     * still painted #0B1220 would flash dark before a light app.
+     */
+    expect(manifest.theme_color).toBe('#F5F6F2')
+    expect(manifest.background_color).toBe('#F5F6F2')
   })
 })
 
