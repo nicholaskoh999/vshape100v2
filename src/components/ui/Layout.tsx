@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import type { CSSProperties, ReactNode } from 'react'
+import type { ComponentPropsWithoutRef, ReactNode } from 'react'
 import { Link } from 'react-router'
 
 import { cn } from '@/lib/utils'
@@ -16,27 +16,47 @@ import { cn } from '@/lib/utils'
 /* ------------------------------------------------------------------ */
 
 /**
- * `style` is accepted only for values a class cannot express — the exercise
- * media frame takes its aspect ratio from the media file itself, which is
- * known at runtime.
+ * ROUND 27 (VT-04). Semantic DOM props pass through to the root element.
+ *
+ * Before this, the prop list was closed: `children`, `className`, `style`,
+ * `flush`, `quiet`. A caller who needed `id`, `role`, an `aria-*` attribute or
+ * a `data-*` hook could not give the card one, and the workarounds were worse
+ * than the gap — Round 26's Admin page wanted a `data-` marker on its
+ * maintenance card and had to put it on the surrounding `<section>` instead,
+ * which is a different element from the one the test was about.
+ *
+ * THE RULES THAT KEEP THIS SAFE.
+ *
+ *   - `className` is destructured, so it can never arrive inside `rest` and
+ *     silently replace the merged classes. Merging behaviour is unchanged.
+ *   - `rest` is spread BEFORE `className`, so even a future prop that slipped
+ *     through could not win against the component's own styling.
+ *   - `flush` and `quiet` are this component's own vocabulary and are
+ *     destructured out. Neither is a DOM attribute, and neither reaches one.
+ *   - `style` is no longer named separately; it is a `<div>` prop like any
+ *     other and arrives through `rest`. It is still for values a class cannot
+ *     express — the exercise media frame takes its aspect ratio from the media
+ *     file itself, which is known at runtime.
+ *
+ * `ref` is deliberately NOT in this type. Nothing forwards a ref to a Card
+ * today, and adding one would be inventing a contract nobody asked for.
  */
 export function Card({
   children,
   className,
-  style,
   /** Zero padding and clipped, for a divided list of rows. */
   flush = false,
   /** Records nothing: flat inset, no shadow, no card edge. */
   quiet = false,
-}: {
+  ...rest
+}: ComponentPropsWithoutRef<'div'> & {
   children: ReactNode
-  className?: string
-  style?: CSSProperties
   flush?: boolean
   quiet?: boolean
 }) {
   return (
     <div
+      {...rest}
       className={cn(
         'vs-bordered rounded-card',
         quiet
@@ -45,29 +65,39 @@ export function Card({
         flush ? 'overflow-hidden' : 'p-5',
         className,
       )}
-      style={style}
     >
       {children}
     </div>
   )
 }
 
-/** The page's leading block: bigger radius, more padding, one job. */
+/**
+ * The page's leading block: bigger radius, more padding, one job.
+ *
+ * ROUND 27 (VT-04). Semantic props pass through, under the same rules as
+ * `Card` above. The root is a `<section>`, so the passthrough is typed against
+ * `<section>` — a HeroCard is a landmark, and `aria-labelledby` on it is the
+ * normal way to name one.
+ *
+ * `tone` shadows nothing on `<section>` and is destructured out, so this
+ * component's own word for a wash never lands on the DOM as an attribute.
+ */
 export function HeroCard({
   children,
   className,
   /** A soft accent wash. Reserved for the day's primary training action. */
   accent = false,
   tone,
-}: {
+  ...rest
+}: ComponentPropsWithoutRef<'section'> & {
   children: ReactNode
-  className?: string
   accent?: boolean
   /** An alternative wash for a day that is not a normal training day. */
   tone?: 'recovery' | 'holiday'
 }) {
   return (
     <section
+      {...rest}
       className={cn(
         'vs-bordered rounded-hero border p-6 shadow-card md:p-7',
         accent && 'border-accent-edge/35 bg-linear-168 from-accent-soft to-surface to-72%',

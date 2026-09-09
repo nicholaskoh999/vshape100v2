@@ -19,3 +19,6 @@ npm-debug.log*
 
 # Round 26 preview fixture — a throwaway harness for screenshots, never shipped
 .admin-preview/
+
+# Round 27 screenshot harness — throwaway, never shipped
+.r27-preview/

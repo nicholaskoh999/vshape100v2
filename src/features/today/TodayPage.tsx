@@ -31,6 +31,7 @@ import { buildWorkoutPlan } from '@/features/training/workoutPlan'
 import { addLocalDays, localDateOf } from '@shared/localDate'
 import type { Route } from './model/types'
 import { GYM_ITEM_ID } from '@shared/notifications/due'
+import { PrepWeekNote } from './components/PrepWeekNote'
 import { TodayHero } from './components/TodayHero'
 import { TodaySection } from './components/TodaySection'
 import { TodayStatusNotice } from './components/TodayStatusNotice'
@@ -74,10 +75,16 @@ function foundationEyebrow(now: Date, startDate: string, ready: boolean): string
   if (!ready) return 'Foundation'
   const status = foundationStatus(localDateOf(now), startDate)
   if (!status) return 'Foundation'
-  if (status.phase === 'upcoming') {
-    const days = status.daysUntilStart ?? 0
-    return `Foundation starts in ${days} day${days === 1 ? '' : 's'}`
-  }
+  /*
+   * ROUND 27 (VT-02). This used to read "Foundation starts in 5 days".
+   *
+   * The prep note below now says exactly that, in a card the reader actually
+   * looks at, so keeping the number here printed it twice on one screen — the
+   * kind of duplication that reads as noise rather than emphasis. The eyebrow
+   * keeps its job (which phase Foundation is in) and gives up the arithmetic,
+   * staying parallel with "Foundation · Day 7" on every other day.
+   */
+  if (status.phase === 'upcoming') return 'Foundation · Prep week'
   return `Foundation · Day ${status.day}`
 }
 
@@ -266,6 +273,22 @@ export function TodayPage() {
         subline={`${dateLabel} · ${dayModeLabel(holidayStatus, agenda.route)}`}
         actions={<ClockChip now={now} />}
       />
+
+      {/*
+        ROUND 27 (VT-02). Rendered OUTSIDE the holiday branches on purpose.
+
+        Whether today is a company Holiday is a fact this page may still be
+        waiting for; how many days remain until Day 1 is not. The prep note is
+        a pure function of the account's Foundation date, so gating it on an
+        unrelated request would blank it for no reason — and would make it
+        flicker in once the holidays resolved.
+
+        `foundationStart.status` is still checked: until the account's date has
+        actually loaded there is no date to count from, and a count derived
+        from the default while the real one is in flight is a number that can
+        change under the reader.
+      */}
+      {foundationStart.status === 'ready' && <PrepWeekNote status={foundationDay} />}
 
       {/*
         Whether today is a Holiday is a fact we may not have yet. Until the

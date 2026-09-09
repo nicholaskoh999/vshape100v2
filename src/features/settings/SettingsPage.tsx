@@ -1,4 +1,12 @@
-import { ChevronRight, Info, Library, ListOrdered, Loader2, LogOut } from 'lucide-react'
+import {
+  ChevronRight,
+  Info,
+  Library,
+  ListOrdered,
+  Loader2,
+  LogOut,
+  SlidersHorizontal,
+} from 'lucide-react'
 import { motion } from 'motion/react'
 import { useNavigate } from 'react-router'
 
@@ -115,6 +123,39 @@ export function SettingsPage() {
                 icon={Library}
                 title="Exercise Library"
                 subtitle="Names, input types and the demo media each exercise shows"
+                trailing={
+                  <ChevronRight className="size-4.5 shrink-0 text-ink-4" aria-hidden="true" />
+                }
+              />
+            </li>
+          </RowList>
+        </motion.div>
+
+        <motion.div variants={listItemVariants}>
+          <SectionHeader title="System" className="mt-2" />
+          <RowList label="System">
+            <li>
+              {/*
+                ROUND 27 (VT-13). Admin was URL-only. On a personal app that
+                meant the owner had to remember and type /admin, which is not a
+                security boundary — it is just an inconvenience for the one
+                person the page is for.
+
+                THIS ROW CHANGES NOTHING ABOUT ACCESS. It is a link, and a link
+                is not an entitlement. Every fact on /admin comes from an API
+                that checks a server-side `google_sub` allowlist and fails
+                closed when that allowlist is unset. A signed-in non-admin who
+                follows this row gets the same refusal they would get by typing
+                the URL, and this row is not conditioned on anything the client
+                believes about who is an admin — there is no such flag to read,
+                which is exactly the property Round 26 was built to have.
+              */}
+              <ListRow
+                to="/admin"
+                linkLabel="Admin"
+                icon={SlidersHorizontal}
+                title="Admin"
+                subtitle="System health and account facts"
                 trailing={
                   <ChevronRight className="size-4.5 shrink-0 text-ink-4" aria-hidden="true" />
                 }
