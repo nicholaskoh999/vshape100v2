@@ -197,6 +197,9 @@ timing, not of a defect.
 |---|---|
 | 1 (while screenshots were being captured, so the box was loaded) | 1 failed — `trainingNavigation` |
 | 2 (clean, nothing else running) | 1 failed — `calendar` |
+| 3 (Correction 1, again during screenshot capture) | 1 failed — `notificationDelivery` |
+
+Three runs, three different files — the point stands and strengthens.
 
 Both were then run in isolation, on this candidate **and on a worktree of the
 untouched baseline `7b6092b`**:
@@ -223,8 +226,15 @@ things settle it for `calendar`:
   reopened yet. It is a timing failure in the test, and it is byte-identical to the
   failure this same test produced during Round 26.
 
-Round 27 touches no calendar, training, router or shell source —
-`git diff origin/main -- src/features/calendar src/features/training src/app shared/`
+`notificationDelivery`, the Correction 1 run's failure, is the simplest of the three:
+it is a 30 s **timeout**, not an assertion, it passes 3/3 in isolation, and it lives in
+`worker/` — which Round 27 does not touch at all (`git diff origin/main -- worker/` is
+empty). Round 26 classified the same test the same way for the same reason. Both
+full-suite runs that produced it were sharing the box with a headless Chromium and a
+Vite dev server capturing screenshots.
+
+Round 27 touches no calendar, training, router, shell or worker source —
+`git diff origin/main -- src/features/calendar src/features/training src/app shared/ worker/`
 is empty.
 
 **Neither test was patched, skipped, quarantined or retried into green**, and no
