@@ -1,4 +1,11 @@
-import { AlertTriangle, CheckCircle2, CircleHelp, OctagonAlert, type LucideIcon } from 'lucide-react'
+import {
+  AlertTriangle,
+  CheckCircle2,
+  CircleHelp,
+  CircleSlash,
+  OctagonAlert,
+  type LucideIcon,
+} from 'lucide-react'
 import type { ReactNode } from 'react'
 
 import { cn } from '@/lib/utils'
@@ -57,6 +64,32 @@ export function StatusChip({
     >
       <Icon className="size-3.5 shrink-0" aria-hidden="true" />
       {chip.label}
+    </span>
+  )
+}
+
+/**
+ * "Unavailable" — a feature this build simply does not offer.
+ *
+ * Deliberately NOT one of the four health words. Health describes something
+ * that exists and might be misbehaving; this describes something that is not
+ * here at all, and the page must never let the two blur into each other. An
+ * absent feature is not an amber warning and it is not a red error.
+ *
+ * Carries its own icon, like every other chip here, so the meaning survives
+ * greyscale, forced-colors mode and a photograph of a phone.
+ */
+export function UnavailableChip({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        'vs-bordered inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[11.5px] font-bold',
+        'border border-line-strong text-ink-3',
+        className,
+      )}
+    >
+      <CircleSlash className="size-3.5 shrink-0" aria-hidden="true" />
+      Unavailable
     </span>
   )
 }

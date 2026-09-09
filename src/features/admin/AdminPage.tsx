@@ -4,7 +4,6 @@ import {
   Database,
   Globe,
   Loader2,
-  Lock,
   RefreshCw,
   Server,
   Timer,
@@ -28,7 +27,7 @@ import {
   saveAdminFoundationStart,
   type AdminErrorKind,
 } from './adminApi'
-import { FactRow, SystemCard } from './AdminStatus'
+import { FactRow, SystemCard, UnavailableChip } from './AdminStatus'
 
 /**
  * VShape Admin Lite / System Health v1.
@@ -41,10 +40,10 @@ import { FactRow, SystemCard } from './AdminStatus'
  *
  *   - a status this build cannot prove reads Unknown, never a green tick
  *   - a count that could not be read reads Unknown, never 0
- *   - Maintenance says it is designed but not wired, rather than offering a
- *     switch that would do nothing
- *   - the Danger Zone DESCRIBES the Fresh Activity Reset and offers no way to
- *     run it. There is no button, no link and no endpoint behind it
+ *   - Maintenance reads Unavailable, rather than offering a switch — even a
+ *     greyed-out one — that would do nothing
+ *   - the Danger Zone NAMES the Fresh Activity Reset and offers no way to run
+ *     it. There is no button, no link and no endpoint behind it
  *
  * SECURITY. This route is not a secret and is not treated as one. It renders
  * for any signed-in user; what it renders for a non-admin is a refusal, because
@@ -302,34 +301,32 @@ export function AdminPage() {
             </Card>
           </motion.section>
 
-          <motion.section variants={listItemVariants} aria-labelledby="admin-maintenance">
+          <motion.section
+            data-admin-maintenance
+            variants={listItemVariants}
+            aria-labelledby="admin-maintenance"
+          >
             <SectionHeader title="Maintenance" id="admin-maintenance" />
-            <Card className="flex flex-col gap-3">
-              <div className="flex items-center gap-3">
-                <span
-                  aria-hidden="true"
-                  className="grid size-9 shrink-0 place-items-center rounded-xl bg-surface-soft text-ink-2"
-                >
-                  <Wrench className="size-5" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="font-bold text-ink">Maintenance mode</p>
-                  <p className="mt-0.5 text-[13px] text-ink-3">
-                    Status: <span className="font-bold text-ink-2">OFF</span> — normal app
-                  </p>
-                </div>
-                <Button size="sm" disabled aria-describedby="admin-maintenance-note">
-                  <Lock className="size-4" aria-hidden="true" />
-                  Turn on
-                </Button>
+            {/*
+              DISPLAY ONLY, and now not even a disabled switch. The spike showed
+              a greyed-out "Turn on"; a control that can never be pressed is
+              furniture, and the honest version of it is a word. Nothing in this
+              region is pressable, and no endpoint exists that it could call.
+            */}
+            <Card className="flex items-start gap-3.5">
+              <span
+                aria-hidden="true"
+                className="grid size-9 shrink-0 place-items-center rounded-xl bg-surface-soft text-ink-2"
+              >
+                <Wrench className="size-5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="font-bold text-ink">Maintenance mode</p>
+                <UnavailableChip className="mt-2 flex w-fit" />
+                <p className="mt-2 text-[13px] leading-relaxed text-ink-3">
+                  Maintenance mode isn’t available yet.
+                </p>
               </div>
-              <p id="admin-maintenance-note" className="text-[13px] leading-relaxed text-ink-3">
-                Designed, not wired. Turning maintenance on has to survive a restart, and this
-                build has nowhere durable to keep a global flag — the only candidate would be a
-                new database table, which this spike is not adding. Until then the state is OFF
-                by construction: nothing in the app reads a maintenance flag, so nothing can
-                turn one on behind your back.
-              </p>
             </Card>
           </motion.section>
 
@@ -338,9 +335,9 @@ export function AdminPage() {
             {/*
               DISPLAY ONLY. There is deliberately no button, no link and no form
               in this region, and no endpoint exists that this page could call.
-              The Fresh Activity Reset is executed exclusively by the accepted
-              Round 25 operator, under an explicit authorisation, from a machine
-              with credentials — never from a web page.
+              The copy names the feature and says it is not offered here; it
+              does not explain the machinery, because an explanation of how a
+              reset COULD be run does not belong on a page that cannot run one.
             */}
             <div
               data-admin-danger-zone
@@ -357,12 +354,9 @@ export function AdminPage() {
                 <p className="mt-0.5 text-[13px] leading-relaxed text-ink-2">
                   Clears activity history while preserving configuration.
                 </p>
-                <p className="mt-2.5 text-[13px] font-semibold text-ink-2">
-                  Managed separately · Not available here
-                </p>
-                <p className="mt-1 text-[12.5px] leading-relaxed text-ink-3">
-                  Run only by the Round 25 operator tool, from a machine with credentials, after
-                  an explicit go-ahead. This page has no control that can start it.
+                <UnavailableChip className="mt-2.5 flex w-fit border-danger-ink/25 bg-surface/70 text-danger-ink" />
+                <p className="mt-2 text-[13px] leading-relaxed text-ink-2">
+                  Activity reset isn’t available from Admin Lite.
                 </p>
               </div>
             </div>
@@ -395,7 +389,7 @@ type SaveState =
  *
  * What it changes is stated on the card, because a date field that silently
  * reshuffled training would be alarming — and because this is NOT the Fresh
- * Reset, and the page should never let anyone confuse the two.
+ * Activity Reset, and the page should never let anyone confuse the two.
  */
 function FoundationRow({
   foundation,

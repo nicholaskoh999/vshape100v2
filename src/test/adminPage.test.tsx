@@ -14,7 +14,8 @@ import type { AdminOverview } from '@shared/admin'
  *
  *   an Unknown is shown as Unknown, and a real zero as 0
  *   a refusal shows a refusal and NOT a page of green ticks
- *   the Danger Zone has no control in it at all — no button, no link, no form
+ *   the Danger Zone and Maintenance have no control in them at all
+ *   neither region leaks build-process jargon into product copy
  *   Day 1 cannot be written without a deliberate confirmation
  *
  * The real page, the real client and the real contract parser run together; only
@@ -233,7 +234,7 @@ describe('2. a refusal is a refusal', () => {
 })
 
 describe('3. the danger zone is display only', () => {
-  it('A. explains the reset, names its owner, and contains no control at all', async () => {
+  it('A. names the reset, says it is unavailable, and contains no control at all', async () => {
     server({ overview: { body: overview() } })
     const { container } = renderAdmin()
 
@@ -244,7 +245,10 @@ describe('3. the danger zone is display only', () => {
     expect(
       within(zone).getByText('Clears activity history while preserving configuration.'),
     ).toBeInTheDocument()
-    expect(within(zone).getByText(/Managed separately/)).toBeInTheDocument()
+    expect(within(zone).getByText('Unavailable')).toBeInTheDocument()
+    expect(
+      within(zone).getByText('Activity reset isn’t available from Admin Lite.'),
+    ).toBeInTheDocument()
 
     // The claim that matters: nothing in this region can be pressed.
     expect(zone.querySelectorAll('button')).toHaveLength(0)
@@ -253,14 +257,38 @@ describe('3. the danger zone is display only', () => {
     expect(zone.querySelectorAll('form')).toHaveLength(0)
   })
 
-  it('B. maintenance offers no working switch, and says why', async () => {
+  it('B. the danger zone carries no operator or round jargon', async () => {
     server({ overview: { body: overview() } })
-    renderAdmin()
+    const { container } = renderAdmin()
+
+    await screen.findByText('Fresh Activity Reset')
+    const zone = container.querySelector('[data-admin-danger-zone]') as HTMLElement
+    // `managedBy` arrives on the wire and stays there. A page that printed
+    // "round25-operator" would be telling the owner about our build process.
+    expect(zone.textContent ?? '').not.toMatch(/round\s*25|round25|operator|credential/i)
+  })
+
+  it('C. maintenance reads Unavailable, with no switch at all — not even a dead one', async () => {
+    server({ overview: { body: overview() } })
+    const { container } = renderAdmin()
 
     await screen.findByText('Maintenance mode')
-    expect(screen.getByText('OFF')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Turn on/ })).toBeDisabled()
-    expect(screen.getByText(/Designed, not wired/)).toBeInTheDocument()
+    const section = container.querySelector('[data-admin-maintenance]') as HTMLElement
+    expect(section).toBeTruthy()
+
+    expect(within(section).getByText('Unavailable')).toBeInTheDocument()
+    expect(
+      within(section).getByText('Maintenance mode isn’t available yet.'),
+    ).toBeInTheDocument()
+
+    // Stronger than "the button is disabled": there is no button.
+    expect(section.querySelectorAll('button')).toHaveLength(0)
+    expect(section.querySelectorAll('a')).toHaveLength(0)
+    expect(section.querySelectorAll('input')).toHaveLength(0)
+    expect(section.querySelectorAll('form')).toHaveLength(0)
+
+    // And none of the deferral's machinery is explained to the owner.
+    expect(section.textContent ?? '').not.toMatch(/spike|database table|restart|flag|wired/i)
   })
 })
 
