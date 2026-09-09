@@ -1,17 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
-  <title id="title">VShape100 v2 App Icon</title>
-  <desc id="desc">Geometric V mark with upward progress accent.</desc>
-  <rect width="512" height="512" rx="112" fill="#0B1220"/>
-  <path d="M116 148 L236 372 Q256 410 276 372 L396 148"
-        fill="none"
-        stroke="#2F6BFF"
-        stroke-width="72"
-        stroke-linecap="round"
-        stroke-linejoin="round"/>
-  <path d="M362 150 L414 122 L401 180"
-        fill="none"
-        stroke="#B7F34A"
-        stroke-width="28"
-        stroke-linecap="round"
-        stroke-linejoin="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F0F2EA"/>
+    </linearGradient>
+    <linearGradient id="lime" x1="0" y1="1" x2="0.85" y2="0.1">
+      <stop offset="0" stop-color="#A9D84F"/>
+      <stop offset="0.55" stop-color="#CDF564"/>
+      <stop offset="1" stop-color="#DBFF78"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <path fill="#171A15" d="M512 180c-23 0-46 6-68 16l-126 55c-48 21-78 67-78 119v187c0 103 55 183 149 240l123 74 123-74c94-57 149-137 149-240V370c0-52-30-98-78-119l-126-55c-22-10-45-16-68-16Z"/>
+  <path fill="url(#lime)" d="M389 770c8-65 6-123 29-171 20-43 56-71 97-97 23-15 40-29 53-46 10 23 11 46 3 66-12 29-39 50-63 69-24 19-45 39-51 64-7 25 6 53 31 85l55 71-31 18-123-59Z"/>
+  <path d="M516 410 575 469 689 338" fill="none" stroke="url(#lime)" stroke-width="54" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

@@ -91,8 +91,31 @@ describe('login screen', () => {
     expect(await screen.findByRole('button', { name: /Continue with Google/ })).toBeInTheDocument()
     expect(screen.getByText('Build your foundation.')).toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: /Trust this device/ })).toBeInTheDocument()
-    expect(screen.getByText('Stay signed in for 30 days')).toBeInTheDocument()
+    /*
+     * ROUND 24 POLISH. The helper now names WHERE the thirty days apply, which
+     * is the part somebody needs before ticking this on a shared machine. Same
+     * exact-string assertion, on the copy the screen now carries.
+     */
+    expect(screen.getByText('Stay signed in for 30 days on this device.')).toBeInTheDocument()
     expect(screen.getByText(/Private · Personal/)).toBeInTheDocument()
+  })
+
+  /*
+   * THE CTA HAD NO READABLE LABEL. It was `bg-ink … text-ink` — a near-black
+   * word on a near-black fill — so the only part of the button with any
+   * contrast was Google's multicolour G, and the screen read as a floating
+   * icon. An accessible name existed the whole time, which is why no existing
+   * test caught it; what was missing was the contrast a sighted user needs.
+   */
+  it('renders the CTA label in a colour that is not its own background', async () => {
+    mockAuthFetch({ session: signedOutSession })
+    renderApp('/login')
+
+    const cta = await screen.findByRole('button', { name: /Continue with Google/ })
+    expect(cta).toHaveTextContent('Continue with Google')
+    expect(cta.className).toContain('bg-ink')
+    expect(cta.className).toContain('text-ink-on-dark')
+    expect(cta.className).not.toMatch(/(^|\s)text-ink(\s|$)/)
   })
 
   it('does not render the app navigation shell', async () => {

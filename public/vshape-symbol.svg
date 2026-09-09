@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">VShape100 shield and progress path symbol</title>
+  <desc id="desc">A charcoal shield containing a lime rising path that resolves into a check mark.</desc>
+  <defs>
+    <linearGradient id="lime" x1="0" y1="1" x2="0.85" y2="0.1">
+      <stop offset="0" stop-color="#A9D84F"/>
+      <stop offset="0.55" stop-color="#CDF564"/>
+      <stop offset="1" stop-color="#DBFF78"/>
+    </linearGradient>
+  </defs>
+  <path fill="#171A15" d="M512 126c-27 0-55 8-81 20L281 211c-57 25-93 80-93 142v223c0 123 66 218 178 286l146 88 146-88c112-68 178-163 178-286V353c0-62-36-117-93-142l-150-65c-26-12-54-20-81-20Z"/>
+  <!-- Rising path: broad at the foundation, narrowing toward the check -->
+  <path fill="url(#lime)" d="M366 834c9-78 7-147 34-205 24-51 67-84 115-115 27-18 48-34 63-55 12 28 13 55 3 79-14 35-46 59-75 82-29 23-53 46-61 76-8 30 8 63 37 101l66 85-36 22-146-70Z"/>
+  <!-- Check / arrival marker -->
+  <path d="M517 401 586 470 720 316" fill="none" stroke="url(#lime)" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

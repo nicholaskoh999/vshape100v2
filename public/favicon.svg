@@ -1,17 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
-  <title id="title">VShape100 v2 App Icon</title>
-  <desc id="desc">Geometric V mark with upward progress accent.</desc>
-  <rect width="512" height="512" rx="112" fill="#0B1220"/>
-  <path d="M116 148 L236 372 Q256 410 276 372 L396 148"
-        fill="none"
-        stroke="#2F6BFF"
-        stroke-width="72"
-        stroke-linecap="round"
-        stroke-linejoin="round"/>
-  <path d="M362 150 L414 122 L401 180"
-        fill="none"
-        stroke="#B7F34A"
-        stroke-width="28"
-        stroke-linecap="round"
-        stroke-linejoin="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#171A15"/>
+  <!-- Simplified small-size mark: shield + check-path, no gradients. -->
+  <path fill="#F5F6F2" d="M32 9 13 17v14c0 12 7 20 19 27 12-7 19-15 19-27V17L32 9Z"/>
+  <path fill="#171A15" d="M32 13 17 19v12c0 9 5 16 15 22 10-6 15-13 15-22V19L32 13Z"/>
+  <path d="M26 31 31 36 41 25" fill="none" stroke="#CDF564" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M24 47c1-6 1-10 4-13 2-2 4-3 6-5" fill="none" stroke="#CDF564" stroke-width="5" stroke-linecap="round"/>
 </svg>

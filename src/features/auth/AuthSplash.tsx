@@ -21,11 +21,17 @@ export function AuthSplash({ label = 'Loading your day' }: { label?: string }) {
         transition={{ duration: duration.base, ease: ease.outQuart }}
         className="flex flex-col items-center gap-4"
       >
+        {/*
+          The same standalone symbol the login card shows, at the same size, so
+          resolving the session does not swap one mark for another under the
+          user. `rounded-2xl` is gone with the tile: this artwork is
+          transparent and needs no corner.
+        */}
         <motion.img
-          src="/app-icon.svg"
+          src="/vshape-symbol.svg"
           alt=""
           aria-hidden="true"
-          className="size-14 rounded-2xl"
+          className="size-14"
           animate={{ opacity: [0.55, 1, 0.55] }}
           transition={{ duration: 1.6, repeat: Infinity, ease: ease.inOutSoft }}
         />

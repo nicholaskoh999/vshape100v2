@@ -180,7 +180,7 @@ describe('1. installable app', () => {
     expect(indexHtml).toMatch(/<link rel="manifest" href="\/manifest\.webmanifest" \/>/)
   })
 
-  it('declares an installable manifest using the existing icons', () => {
+  it('declares an installable manifest with a DEDICATED maskable icon', () => {
     const manifest = JSON.parse(manifestSource) as Record<string, unknown>
 
     expect(manifest.name).toBe('VShape100')
@@ -193,9 +193,29 @@ describe('1. installable app', () => {
     const sizes = icons.map((icon) => icon.sizes)
     expect(sizes).toContain('192x192')
     expect(sizes).toContain('512x512')
-    // Reuses what the app already ships; no new art was invented.
-    for (const icon of icons) expect(['/icon-192.png', '/icon-512.png']).toContain(icon.src)
-    expect(icons.some((icon) => icon.purpose === 'maskable')).toBe(true)
+    for (const icon of icons) {
+      expect(['/icon-192.png', '/icon-512.png', '/icon-maskable-512.png']).toContain(icon.src)
+    }
+
+    /*
+     * ROUND 24 POLISH — STRENGTHENED, not relaxed.
+     *
+     * This used to accept the ordinary 512 declared as `maskable`, which is
+     * what the manifest did. A launcher takes a maskable icon at its word and
+     * crops the outer ~20% into a circle or squircle; artwork drawn to fill its
+     * own square loses its edges to that crop. The production package ships a
+     * full-bleed master whose symbol sits inside a conservative safe zone, so
+     * the assertion is now that the maskable entry is a DISTINCT asset — the
+     * one drawn to be cropped — and not the `any` icon wearing a second label.
+     */
+    const maskable = icons.filter((icon) => icon.purpose === 'maskable')
+    expect(maskable).toHaveLength(1)
+    expect(maskable[0].src).toBe('/icon-maskable-512.png')
+    expect(maskable[0].sizes).toBe('512x512')
+
+    const any = icons.filter((icon) => icon.purpose === 'any').map((icon) => icon.src)
+    expect(any).toEqual(['/icon-192.png', '/icon-512.png'])
+    expect(any).not.toContain(maskable[0].src)
   })
 
   it('keeps the theme language the app actually paints', () => {
