@@ -9,8 +9,8 @@ production D1 was read or written. No production variable was set.**
   top of that `main`**
 - Candidate branch: `claude/round-26-admin-lite-b3czmv`, fast-forwarded from the spike
 
-The candidate is therefore **3 commits ahead of `main` and 0 behind**, on a single
-unbroken line with no merge and no rewrite:
+The candidate is therefore **0 behind `main`**, sitting on a single unbroken line
+above it with no merge and no rewrite:
 
 ```
 ff66184  main — Round 25 correction (accepted tip)
@@ -19,11 +19,17 @@ ff66184  main — Round 25 correction (accepted tip)
    ↓
 d11efe3  Round 26 — the copy polish
    ↓
-<candidate HEAD>
+9ea8c31  Round 26 — the flake evidence
+   ↓
+7d88a90  Round 26 correction 1 — this baseline correction
 ```
 
-Verified rather than assumed: `git merge-base origin/main HEAD` is `ff66184`, and
-`git rev-list --left-right --count origin/main...HEAD` reports `behind=0 ahead=3`.
+Verified rather than assumed, and deliberately stated as an invariant rather than a
+count: `git merge-base origin/main HEAD` is `ff66184`, and
+`git rev-list --left-right --count origin/main...HEAD` reports `behind=0`. The ahead
+count moves with every further candidate commit — including the one that carried this
+correction — so pinning a number here would go stale exactly the way the claim this
+paragraph replaced did. Read it from the command.
 
 The spike record is `00_ADMIN_LITE_SPIKE.md` and still describes the security model,
 the health semantics and the Foundation control accurately. This document records only
