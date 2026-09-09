@@ -131,7 +131,7 @@ unknown*, never *nothing happened*.
               └───────────────┬──────────────┘
                   returns ────┴──── throws
                       │               │  (error captured, NEVER rethrown,
-                      │               │   NEVER retried)
+                      │               │   NEVER re-sent)
                       └──────┬────────┘
                              ▼
                  ┌───────────────────────┐
@@ -146,20 +146,47 @@ unknown*, never *nothing happened*.
                  exit 3         └───┬──────────────────┬─────────┘
                                 yes │               no │
                                     ▼                  ▼
-                              COMMITTED      ┌─────────────────────────────┐
-                                             │ nine counts == before AND   │
-                                             │ foundation == before value ?│
-                                             └──┬───────────────────┬──────┘
-                                            yes │                no │
-                                                ▼                   ▼
-                                        NOT_COMMITTED          AMBIGUOUS
-                                        (safe to retry)        (restore; do
-                                                                not re-run)
+                              COMMITTED      ┌──────────────────────────────┐
+                              exit 0 / 2     │ was the send ACKNOWLEDGED,   │
+                                             │ and is the state unchanged ? │
+                                             └──┬────────────────────┬──────┘
+                                            yes │                 no │
+                                                ▼                    ▼
+                                        NOT_COMMITTED           AMBIGUOUS
+                                        exit 4                  exit 3
+                                        acknowledged and        outcome unknown
+                                        inert — a fault.        — restore from
+                                        STOP, investigate       the bookmark.
+                                        the transport.          STOP.
 ```
 
-`COMMITTED` wins when both proofs hold at once — an account that was already
-empty and already carried the new date is in the intended final state, and that
-is what the operator needs to know.
+`COMMITTED` wins when both proofs could hold at once — an account that was
+already empty and already carried the new date is in the intended final state,
+and that is what the operator needs to know. The proof stands whether or not the
+transport acknowledged, because it is a statement about the **state**, not about
+the send.
+
+### Why matching counts are not a proof of "nothing happened"
+
+An earlier version classified `NOT_COMMITTED` from counts alone. That is not
+sound after an unacknowledged send:
+
+- the reset can have committed and **concurrent writes can have put rows back** —
+  a workout started during the operator window recreates an occurrence and its
+  sets
+- the Foundation date **may already have equalled** the approved value, so it
+  distinguishes nothing
+- counts describe how many rows exist, never whether they are the **same rows**
+
+A post-state cannot tell *never deleted* from *deleted and repopulated*. So an
+unacknowledged send whose final state is not provably the intended one buys
+`AMBIGUOUS` and nothing better — even when every count matches exactly, which is
+its own regression case.
+
+`NOT_COMMITTED` survives for one narrow situation only: **the send was
+acknowledged and had no effect.** A command that reports success and changes
+nothing is a fault in its own right, so it is reported to be investigated. **No
+outcome is ever an instruction to send the destructive command again.**
 
 **Acceptance is a stricter, separate question** from whether it committed:
 
@@ -171,8 +198,10 @@ accepted = COMMITTED
          && no NEW orphan anywhere
 ```
 
-Exit codes: `1` refused · `2` committed but acceptance failed · `3` **AMBIGUOUS**,
-the one that must never be answered by running the command again.
+Exit codes: `0` committed and accepted · `1` refused before anything was sent ·
+`2` committed but an acceptance condition failed · `3` **AMBIGUOUS**, the one
+that must never be answered by sending the command again · `4` `NOT_COMMITTED`,
+acknowledged and inert.
 
 ### Proof that the destructive command cannot run twice
 
@@ -279,7 +308,7 @@ future surface ever starts counting failures.
 
 ## 7. Mutation evidence
 
-Seven mutations were applied to the shipped source and the suite re-run. Every
+Seven mutations were applied to the shipped source and the suite re-executed. Every
 one was caught:
 
 | Mutation | Result |
@@ -301,6 +330,14 @@ Five more, added by this correction:
 | treat a failed reconciliation as committed | **1 test fails** |
 | put `notification_deliveries` back into the acceptance fingerprint | **1 test fails** |
 | require global orphans to be 0 rather than not increased | **1 test fails** |
+
+And three from the outcome correction:
+
+| Mutation | Result |
+|---|---|
+| classify `NOT_COMMITTED` from counts after an unacknowledged send | **2 tests fail** |
+| let `NOT_COMMITTED` be reachable without an acknowledgement | **2 tests fail** |
+| reintroduce wording that presents re-sending as fine, in the operator or the record | **1 test fails** |
 
 ---
 

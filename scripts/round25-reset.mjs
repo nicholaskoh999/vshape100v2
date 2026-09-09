@@ -298,23 +298,56 @@ export async function runRound25Reset({ argv, exec, log = console.log, now = Dat
   /*
    * ── CLASSIFYING WHAT THE DATABASE SAYS ─────────────────────────────────────
    *
-   * Two positive proofs, and an honest gap between them.
+   * ONE positive proof, and one narrow negative proof that requires an
+   * acknowledgement to be admissible at all.
    *
    *   COMMITTED     — the intended final state is there: nine tables empty for
    *                   the account, and the Foundation date is the approved one.
-   *   NOT_COMMITTED — the state before the attempt is still there, unchanged.
-   *   AMBIGUOUS     — neither, which includes every partial state.
+   *                   This proof stands whether or not the transport
+   *                   acknowledged, because it is a statement about the state
+   *                   rather than about the send.
    *
-   * When an account was already empty and already carried the new date, both
-   * proofs hold at once. COMMITTED wins, because the final state IS the
-   * intended one and that is what the operator needs to know.
+   *   NOT_COMMITTED — the send was ACKNOWLEDGED and the mutation still did not
+   *                   take effect. That is alarming — a command that reported
+   *                   success and changed nothing — and it is reported so it
+   *                   can be investigated. It is NOT an invitation to run the
+   *                   command again.
+   *
+   *   AMBIGUOUS     — everything else, and in particular EVERY unacknowledged
+   *                   send whose final state is not provably the intended one.
+   *
+   * ── WHY MATCHING COUNTS ARE NOT A PROOF ────────────────────────────────────
+   *
+   * Round 25 correction 2. This previously read "counts equal the before
+   * counts, therefore nothing was deleted". That is not sound after an
+   * unacknowledged send:
+   *
+   *   - the reset can have committed and concurrent writes can have put rows
+   *     back — a workout started during the operator window recreates an
+   *     occurrence and its sets
+   *   - the Foundation date may ALREADY have equalled the approved value, so
+   *     it distinguishes nothing
+   *   - counts describe how many rows exist, never whether these are the same
+   *     rows
+   *
+   * A post-state cannot tell "never deleted" from "deleted and repopulated".
+   * So when the transport did not acknowledge, the absence of the intended
+   * final state buys AMBIGUOUS and nothing better. The operator restores from
+   * the Time Travel bookmark; they do not re-run a destructive command on the
+   * strength of a count.
    */
   const resetApplied =
     after.reset.every((n) => n === 0) && after.foundation === `1#${target.foundationStart}`
-  const resetUntouched =
-    after.reset.every((n, i) => n === before.reset[i]) && after.foundation === before.foundation
+  const acknowledgedAndInert =
+    transportError === null &&
+    after.reset.every((n, i) => n === before.reset[i]) &&
+    after.foundation === before.foundation
 
-  const outcome = resetApplied ? 'COMMITTED' : resetUntouched ? 'NOT_COMMITTED' : 'AMBIGUOUS'
+  const outcome = resetApplied
+    ? 'COMMITTED'
+    : acknowledgedAndInert
+      ? 'NOT_COMMITTED'
+      : 'AMBIGUOUS'
 
   // Acceptance is a stricter question than "did it commit".
   const stablePreserved = before.stable.every((mark, i) => mark === after.stable[i])
@@ -363,18 +396,28 @@ export async function runRound25Reset({ argv, exec, log = console.log, now = Dat
   log('')
 
   if (outcome === 'AMBIGUOUS') {
-    log('  ✗ AMBIGUOUS. The database is in neither the old state nor the intended one.')
-    log('    DO NOT re-run this command. Restore from the Time Travel bookmark.')
+    log('  ✗ AMBIGUOUS. The intended final state cannot be proven.')
+    if (transportError) {
+      log('    The send was not acknowledged, so a state resembling the old one')
+      log('    proves nothing: a committed reset can be repopulated by concurrent')
+      log('    writes, and counts cannot tell the same rows from replacements.')
+    }
+    log('    STOP. DO NOT re-run this command. Restore from the Time Travel')
+    log('    bookmark, or read the nine tables by hand before deciding anything.')
   } else if (outcome === 'NOT_COMMITTED') {
-    log('  ✓ NOT COMMITTED. Nothing was changed; the account is exactly as it was.')
-    log('    Safe to investigate and try again once the transport is healthy.')
+    log('  ✗ NOT COMMITTED. The send was acknowledged and nothing changed.')
+    log('    A command that reports success and has no effect is a fault in its')
+    log('    own right. STOP and investigate the transport before doing anything')
+    log('    else. Do not treat this as permission to send it again.')
   } else {
     log(accepted ? '  ✓ COMMITTED — ALL ACCEPTANCE CONDITIONS MET' : '  ✗ COMMITTED, BUT ACCEPTANCE FAILED — see above')
   }
   log('')
 
   return {
-    ok: outcome !== 'AMBIGUOUS',
+    // Only a proven, accepted reset is a clean run. NOT_COMMITTED and
+    // AMBIGUOUS both need a human before anything else happens.
+    ok: outcome === 'COMMITTED',
     executed: true,
     attempts,
     outcome,
@@ -392,13 +435,21 @@ async function main() {
     argv: process.argv,
     exec: wranglerExec(process.argv.includes('--remote')),
   })
-  if (!result.ok) {
-    if (result.reason) console.error(`\n  ✗ ${result.reason}\n`)
-    // 3 is reserved for "the outcome is unknown" — a different problem from a
-    // refusal, and the one that must never be answered by running this again.
-    process.exit(result.outcome === 'AMBIGUOUS' ? 3 : 1)
-  }
-  if (result.executed && !result.accepted) process.exit(2)
+  if (result.reason) console.error(`\n  ✗ ${result.reason}\n`)
+  /*
+   * Distinct codes, because these are distinct situations and a script that
+   * wraps this one must be able to tell them apart:
+   *
+   *   0  committed and accepted
+   *   1  refused before anything was sent
+   *   2  committed, but an acceptance condition failed
+   *   3  AMBIGUOUS — the outcome is unknown. NEVER answered by re-running.
+   *   4  NOT_COMMITTED — acknowledged and inert. Investigate the transport.
+   */
+  if (!result.executed) process.exit(result.ok ? 0 : 1)
+  if (result.outcome === 'AMBIGUOUS') process.exit(3)
+  if (result.outcome === 'NOT_COMMITTED') process.exit(4)
+  if (!result.accepted) process.exit(2)
 }
 
 // Only run when invoked directly, so importing this module for a test cannot

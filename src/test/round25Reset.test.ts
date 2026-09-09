@@ -34,6 +34,8 @@ import { runRound25Reset } from '../../scripts/round25-reset.mjs'
 // The operator's own text, for the structural proof that the destructive
 // command has exactly one call site.
 import operatorSource from '../../scripts/round25-reset.mjs?raw'
+// The round's own record, held to the same rule as the code.
+import contractDoc from '../../design/round-25/01_RESET_CONTRACT.md?raw'
 import {
   ROUND25_PRESERVED_TABLES,
   ROUND25_RESET_TABLES,
@@ -706,22 +708,93 @@ describe('5b. the ambiguous-outcome state machine', () => {
     )
   })
 
-  it('B. failed before applying anything → NOT COMMITTED, proven by reading', async () => {
+  it('B. failed before applying anything → AMBIGUOUS, because a count is not a proof', async () => {
+    /*
+     * The database really was untouched here — the fixture says so. The
+     * operator still must NOT say so, and that is the point.
+     *
+     * After an unacknowledged send, a state resembling the old one is not
+     * evidence that nothing happened: a committed reset can be repopulated by
+     * concurrent writes, and counts cannot tell the same rows from
+     * replacements. The honest answer is that the outcome is unknown.
+     */
     const db = seeded()
     const before = ROUND25_RESET_TABLES.map((t) => rowsFor(db, t, MINE))
     const { exec, state } = transport(db, { failMutation: 'before-applying' })
 
     const result = await runRound25Reset({ argv, exec, log: silent, now: NOW })
 
-    expect(result.outcome).toBe('NOT_COMMITTED')
+    expect(result.outcome).toBe('AMBIGUOUS')
+    expect(result.outcome).not.toBe('NOT_COMMITTED')
     expect(result.reconciled).toBe(true)
     expect(result.accepted).toBe(false)
+    expect(result.ok).toBe(false)
     expect(result.attempts).toBe(1)
     expect(state.mutations).toBe(1)
-    // Nothing was touched, and that is a positive proof rather than a guess.
+    // The rows genuinely are all still there — and it still refuses to claim it.
     expect(ROUND25_RESET_TABLES.map((t) => rowsFor(db, t, MINE))).toEqual(before)
-    // `ok` is true: the operator can safely investigate and try again.
-    expect(result.ok).toBe(true)
+  })
+
+  it('D. an unacknowledged send whose counts match exactly is STILL AMBIGUOUS', async () => {
+    // The strongest version of the trap: identical before and after, right
+    // down to the Foundation date already equalling the approved value.
+    const db = seeded()
+    db.prepare(`UPDATE account_settings SET foundation_start_date = ? WHERE google_sub = ?`)
+      .run(NEW_DAY_1, MINE)
+
+    let sent = 0
+    const inertButUnacknowledged = (sql: string) => {
+      if (/^\s*DELETE|^\s*INSERT/i.test(sql)) {
+        sent += 1
+        throw new Error('connection reset while awaiting acknowledgement')
+      }
+      return sql.split(';\n').map((s) => s.trim()).filter(Boolean).map((statement) =>
+        db.prepare(statement).all(),
+      )
+    }
+
+    const result = await runRound25Reset({
+      argv, exec: inertButUnacknowledged, log: silent, now: NOW,
+    })
+
+    expect(result.before?.reset).toEqual(result.after?.reset)
+    expect(result.before?.foundation).toEqual(result.after?.foundation)
+    // Everything matches, and it is still not a proof.
+    expect(result.outcome).toBe('AMBIGUOUS')
+    expect(result.ok).toBe(false)
+    expect(sent).toBe(1)
+    expect(result.attempts).toBe(1)
+  })
+
+  it('NOT_COMMITTED survives only for an ACKNOWLEDGED send that did nothing', async () => {
+    /*
+     * A command that reports success and has no effect is a fault in its own
+     * right. It is reported so it can be investigated — never as permission to
+     * send it again.
+     */
+    const db = seeded()
+    const before = ROUND25_RESET_TABLES.map((t) => rowsFor(db, t, MINE))
+    let sent = 0
+    const acknowledgesButDoesNothing = (sql: string) => {
+      if (/^\s*DELETE|^\s*INSERT/i.test(sql)) {
+        sent += 1
+        return [] // "success", with no effect at all
+      }
+      return sql.split(';\n').map((s) => s.trim()).filter(Boolean).map((statement) =>
+        db.prepare(statement).all(),
+      )
+    }
+
+    const result = await runRound25Reset({
+      argv, exec: acknowledgesButDoesNothing, log: silent, now: NOW,
+    })
+
+    expect(result.transportError).toBeNull()
+    expect(result.outcome).toBe('NOT_COMMITTED')
+    expect(result.ok).toBe(false)
+    expect(result.accepted).toBe(false)
+    expect(sent).toBe(1)
+    expect(ROUND25_RESET_TABLES.map((t) => rowsFor(db, t, MINE))).toEqual(before)
   })
 
   it('C. mutation error AND reconciliation cannot read → AMBIGUOUS, and it stops', async () => {
@@ -769,6 +842,34 @@ describe('5b. the ambiguous-outcome state machine', () => {
     expect(callSites).toHaveLength(1)
     // And there is no retry machinery anywhere near it.
     expect(operatorSource).not.toMatch(/for\s*\(.*attempt|while\s*\(.*retr|retry\(/i)
+  })
+
+  it('E. neither the code nor the record calls an unacknowledged send safe to retry', () => {
+    /*
+     * The most dangerous thing this tool could contain is a sentence telling a
+     * tired operator that re-running it is fine. Asserted against the operator
+     * source AND the round's own written record, because a reader is at least
+     * as likely to act on the document.
+     */
+    const unsafe =
+      /safe to (?:retry|try again|re-?run)|try again once|retry is safe|simply re-?run/i
+    for (const [name, text] of [
+      ['operator', operatorSource],
+      ['contract', contractDoc],
+    ] as const) {
+      expect(text, name).not.toMatch(unsafe)
+    }
+    // The opposite instruction IS present, in both. A file that merely avoided
+    // the dangerous phrase while saying nothing would pass the check above and
+    // still leave an operator without guidance.
+    const forbids =
+      /(never|do not|don't)[^.]{0,90}(re-?run|re-?send|send(?:ing)? (?:the |this )?(?:destructive )?command again)/i
+    for (const [name, text] of [
+      ['operator', operatorSource],
+      ['contract', contractDoc],
+    ] as const) {
+      expect(text, name).toMatch(forbids)
+    }
   })
 
   it('a partial state is AMBIGUOUS — neither the old state nor the intended one', async () => {

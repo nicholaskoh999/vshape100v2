@@ -43,11 +43,22 @@ export type Round25State = {
 /**
  * What happened to the destructive command.
  *
- *   COMMITTED     — reconciliation proves the intended final state.
- *   NOT_COMMITTED — reconciliation proves the pre-attempt state is intact.
- *   AMBIGUOUS     — neither could be proven, INCLUDING when reconciliation
- *                   itself could not read the database. Never answered by
- *                   running the command again.
+ *   COMMITTED     — reconciliation proves the intended final state. Stands
+ *                   whether or not the transport acknowledged, because it is a
+ *                   statement about the state rather than about the send.
+ *
+ *   NOT_COMMITTED — reachable ONLY when the send was acknowledged and the
+ *                   mutation still had no effect. A command that reports
+ *                   success and changes nothing is a fault to investigate, not
+ *                   permission to send it again.
+ *
+ *   AMBIGUOUS     — everything else, and in particular EVERY unacknowledged
+ *                   send whose final state is not provably the intended one.
+ *                   A post-state cannot tell "never deleted" from "deleted and
+ *                   repopulated by concurrent writes", so matching counts prove
+ *                   nothing there.
+ *
+ * No outcome is ever an instruction to re-run the destructive command.
  */
 export type Round25Outcome = 'COMMITTED' | 'NOT_COMMITTED' | 'AMBIGUOUS'
 
@@ -72,7 +83,10 @@ export type Round25Checks = {
  * is 0 for every refusal and for inventory mode, and never exceeds 1.
  */
 export type Round25Result = {
-  /** False when the run was refused, or when the outcome is AMBIGUOUS. */
+  /**
+   * True only for a clean run: a refusal is false, and so is any executed run
+   * that did not end COMMITTED. NOT_COMMITTED and AMBIGUOUS both need a human.
+   */
   ok: boolean
   /** True only when the destructive command was sent. */
   executed: boolean
