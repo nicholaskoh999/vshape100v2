@@ -79,11 +79,16 @@ export function LoginPage() {
         initial="initial"
         animate="enter"
         /*
-          calc(100% - 32px) on a phone, then a fixed 26rem (416px) focused
-          column from `sm` up — inside the 400–440px the direction asks for,
-          and never a small dot floating in a wide desktop canvas.
+          Full width inside `main`'s own gutter, capped at 26rem (416px) — the
+          focused column the brief asks for, and never a small dot floating in
+          a wide desktop canvas.
+
+          Deliberately NOT a calc(): `w-[calc(100%-32px)]` encodes the gutter a
+          second time, in a whitespace-sensitive arbitrary value that has to
+          stay in step with `main`'s padding by hand. The padding already
+          supplies the gutter; the card only has to fill what is left.
         */
-        className="w-[calc(100%-32px)] max-w-[26rem] sm:w-[26rem]"
+        className="w-full max-w-[26rem]"
       >
         <motion.div
           variants={listItemVariants}
@@ -125,7 +130,12 @@ export function LoginPage() {
               width, 56px, and plainly a provider button rather than anything
               that could be mistaken for a password form.
             */
-            className="mt-8 flex min-h-gym w-full items-center justify-center gap-3 rounded-control bg-ink px-5 text-[15.5px] font-bold text-ink-on-dark shadow-card transition-opacity duration-fast hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-70"
+            /*
+              Tighter gap and padding below `sm` so the label stays on one line
+              on a 320px phone; the roomier spacing returns as soon as there is
+              width for it.
+            */
+            className="mt-8 flex min-h-gym w-full items-center justify-center gap-2.5 rounded-control bg-ink px-3.5 text-[15.5px] font-bold text-ink-on-dark shadow-card transition-opacity duration-fast hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-70 sm:gap-3 sm:px-5"
           >
             {isRedirecting ? (
               <>

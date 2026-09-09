@@ -85,6 +85,51 @@ describe('routing', () => {
   })
 })
 
+describe('brand mark in the app chrome', () => {
+  /*
+   * ROUND 24 FINAL POLISH. The sidebar drew a literal letter "V" in an ink
+   * tile — a stand-in from before the production artwork existed. The brand is
+   * a shield-and-path symbol, and the login screen and auth splash already
+   * showed it, so the app introduced itself with one mark and then wore
+   * another.
+   *
+   * This pins the replacement from the outside: the chrome renders the
+   * production symbol, and no navigation landmark contains a lone "V" drawn as
+   * a glyph. It deliberately does NOT forbid the letter V in ordinary text —
+   * the `VShape100` wordmark beside the symbol is exactly what should stay.
+   */
+  it('renders the production symbol and no letter-V tile', async () => {
+    renderAt('/today')
+    await screen.findByRole('heading', { name: 'Today' })
+
+    const symbols = document.querySelectorAll('img[src="/vshape-symbol.svg"]')
+    expect(symbols.length).toBeGreaterThan(0)
+    // Decorative: the wordmark beside it already supplies the brand name.
+    for (const symbol of symbols) {
+      expect(symbol.getAttribute('alt')).toBe('')
+      expect(symbol.getAttribute('aria-hidden')).toBe('true')
+    }
+
+    const letterTiles = [...document.querySelectorAll('nav, header, aside')]
+      .flatMap((landmark) => [...landmark.querySelectorAll('span, div')])
+      .filter((el) => el.children.length === 0 && (el.textContent ?? '').trim() === 'V')
+    expect(letterTiles).toHaveLength(0)
+  })
+
+  it('keeps the wordmark and its lime 100', async () => {
+    renderAt('/today')
+    await screen.findByRole('heading', { name: 'Today' })
+
+    const wordmarks = [...document.querySelectorAll('nav p')].filter(
+      (el) => el.textContent?.trim() === 'VShape100',
+    )
+    expect(wordmarks.length).toBeGreaterThan(0)
+    const hundred = wordmarks[0].querySelector('span')
+    expect(hundred?.textContent).toBe('100')
+    expect(hundred?.className).toContain('text-accent-ink')
+  })
+})
+
 describe('mobile bottom navigation', () => {
   it('offers the five accepted items', async () => {
     renderAt('/today')

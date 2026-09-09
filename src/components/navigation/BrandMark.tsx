@@ -1,8 +1,20 @@
 import { cn } from '@/lib/utils'
 
 /**
- * Compact brand lockup: the V icon plus wordmark.
- * The icon file is the canonical SVG shipped in /public.
+ * The app chrome's brand lockup: the shield symbol plus the wordmark.
+ *
+ * ROUND 24 FINAL POLISH. This drew a literal letter "V" in an ink tile — a
+ * stand-in from before the production artwork existed, kept because the old
+ * shipped icon file had been drawn for a navy canvas and disappeared on an
+ * off-white one. Both halves of that reasoning are now obsolete: the
+ * production symbol is transparent, is drawn for the light system, and is
+ * already what the login screen and the auth splash show. Leaving a letter
+ * here would mean the app introduced itself with one mark and then wore
+ * another.
+ *
+ * The image is decorative. The wordmark beside it supplies the brand name,
+ * and in the rail — where the wordmark is hidden — the navigation is labelled
+ * by its own items rather than by the logo.
  */
 export function BrandMark({
   compact = false,
@@ -13,19 +25,18 @@ export function BrandMark({
 }) {
   return (
     <div className={cn('flex items-center gap-2.5', className)}>
-      {/* An ink tile with a lime V, rather than the shipped dark-ground icon
-          file: the icon was drawn for a navy canvas and disappears on an
-          off-white one. The public icon set stays as it is for the installed
-          app, where it sits on the OS background rather than on ours. */}
-      <span
+      {/*
+        The box is larger than the mark it holds: the artwork sits in a 1024
+        viewBox whose shield is 864 tall, so a 40px box draws a ~34px shield.
+        These sizes are chosen so the transparent symbol carries the same
+        optical weight the filled tile did, not to match its numbers.
+      */}
+      <img
+        src="/vshape-symbol.svg"
+        alt=""
         aria-hidden="true"
-        className={cn(
-          'grid shrink-0 place-items-center rounded-[13px] bg-ink font-extrabold text-accent',
-          compact ? 'size-9 text-lg' : 'size-10 text-xl',
-        )}
-      >
-        V
-      </span>
+        className={cn('shrink-0', compact ? 'size-10' : 'size-11')}
+      />
       {!compact && (
         <div className="leading-tight">
           <p className="text-[15px] font-extrabold tracking-tight text-ink">
