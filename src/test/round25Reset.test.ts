@@ -31,6 +31,9 @@ import migration0014 from '../../migrations/0014_workout_recovery_and_correction
 import migration0015 from '../../migrations/0015_programme_builder.sql?raw'
 
 import { runRound25Reset } from '../../scripts/round25-reset.mjs'
+// The operator's own text, for the structural proof that the destructive
+// command has exactly one call site.
+import operatorSource from '../../scripts/round25-reset.mjs?raw'
 import {
   ROUND25_PRESERVED_TABLES,
   ROUND25_RESET_TABLES,
@@ -39,10 +42,13 @@ import {
   renderStatement,
   round25FoundationCheck,
   round25FoundationStatement,
+  ROUND25_OPERATIONAL_TABLES,
   round25Inventory,
   round25IsolationChecks,
+  round25OperationalCounts,
   round25OrphanChecks,
-  round25PreservedFingerprint,
+  round25StableFingerprint,
+  round25TargetOrphanChecks,
   round25ResetStatements,
   round25Transaction,
   type Round25Target,
@@ -66,6 +72,29 @@ function migrated(): DatabaseSync {
   const db = new DatabaseSync(':memory:')
   for (const file of CHAIN) db.exec(file)
   return db
+}
+
+/**
+ * Write a row that violates a declared foreign key.
+ *
+ * `node:sqlite` enforces foreign keys; D1 does not guarantee it for a given
+ * statement, which is precisely why an orphan can exist in production and why
+ * this reset deletes children explicitly rather than trusting cascade. Turning
+ * enforcement off for the fixture is what makes the D1 reality reproducible
+ * here.
+ */
+function writeOrphan(db: DatabaseSync, sub: string): void {
+  db.exec('PRAGMA foreign_keys = OFF')
+  db.prepare(
+    `INSERT INTO workout_sets
+       (google_sub, workout_date, session_id, snapshot_id, exercise_order, set_index,
+        exercise_id_snapshot, exercise_name_snapshot, prescription_snapshot,
+        result_kind_snapshot, load_mode_snapshot, per_side_snapshot, status,
+        actual_result, updated_at)
+     VALUES (?, '2025-01-01', 'monday', 'ghost', 0, 0, 'x', 'X', '1 × 1',
+             'reps', 'kg', 0, 'completed', 1, 1)`,
+  ).run(sub)
+  db.exec('PRAGMA foreign_keys = ON')
 }
 
 /* ------------------------------------------------------------------ */
@@ -368,7 +397,7 @@ describe('3. preserved domains are provably unchanged', () => {
   it('keeps programme, media, input types, push, auth and global holidays byte-identical', () => {
     const db = seeded()
     const read = () =>
-      round25PreservedFingerprint(target).map((s) =>
+      round25StableFingerprint(target).map((s) =>
         JSON.stringify(db.prepare(renderStatement(s)).get()),
       )
 
@@ -513,9 +542,10 @@ describe('5. the operator refuses unless every confirmation is present', () => {
 
     expect(result.ok).toBe(true)
     expect(result.executed).toBe(false)
+    expect(result.attempts).toBe(0)
     expect(ROUND25_RESET_TABLES.map((t) => rowsFor(db, t, MINE))).toEqual(before)
     // It still reported what it WOULD do.
-    expect(result.before?.every((n) => n > 0)).toBe(true)
+    expect(result.before?.reset.every((n: number) => n > 0)).toBe(true)
   })
 
   it('refuses --execute without the understanding flag', async () => {
@@ -563,6 +593,7 @@ describe('5. the operator refuses unless every confirmation is present', () => {
     })
     expect(noAccount.ok).toBe(false)
     expect(noAccount.before).toBeUndefined()
+    expect(noAccount.attempts).toBe(0)
 
     const noDate = await runRound25Reset({
       argv: ['node', 'round25-reset.mjs', '--account', MINE],
@@ -580,14 +611,331 @@ describe('5. the operator refuses unless every confirmation is present', () => {
 
     expect(result.ok).toBe(true)
     expect(result.executed).toBe(true)
+    expect(result.attempts).toBe(1)
+    expect(result.outcome).toBe('COMMITTED')
     expect(result.accepted).toBe(true)
     expect(result.checks).toEqual({
-      emptied: true, noOrphans: true, preserved: true, isolated: true, foundationSet: true,
+      stablePreserved: true, isolated: true, noTargetOrphans: true, noNewOrphans: true,
     })
-    expect(result.after).toEqual(ROUND25_RESET_TABLES.map(() => 0))
-    expect(result.afterFoundation).toBe(`1#${NEW_DAY_1}`)
-    expect(result.beforeMarks).toEqual(result.afterMarks)
-    expect(result.beforeOthers).toEqual(result.afterOthers)
+    expect(result.after?.reset).toEqual(ROUND25_RESET_TABLES.map(() => 0))
+    expect(result.after?.foundation).toBe(`1#${NEW_DAY_1}`)
+    expect(result.before?.stable).toEqual(result.after?.stable)
+    expect(result.before?.others).toEqual(result.after?.others)
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* 5b. An unacknowledged mutation is never answered by sending it again */
+/* ------------------------------------------------------------------ */
+
+describe('5b. the ambiguous-outcome state machine', () => {
+  /**
+   * A transport that applies what it is given and then decides whether to
+   * acknowledge it.
+   *
+   * `failAfterApplying` is the case that matters: D1 durably commits and the
+   * acknowledgement is lost — a dropped connection, a killed Wrangler process,
+   * a gateway timeout. The operator sees an error and MUST NOT conclude that
+   * nothing happened.
+   */
+  function transport(
+    db: DatabaseSync,
+    options: {
+      failMutation?: 'before-applying' | 'after-applying'
+      failReads?: boolean
+    } = {},
+  ) {
+    const state = { mutations: 0 }
+    const exec = (sql: string) => {
+      const isMutation = /^\s*DELETE|^\s*INSERT/i.test(sql)
+      if (isMutation) {
+        state.mutations += 1
+        if (options.failMutation === 'before-applying') {
+          throw new Error('transport died before the command was sent')
+        }
+      } else if (options.failReads) {
+        throw new Error('transport cannot read')
+      }
+      const results = sql
+        .split(';\n')
+        .map((statement) => statement.trim())
+        .filter(Boolean)
+        .map((statement) => {
+          if (/^SELECT/i.test(statement)) return db.prepare(statement).all()
+          db.exec(statement)
+          return []
+        })
+      if (isMutation && options.failMutation === 'after-applying') {
+        // Applied, and then the acknowledgement is lost.
+        throw new Error('connection reset while awaiting acknowledgement')
+      }
+      return results
+    }
+    return { exec, state }
+  }
+
+  const argv = [
+    'node', 'round25-reset.mjs',
+    '--account', MINE,
+    '--foundation-start', NEW_DAY_1,
+    '--execute',
+    '--i-understand-this-deletes-all-activity',
+    '--confirm-account', MINE,
+    '--confirm-foundation-start', NEW_DAY_1,
+  ]
+  const silent = () => {}
+
+  it('A. applied but unacknowledged → COMMITTED, and the command was sent exactly once', async () => {
+    const db = seeded()
+    const { exec, state } = transport(db, { failMutation: 'after-applying' })
+
+    const result = await runRound25Reset({ argv, exec, log: silent, now: NOW })
+
+    // THE POINT. The transport failed, and the operator still worked out the truth.
+    expect(result.transportError).toMatch(/connection reset/)
+    expect(result.outcome).toBe('COMMITTED')
+    expect(result.reconciled).toBe(true)
+    expect(result.accepted).toBe(true)
+    // THE OTHER POINT. Exactly one destructive send, counted by the operator
+    // AND by the transport itself.
+    expect(result.attempts).toBe(1)
+    expect(state.mutations).toBe(1)
+    // And the database really is reset.
+    expect(ROUND25_RESET_TABLES.map((t) => rowsFor(db, t, MINE))).toEqual(
+      ROUND25_RESET_TABLES.map(() => 0),
+    )
+  })
+
+  it('B. failed before applying anything → NOT COMMITTED, proven by reading', async () => {
+    const db = seeded()
+    const before = ROUND25_RESET_TABLES.map((t) => rowsFor(db, t, MINE))
+    const { exec, state } = transport(db, { failMutation: 'before-applying' })
+
+    const result = await runRound25Reset({ argv, exec, log: silent, now: NOW })
+
+    expect(result.outcome).toBe('NOT_COMMITTED')
+    expect(result.reconciled).toBe(true)
+    expect(result.accepted).toBe(false)
+    expect(result.attempts).toBe(1)
+    expect(state.mutations).toBe(1)
+    // Nothing was touched, and that is a positive proof rather than a guess.
+    expect(ROUND25_RESET_TABLES.map((t) => rowsFor(db, t, MINE))).toEqual(before)
+    // `ok` is true: the operator can safely investigate and try again.
+    expect(result.ok).toBe(true)
+  })
+
+  it('C. mutation error AND reconciliation cannot read → AMBIGUOUS, and it stops', async () => {
+    const db = seeded()
+    // The mutation is applied and then unacknowledged, AND every read after it
+    // fails. Nothing can be concluded — which is the outcome under test.
+    const { exec, state } = transport(db, { failMutation: 'after-applying' })
+    let mutated = false
+    const flaky = (sql: string) => {
+      if (/^\s*DELETE|^\s*INSERT/i.test(sql)) {
+        try {
+          return exec(sql)
+        } finally {
+          mutated = true
+        }
+      }
+      if (mutated) throw new Error('transport cannot read')
+      return exec(sql)
+    }
+
+    const result = await runRound25Reset({ argv, exec: flaky, log: silent, now: NOW })
+
+    expect(result.outcome).toBe('AMBIGUOUS')
+    expect(result.reconciled).toBe(false)
+    expect(result.accepted).toBe(false)
+    expect(result.ok).toBe(false)
+    expect(result.readError).toMatch(/cannot read/)
+    // STILL exactly one destructive send. An unknown outcome is never answered
+    // by sending it again.
+    expect(result.attempts).toBe(1)
+    expect(state.mutations).toBe(1)
+  })
+
+  it('D. no code path sends the destructive command twice, under any outcome', async () => {
+    for (const failMutation of [undefined, 'before-applying', 'after-applying'] as const) {
+      const db = seeded()
+      const { exec, state } = transport(db, failMutation ? { failMutation } : {})
+      const result = await runRound25Reset({ argv, exec, log: silent, now: NOW })
+      expect(state.mutations, String(failMutation)).toBe(1)
+      expect(result.attempts, String(failMutation)).toBe(1)
+    }
+    // Structural, not just behavioural: the transaction builder is CALLED on
+    // exactly one line of the operator script.
+    const callSites = operatorSource.match(/round25Transaction\(/g) ?? []
+    expect(callSites).toHaveLength(1)
+    // And there is no retry machinery anywhere near it.
+    expect(operatorSource).not.toMatch(/for\s*\(.*attempt|while\s*\(.*retr|retry\(/i)
+  })
+
+  it('a partial state is AMBIGUOUS — neither the old state nor the intended one', async () => {
+    const db = seeded()
+    // A transport that applies only the first delete and then dies.
+    const half = (sql: string) => {
+      if (/^\s*DELETE/i.test(sql)) {
+        const [first] = sql.split(';\n')
+        db.exec(first)
+        throw new Error('died midway')
+      }
+      return sql
+        .split(';\n')
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((statement) => db.prepare(statement).all())
+    }
+
+    const result = await runRound25Reset({ argv, exec: half, log: silent, now: NOW })
+
+    expect(result.outcome).toBe('AMBIGUOUS')
+    expect(result.reconciled).toBe(true)
+    expect(result.ok).toBe(false)
+    expect(result.attempts).toBe(1)
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* 5c. Stable vs operational, and orphans that are not ours            */
+/* ------------------------------------------------------------------ */
+
+describe('5c. proof semantics match what each table can actually do', () => {
+  const argv = [
+    'node', 'round25-reset.mjs',
+    '--account', MINE,
+    '--foundation-start', NEW_DAY_1,
+    '--execute',
+    '--i-understand-this-deletes-all-activity',
+    '--confirm-account', MINE,
+    '--confirm-foundation-start', NEW_DAY_1,
+  ]
+  const silent = () => {}
+
+  /** A transport that lets the cron and a login run DURING the reset. */
+  function busyTransport(db: DatabaseSync) {
+    let sawMutation = false
+    return (sql: string) => {
+      const isMutation = /^\s*DELETE|^\s*INSERT/i.test(sql)
+      const results = sql
+        .split(';\n')
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((statement) => {
+          if (/^SELECT/i.test(statement)) return db.prepare(statement).all()
+          db.exec(statement)
+          return []
+        })
+      if (isMutation && !sawMutation) {
+        sawMutation = true
+        // The minute cron claims a delivery, a session's last_seen_at moves,
+        // and somebody starts a login. All legitimate, all unrelated.
+        db.prepare(
+          `INSERT INTO notification_deliveries
+             (subscription_id, google_sub, trigger_minute, claimed_at, attempts, status)
+           VALUES (?, ?, 200, 9, 1, 'claimed')`,
+        ).run(`push-${MINE}`, MINE)
+        db.prepare(`UPDATE auth_sessions SET last_seen_at = 999 WHERE google_sub = ?`).run(MINE)
+        db.prepare(
+          `INSERT INTO oauth_states (state_hash, nonce, code_verifier, created_at, expires_at)
+           VALUES ('state-live', 'n', 'v', 9, 10)`,
+        ).run()
+      }
+      return results
+    }
+  }
+
+  it('accepts the reset even though deliveries, sessions and oauth states moved during it', async () => {
+    const db = seeded()
+    const result = await runRound25Reset({
+      argv, exec: busyTransport(db), log: silent, now: NOW,
+    })
+
+    // These DID change — that is the whole point of the fixture.
+    expect(result.before?.operational).not.toEqual(result.after?.operational)
+    // ...and the reset is still accepted, because none of them is evidence
+    // about the reset.
+    expect(result.outcome).toBe('COMMITTED')
+    expect(result.accepted).toBe(true)
+    expect(result.checks?.stablePreserved).toBe(true)
+  })
+
+  it('protects the operational tables STRUCTURALLY — the SQL never names them', () => {
+    const sql = round25Transaction(target, NOW)
+    for (const table of ROUND25_OPERATIONAL_TABLES) {
+      expect(sql, table).not.toMatch(new RegExp(`\\b${table}\\b`))
+    }
+    // Stronger than before == after: it holds even while they are changing.
+    expect(round25OperationalCounts(target)).toHaveLength(ROUND25_OPERATIONAL_TABLES.length)
+  })
+
+  it('still fails acceptance when STABLE content changes', async () => {
+    const db = seeded()
+    let sawMutation = false
+    const meddling = (sql: string) => {
+      const isMutation = /^\s*DELETE|^\s*INSERT/i.test(sql)
+      const results = sql
+        .split(';\n')
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((statement) => {
+          if (/^SELECT/i.test(statement)) return db.prepare(statement).all()
+          db.exec(statement)
+          return []
+        })
+      if (isMutation && !sawMutation) {
+        sawMutation = true
+        // Something rewrote the programme — a legal value, so this is a silent
+        // corruption rather than a constraint error. That is NOT allowed to pass.
+        db.prepare(`UPDATE programme_slots SET set_count = 5 WHERE google_sub = ?`).run(MINE)
+      }
+      return results
+    }
+
+    const result = await runRound25Reset({ argv, exec: meddling, log: silent, now: NOW })
+    expect(result.outcome).toBe('COMMITTED')
+    expect(result.checks?.stablePreserved).toBe(false)
+    expect(result.accepted).toBe(false)
+  })
+
+  it('a pre-existing orphan belonging to ANOTHER account does not fail this reset', async () => {
+    const db = seeded()
+    // An orphan written long ago by something else, for the other account.
+    writeOrphan(db, THEIRS)
+
+    const globalBefore = round25OrphanChecks().map((s) => count(db, renderStatement(s)))
+    expect(globalBefore[0]).toBeGreaterThan(0)
+
+    const result = await runRound25Reset({
+      argv,
+      exec: (sql: string) =>
+        sql.split(';\n').map((s) => s.trim()).filter(Boolean).map((statement) => {
+          if (/^SELECT/i.test(statement)) return db.prepare(statement).all()
+          db.exec(statement)
+          return []
+        }),
+      log: silent,
+      now: NOW,
+    })
+
+    // The orphan is still there, and it is still not ours.
+    expect(result.checks?.noNewOrphans).toBe(true)
+    expect(result.checks?.noTargetOrphans).toBe(true)
+    expect(result.accepted).toBe(true)
+    expect(
+      round25TargetOrphanChecks(target).map((s) => count(db, renderStatement(s))),
+    ).toEqual([0, 0, 0])
+  })
+
+  it('an orphan belonging to the TARGET account does fail acceptance', () => {
+    const db = seeded()
+    applyReset(db)
+    // Something wrote a set with no occurrence, for the account just reset.
+    writeOrphan(db, MINE)
+
+    expect(
+      round25TargetOrphanChecks(target).map((s) => count(db, renderStatement(s))),
+    ).toEqual([1, 0, 0])
   })
 })
 

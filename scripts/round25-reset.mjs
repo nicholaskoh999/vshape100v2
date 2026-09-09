@@ -50,17 +50,20 @@ import { execFileSync } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import {
-  ROUND25_FINGERPRINT_LABELS,
   ROUND25_INVENTORY_LABELS,
   ROUND25_ISOLATION_LABELS,
+  ROUND25_OPERATIONAL_LABELS,
   ROUND25_ORPHAN_LABELS,
+  ROUND25_STABLE_LABELS,
   parseRound25Target,
   renderStatement,
   round25FoundationCheck,
   round25Inventory,
   round25IsolationChecks,
+  round25OperationalCounts,
   round25OrphanChecks,
-  round25PreservedFingerprint,
+  round25StableFingerprint,
+  round25TargetOrphanChecks,
   round25Transaction,
 } from '../shared/round25Reset.ts'
 
@@ -134,6 +137,7 @@ export async function runRound25Reset({ argv, exec, log = console.log, now = Dat
     return {
       ok: false,
       executed: false,
+      attempts: 0,
       reason:
         parsed.field === 'google_sub'
           ? '--account is required and must be the target account key. It is never inferred.'
@@ -146,9 +150,29 @@ export async function runRound25Reset({ argv, exec, log = console.log, now = Dat
   const execute = flag('execute')
 
   const inventorySql = join(round25Inventory(target))
-  const fingerprintSql = join(round25PreservedFingerprint(target))
+  const stableSql = join(round25StableFingerprint(target))
+  const operationalSql = join(round25OperationalCounts(target))
   const isolationSql = join(round25IsolationChecks(target))
   const foundationSql = renderStatement(round25FoundationCheck(target))
+  const globalOrphanSql = join(round25OrphanChecks())
+  const targetOrphanSql = join(round25TargetOrphanChecks(target))
+
+  /**
+   * Every read the reconciliation needs, in one place.
+   *
+   * Used for the BEFORE reading and again for the AFTER reading, so the two are
+   * the same questions asked twice — a difference can only be the database
+   * changing, never the query changing.
+   */
+  const readState = async () => ({
+    reset: counts(await exec(inventorySql)),
+    stable: marks(await exec(stableSql)),
+    operational: counts(await exec(operationalSql)),
+    others: counts(await exec(isolationSql)),
+    foundation: marks(await exec(foundationSql))[0],
+    globalOrphans: counts(await exec(globalOrphanSql)),
+    targetOrphans: counts(await exec(targetOrphanSql)),
+  })
 
   log('')
   log(`  Round 25 — FULL ACTIVITY FRESH START — ${remote ? 'REMOTE' : 'local'} ${DATABASE}`)
@@ -157,40 +181,41 @@ export async function runRound25Reset({ argv, exec, log = console.log, now = Dat
   log('')
 
   // ALWAYS read first, whichever mode this is.
-  const before = counts(await exec(inventorySql))
-  const beforeMarks = marks(await exec(fingerprintSql))
-  const beforeOthers = counts(await exec(isolationSql))
-  const beforeFoundation = marks(await exec(foundationSql))[0]
+  const before = await readState()
 
   log('  WOULD BE EMPTIED (target account)')
-  ROUND25_INVENTORY_LABELS.forEach((label, i) => log(`    ${label.padEnd(30)} ${before[i]}`))
+  ROUND25_INVENTORY_LABELS.forEach((label, i) => log(`    ${label.padEnd(30)} ${before.reset[i]}`))
   log('')
-  log('  MUST NOT CHANGE (preserved domains)')
-  ROUND25_FINGERPRINT_LABELS.forEach((label, i) =>
-    log(`    ${label.padEnd(30)} ${beforeMarks[i].slice(0, 72)}`),
+  log('  MUST NOT CHANGE — stable preserved content (an acceptance condition)')
+  ROUND25_STABLE_LABELS.forEach((label, i) =>
+    log(`    ${label.padEnd(30)} ${before.stable[i].slice(0, 72)}`),
+  )
+  log('')
+  log('  DIAGNOSTIC ONLY — concurrently mutable, never an acceptance condition')
+  ROUND25_OPERATIONAL_LABELS.forEach((label, i) =>
+    log(`    ${label.padEnd(30)} ${before.operational[i]}`),
   )
   log('')
   log('  MUST NOT CHANGE (every other account)')
-  ROUND25_ISOLATION_LABELS.forEach((label, i) => log(`    ${label.padEnd(30)} ${beforeOthers[i]}`))
+  ROUND25_ISOLATION_LABELS.forEach((label, i) =>
+    log(`    ${label.padEnd(30)} ${before.others[i]}`),
+  )
   log('')
-  log(`  foundation_start_date (before)   ${beforeFoundation}`)
+  log('  ORPHANS (pre-existing, so a reset is never blamed for them)')
+  ROUND25_ORPHAN_LABELS.forEach((label, i) =>
+    log(`    ${label.padEnd(30)} global ${before.globalOrphans[i]}   target ${before.targetOrphans[i]}`),
+  )
+  log('')
+  log(`  foundation_start_date (before)   ${before.foundation}`)
   log('')
 
   if (!execute) {
     log('  Inventory only. NOTHING was written. Re-run with the execution flags to reset.')
     log('')
-    return { ok: true, executed: false, before, beforeMarks, beforeOthers, beforeFoundation }
+    return { ok: true, executed: false, attempts: 0, before }
   }
 
-  const refuse = (reason) => ({
-    ok: false,
-    executed: false,
-    before,
-    beforeMarks,
-    beforeOthers,
-    beforeFoundation,
-    reason,
-  })
+  const refuse = (reason) => ({ ok: false, executed: false, attempts: 0, before, reason })
 
   // Four deliberate confirmations. Each one is independently necessary.
   if (!flag('i-understand-this-deletes-all-activity')) {
@@ -205,67 +230,160 @@ export async function runRound25Reset({ argv, exec, log = console.log, now = Dat
 
   log('  Resetting, as ONE atomic command…')
 
-  // THE atomic boundary: nine deletes plus the Foundation write, all or nothing.
-  await exec(round25Transaction(target, now))
+  /*
+   * ── THE DESTRUCTIVE COMMAND IS SENT EXACTLY ONCE ────────────────────────────
+   *
+   * Round 25 correction (Blocker A). Previously a transport error propagated out
+   * of this function, so an operator who saw a failure could not tell whether
+   * the reset had happened — and the obvious next move, running it again, is
+   * catastrophic if it did.
+   *
+   * D1 can durably commit and STILL fail to acknowledge: a dropped connection, a
+   * killed Wrangler process, a gateway timeout. An error here means "the outcome
+   * is unknown", never "nothing happened".
+   *
+   * So: one attempt, counted. Whatever it does, the error is caught and the
+   * database is ASKED what state it is in. There is no loop, no retry and no
+   * second call site — `round25Transaction` is invoked on exactly this line and
+   * nowhere else in this file.
+   */
+  let attempts = 0
+  let transportError = null
+  try {
+    attempts += 1
+    await exec(round25Transaction(target, now))
+  } catch (error) {
+    transportError = error instanceof Error ? error.message : String(error)
+    log('')
+    log(`  ✗ The mutation did not acknowledge: ${transportError}`)
+    log('    This does NOT mean it did not happen. Reconciling by reading…')
+  }
 
-  const after = counts(await exec(inventorySql))
-  const afterMarks = marks(await exec(fingerprintSql))
-  const afterOthers = counts(await exec(isolationSql))
-  const afterFoundation = marks(await exec(foundationSql))[0]
-  const orphans = counts(await exec(join(round25OrphanChecks())))
+  /*
+   * ── RECONCILIATION IS READ-ONLY, AND MAY ITSELF FAIL ───────────────────────
+   *
+   * If the database cannot even be read, nothing can be concluded and saying so
+   * is the only honest answer. AMBIGUOUS is a real outcome, not a failure to
+   * decide one.
+   */
+  let after = null
+  let readError = null
+  try {
+    after = await readState()
+  } catch (error) {
+    readError = error instanceof Error ? error.message : String(error)
+  }
 
-  log('  Done. After-proof:')
+  if (after === null) {
+    log('')
+    log(`  ✗ Reconciliation could not read the database: ${readError}`)
+    log('    OUTCOME: AMBIGUOUS. The reset may or may not have been applied.')
+    log('    DO NOT re-run this command. Restore from the Time Travel bookmark,')
+    log('    or read the nine tables by hand before deciding anything.')
+    log('')
+    return {
+      ok: false,
+      executed: true,
+      attempts,
+      outcome: 'AMBIGUOUS',
+      reconciled: false,
+      accepted: false,
+      transportError,
+      readError,
+      before,
+      reason: 'reconciliation could not read the database; the outcome is unknown',
+    }
+  }
+
+  /*
+   * ── CLASSIFYING WHAT THE DATABASE SAYS ─────────────────────────────────────
+   *
+   * Two positive proofs, and an honest gap between them.
+   *
+   *   COMMITTED     — the intended final state is there: nine tables empty for
+   *                   the account, and the Foundation date is the approved one.
+   *   NOT_COMMITTED — the state before the attempt is still there, unchanged.
+   *   AMBIGUOUS     — neither, which includes every partial state.
+   *
+   * When an account was already empty and already carried the new date, both
+   * proofs hold at once. COMMITTED wins, because the final state IS the
+   * intended one and that is what the operator needs to know.
+   */
+  const resetApplied =
+    after.reset.every((n) => n === 0) && after.foundation === `1#${target.foundationStart}`
+  const resetUntouched =
+    after.reset.every((n, i) => n === before.reset[i]) && after.foundation === before.foundation
+
+  const outcome = resetApplied ? 'COMMITTED' : resetUntouched ? 'NOT_COMMITTED' : 'AMBIGUOUS'
+
+  // Acceptance is a stricter question than "did it commit".
+  const stablePreserved = before.stable.every((mark, i) => mark === after.stable[i])
+  const isolated = before.others.every((n, i) => n === after.others[i])
+  const noTargetOrphans = after.targetOrphans.every((n) => n === 0)
+  // No NEW orphan. Pre-existing ones belong to whatever wrote them, and must
+  // not fail a reset that did not create them.
+  const noNewOrphans = after.globalOrphans.every((n, i) => n <= before.globalOrphans[i])
+  const accepted =
+    outcome === 'COMMITTED' && stablePreserved && isolated && noTargetOrphans && noNewOrphans
+
+  log('')
+  log(`  OUTCOME: ${outcome}${transportError ? '  (the transport reported an error)' : ''}`)
   log('')
   log('  EMPTIED')
   ROUND25_INVENTORY_LABELS.forEach((label, i) =>
-    log(`    ${label.padEnd(30)} ${after[i]}${after[i] === 0 ? '' : '   ✗ EXPECTED 0'}`),
+    log(`    ${label.padEnd(30)} ${after.reset[i]}${after.reset[i] === 0 ? '' : '   ✗ EXPECTED 0'}`),
   )
   log('')
   log('  ORPHANS')
   ROUND25_ORPHAN_LABELS.forEach((label, i) =>
-    log(`    ${label.padEnd(30)} ${orphans[i]}${orphans[i] === 0 ? '' : '   ✗ EXPECTED 0'}`),
+    log(
+      `    ${label.padEnd(30)} target ${after.targetOrphans[i]}` +
+        `${after.targetOrphans[i] === 0 ? '' : ' ✗ EXPECTED 0'}` +
+        `   global ${before.globalOrphans[i]} → ${after.globalOrphans[i]}` +
+        `${after.globalOrphans[i] <= before.globalOrphans[i] ? '' : ' ✗ NEW ORPHAN'}`,
+    ),
   )
   log('')
-  log('  PRESERVED — before vs after')
-  ROUND25_FINGERPRINT_LABELS.forEach((label, i) => {
-    const same = beforeMarks[i] === afterMarks[i]
-    log(`    ${label.padEnd(30)} ${same ? 'unchanged' : '✗ CHANGED'}`)
-  })
+  log('  STABLE PRESERVED — before vs after (an acceptance condition)')
+  ROUND25_STABLE_LABELS.forEach((label, i) =>
+    log(`    ${label.padEnd(30)} ${before.stable[i] === after.stable[i] ? 'unchanged' : '✗ CHANGED'}`),
+  )
+  log('')
+  log('  OPERATIONAL — diagnostic only; these move on their own')
+  ROUND25_OPERATIONAL_LABELS.forEach((label, i) =>
+    log(`    ${label.padEnd(30)} ${before.operational[i]} → ${after.operational[i]}`),
+  )
   log('')
   log('  OTHER ACCOUNTS — before vs after')
-  ROUND25_ISOLATION_LABELS.forEach((label, i) => {
-    const same = beforeOthers[i] === afterOthers[i]
-    log(`    ${label.padEnd(30)} ${same ? 'unchanged' : '✗ CHANGED'}`)
-  })
+  ROUND25_ISOLATION_LABELS.forEach((label, i) =>
+    log(`    ${label.padEnd(30)} ${before.others[i] === after.others[i] ? 'unchanged' : '✗ CHANGED'}`),
+  )
   log('')
-  log(`  foundation_start_date (after)    ${afterFoundation}`)
+  log(`  foundation_start_date            ${before.foundation} → ${after.foundation}`)
   log('')
 
-  // The acceptance conditions, decided here rather than left to the reader.
-  const emptied = after.every((n) => n === 0)
-  const noOrphans = orphans.every((n) => n === 0)
-  const preserved = beforeMarks.every((mark, i) => mark === afterMarks[i])
-  const isolated = beforeOthers.every((n, i) => n === afterOthers[i])
-  const foundationSet = afterFoundation === `1#${target.foundationStart}`
-  const accepted = emptied && noOrphans && preserved && isolated && foundationSet
-
-  log(accepted ? '  ✓ ALL ACCEPTANCE CONDITIONS MET' : '  ✗ ACCEPTANCE FAILED — see above')
+  if (outcome === 'AMBIGUOUS') {
+    log('  ✗ AMBIGUOUS. The database is in neither the old state nor the intended one.')
+    log('    DO NOT re-run this command. Restore from the Time Travel bookmark.')
+  } else if (outcome === 'NOT_COMMITTED') {
+    log('  ✓ NOT COMMITTED. Nothing was changed; the account is exactly as it was.')
+    log('    Safe to investigate and try again once the transport is healthy.')
+  } else {
+    log(accepted ? '  ✓ COMMITTED — ALL ACCEPTANCE CONDITIONS MET' : '  ✗ COMMITTED, BUT ACCEPTANCE FAILED — see above')
+  }
   log('')
 
   return {
-    ok: true,
+    ok: outcome !== 'AMBIGUOUS',
     executed: true,
+    attempts,
+    outcome,
+    reconciled: true,
     accepted,
-    checks: { emptied, noOrphans, preserved, isolated, foundationSet },
+    transportError,
+    checks: { stablePreserved, isolated, noTargetOrphans, noNewOrphans },
     before,
     after,
-    orphans,
-    beforeMarks,
-    afterMarks,
-    beforeOthers,
-    afterOthers,
-    beforeFoundation,
-    afterFoundation,
   }
 }
 
@@ -275,8 +393,10 @@ async function main() {
     exec: wranglerExec(process.argv.includes('--remote')),
   })
   if (!result.ok) {
-    console.error(`\n  ✗ ${result.reason}\n`)
-    process.exit(1)
+    if (result.reason) console.error(`\n  ✗ ${result.reason}\n`)
+    // 3 is reserved for "the outcome is unknown" — a different problem from a
+    // refusal, and the one that must never be answered by running this again.
+    process.exit(result.outcome === 'AMBIGUOUS' ? 3 : 1)
   }
   if (result.executed && !result.accepted) process.exit(2)
 }

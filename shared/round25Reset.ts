@@ -248,17 +248,36 @@ export function round25Inventory(target: Round25Target): Round25Statement[] {
 export const ROUND25_INVENTORY_LABELS = ROUND25_RESET_TABLES
 
 /**
- * The preserved domains, as values that must be IDENTICAL afterwards.
+ * PRESERVED DOMAINS, SPLIT BY WHETHER THEY CAN LEGITIMATELY MOVE.
  *
- * A count alone would prove too little — it cannot tell a rewritten programme
- * from an intact one — so the domains whose content matters carry a digest as
- * well. `group_concat` over an ordered subquery is the practical way to get one
- * from SQLite; its ordering is not formally guaranteed, which does not matter
- * here because the before and after readings are taken from the same engine on
- * the same data shape, and what is being asserted is that the two READINGS are
- * equal.
+ * Round 25 correction (Blocker B). The first version of this fingerprint asked
+ * for before == after across every preserved table, including
+ * `notification_deliveries`, `auth_sessions` and `oauth_states`. That is wrong
+ * as an ACCEPTANCE condition, and would have failed a perfectly good reset:
+ *
+ *   - a cron fires every minute and the notification store legitimately
+ *     inserts delivery claims, updates their status and prunes old rows
+ *   - `auth_sessions.last_seen_at` moves on any request the user makes, and a
+ *     sign-in during the operator window creates a row
+ *   - `oauth_states` rows are created and consumed by any login in flight
+ *
+ * None of that has anything to do with the reset, and none of it is evidence
+ * the reset misbehaved. Requiring temporal equality there would have taught the
+ * operator to ignore a failing check, which is worse than not checking.
+ *
+ * So preservation is proven two different ways, matched to what is actually
+ * true of each table:
+ *
+ *   STABLE      — content that nothing but a deliberate user edit can change.
+ *                 before == after IS an acceptance condition.
+ *   OPERATIONAL — concurrently mutable by the system or by an unrelated login.
+ *                 Counted for DIAGNOSIS only, never for acceptance. These are
+ *                 protected STRUCTURALLY instead: `round25Transaction` never
+ *                 names them, which is asserted against the generated SQL and
+ *                 is a stronger guarantee than any before/after comparison —
+ *                 it holds even while they are changing.
  */
-export function round25PreservedFingerprint(target: Round25Target): Round25Statement[] {
+export function round25StableFingerprint(target: Round25Target): Round25Statement[] {
   const sub = target.googleSub
   return [
     {
@@ -299,11 +318,6 @@ export function round25PreservedFingerprint(target: Round25Target): Round25State
                 FROM push_subscriptions WHERE google_sub = ? ORDER BY id)`,
       params: [sub],
     },
-    // Auth and the global holiday table are not account-partitionable in a way
-    // this reset could reach, so they are counted whole.
-    { sql: `SELECT COUNT(*) AS n, '' AS v FROM auth_sessions`, params: [] },
-    { sql: `SELECT COUNT(*) AS n, '' AS v FROM oauth_states`, params: [] },
-    { sql: `SELECT COUNT(*) AS n, '' AS v FROM notification_deliveries`, params: [] },
     {
       sql: `SELECT COUNT(*) AS n, COALESCE(group_concat(sig, '|'), '') AS v FROM (
               SELECT holiday_date || ':' || name AS sig
@@ -322,19 +336,45 @@ export function round25PreservedFingerprint(target: Round25Target): Round25State
   ]
 }
 
-export const ROUND25_FINGERPRINT_LABELS = [
+export const ROUND25_STABLE_LABELS = [
   'programme_revision',
   'programme_exercises',
   'programme_slots',
   'exercise_media',
   'exercise_input_types',
   'push_subscriptions',
-  'auth_sessions_all',
-  'oauth_states_all',
-  'notification_deliveries_all',
   'company_holidays_all',
   'account_settings_other_columns',
 ] as const
+
+/**
+ * Tables that are preserved but may legitimately move during the operator
+ * window. DIAGNOSTIC ONLY — never an acceptance condition.
+ *
+ * `ROUND25_OPERATIONAL_TABLES` is also what the structural proof asserts
+ * against: none of these names may appear anywhere in the generated mutation.
+ */
+export const ROUND25_OPERATIONAL_TABLES = [
+  'notification_deliveries',
+  'oauth_states',
+  'auth_sessions',
+] as const
+
+export function round25OperationalCounts(target: Round25Target): Round25Statement[] {
+  return [
+    {
+      sql: `SELECT COUNT(*) AS n FROM notification_deliveries WHERE google_sub = ?`,
+      params: [target.googleSub],
+    },
+    { sql: `SELECT COUNT(*) AS n FROM oauth_states`, params: [] },
+    {
+      sql: `SELECT COUNT(*) AS n FROM auth_sessions WHERE google_sub = ?`,
+      params: [target.googleSub],
+    },
+  ]
+}
+
+export const ROUND25_OPERATIONAL_LABELS = ROUND25_OPERATIONAL_TABLES
 
 /**
  * The Foundation start date as stored, for the after-proof.
@@ -366,28 +406,52 @@ export function round25IsolationChecks(target: Round25Target): Round25Statement[
 export const ROUND25_ISOLATION_LABELS = ROUND25_RESET_TABLES
 
 /**
- * Statements proving no orphan survived.
+ * ORPHAN PROOF, IN TWO PARTS.
  *
- * A set, calibration or correction row whose occurrence is gone is invisible in
- * the app and still counted by anything reading those tables directly. These
- * are deliberately GLOBAL, not account-scoped: an orphan anywhere is a bug,
- * whoever it belongs to.
+ * Round 25 correction (Blocker B). A single global "orphans must be zero" check
+ * lets state that has nothing to do with this reset fail it. If the database
+ * already carried one orphaned row — written by an older bug, or belonging to
+ * another account entirely — a perfectly correct reset would report failure
+ * AFTER the destruction had happened, which is the worst possible moment to
+ * hand somebody a number they cannot act on.
+ *
+ * So the proof is split:
+ *
+ *   TARGET  — the account being reset must own no orphan at all. Absolute, and
+ *             the one that actually says this reset was clean.
+ *   GLOBAL  — read before and after. The condition is "no NEW orphan", not
+ *             "no orphan": pre-existing ones are reported, not blamed on this
+ *             operation.
  */
-export function round25OrphanChecks(): Round25Statement[] {
-  const child = (table: string, alias: string) => ({
+function orphanOf(table: string, alias: string, where: string, params: (string | number)[]) {
+  return {
     sql: `SELECT COUNT(*) AS n FROM ${table} ${alias}
-           WHERE NOT EXISTS (
+           WHERE ${where}NOT EXISTS (
              SELECT 1 FROM workout_occurrences o
               WHERE o.google_sub   = ${alias}.google_sub
                 AND o.workout_date = ${alias}.workout_date
                 AND o.session_id   = ${alias}.session_id
            )`,
-    params: [] as (string | number)[],
-  })
+    params,
+  }
+}
+
+/** Orphans anywhere in the database. Compared before against after. */
+export function round25OrphanChecks(): Round25Statement[] {
   return [
-    child('workout_sets', 's'),
-    child('workout_calibration', 'c'),
-    child('workout_set_corrections', 'x'),
+    orphanOf('workout_sets', 's', '', []),
+    orphanOf('workout_calibration', 'c', '', []),
+    orphanOf('workout_set_corrections', 'x', '', []),
+  ]
+}
+
+/** Orphans belonging to the target account. Must be zero afterwards. */
+export function round25TargetOrphanChecks(target: Round25Target): Round25Statement[] {
+  const sub = [target.googleSub]
+  return [
+    orphanOf('workout_sets', 's', 's.google_sub = ? AND ', sub),
+    orphanOf('workout_calibration', 'c', 'c.google_sub = ? AND ', sub),
+    orphanOf('workout_set_corrections', 'x', 'x.google_sub = ? AND ', sub),
   ]
 }
 

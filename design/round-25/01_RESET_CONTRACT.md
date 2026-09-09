@@ -114,20 +114,135 @@ allowlist and throws rather than escaping.
 
 ---
 
+## 4b. The outcome state machine — an unacknowledged mutation is never re-sent
+
+**Correction A.** The first version awaited the destructive command and only
+reconciled if that call returned. A transport error propagated straight out, so
+an operator who saw a failure could not tell whether the reset had happened —
+and the obvious next move, running it again, is catastrophic if it did.
+
+D1 can **durably commit and still fail to acknowledge**: a dropped connection, a
+killed Wrangler process, a gateway timeout. An error means *the outcome is
+unknown*, never *nothing happened*.
+
+```
+              ┌──────────────────────────────┐
+              │ send the command  (attempt 1)│   ← the ONLY call site
+              └───────────────┬──────────────┘
+                  returns ────┴──── throws
+                      │               │  (error captured, NEVER rethrown,
+                      │               │   NEVER retried)
+                      └──────┬────────┘
+                             ▼
+                 ┌───────────────────────┐
+                 │ reconcile (READ ONLY) │
+                 └───────────┬───────────┘
+                 reads fail ──┴── reads succeed
+                      │              │
+                      ▼              ▼
+                 AMBIGUOUS      ┌────────────────────────────────┐
+                 reconciled:    │ nine tables all 0 AND          │
+                 false          │ foundation == approved date ?  │
+                 exit 3         └───┬──────────────────┬─────────┘
+                                yes │               no │
+                                    ▼                  ▼
+                              COMMITTED      ┌─────────────────────────────┐
+                                             │ nine counts == before AND   │
+                                             │ foundation == before value ?│
+                                             └──┬───────────────────┬──────┘
+                                            yes │                no │
+                                                ▼                   ▼
+                                        NOT_COMMITTED          AMBIGUOUS
+                                        (safe to retry)        (restore; do
+                                                                not re-run)
+```
+
+`COMMITTED` wins when both proofs hold at once — an account that was already
+empty and already carried the new date is in the intended final state, and that
+is what the operator needs to know.
+
+**Acceptance is a stricter, separate question** from whether it committed:
+
+```
+accepted = COMMITTED
+         && stable preserved content unchanged
+         && every other account unchanged
+         && target account owns no orphan
+         && no NEW orphan anywhere
+```
+
+Exit codes: `1` refused · `2` committed but acceptance failed · `3` **AMBIGUOUS**,
+the one that must never be answered by running the command again.
+
+### Proof that the destructive command cannot run twice
+
+- `round25Transaction(` is **called on exactly one line** of the operator — a
+  regex over the script's own source asserts `callSites.length === 1`, and the
+  same test asserts there is no retry construct (`for (…attempt`, `while (…retr`,
+  `retry(`) anywhere in the file.
+- `attempts` is incremented immediately before the send and returned. It is `0`
+  for every refusal and for inventory mode, and **1** in every executing test —
+  asserted against the operator's counter *and* independently against the
+  transport's own counter.
+- Regression **D** drives all three outcomes (clean, fail-before, fail-after) and
+  asserts `mutations === 1` in each.
+
+---
+
 ## 5. Pre / post proofs the tool produces
 
 - **Inventory** — all nine reset tables, for the target account.
-- **Preserved fingerprint** — eleven readings, each a count *and a content
-  digest* where content matters (programme revision, exercises, slots, media,
-  input types, push subscriptions, auth, oauth, deliveries, global holidays, and
-  `account_settings` columns **other than** the one this reset may write). Equal
-  before and after is the proof.
+- **STABLE preserved content** — eight readings, each a count *and a content
+  digest*: programme revision, exercises and slots, exercise media, input types,
+  push subscriptions, global holidays, and `account_settings` columns **other
+  than** the one this reset may write. Equal before and after **is** an
+  acceptance condition.
+- **OPERATIONAL counts** — `notification_deliveries`, `oauth_states`,
+  `auth_sessions`. **Diagnostic only, never acceptance.**
 - **Isolation** — every other account's rows across all nine tables. Equal before
   and after is the proof that one account's reset cannot reach another's.
-- **Orphans** — deliberately global, not account-scoped: an orphan anywhere is a
-  bug, whoever it belongs to.
+- **Orphans, in two parts** — see §5b.
 - **Foundation** — read back separately, because it is the one value expected to
   change.
+
+---
+
+## 5b. Stable vs operational, and orphans that are not ours
+
+**Correction B, first half.** The first version required
+`notification_deliveries`, `auth_sessions` and `oauth_states` to read identically
+before and after. That would have failed a perfectly good reset:
+
+- a cron fires **every minute** and the notification store legitimately inserts
+  delivery claims, updates their status and prunes old rows
+- `auth_sessions.last_seen_at` moves on any request the user makes, and a
+  sign-in during the operator window creates a row
+- `oauth_states` rows are created and consumed by any login in flight
+
+None of that is evidence about the reset. Requiring equality there would have
+taught the operator to ignore a failing check — worse than not checking.
+
+Those three are now protected **structurally instead**, which is a stronger
+guarantee than any before/after comparison because it holds *even while they are
+changing*: `round25Transaction` never names them, asserted by test against the
+generated SQL. Their counts are still printed, as diagnosis.
+
+**Correction B, second half.** A single global "orphans must be zero" check lets
+unrelated state fail this reset. If the database already carried one orphaned row
+— from an older bug, or belonging to another account — a correct reset would
+report failure *after* the destruction, which is the worst possible moment to
+hand somebody a number they cannot act on.
+
+| Proof | Rule |
+|---|---|
+| **Target orphans** | must be **0**. This is what says *this* reset was clean. |
+| **Global orphans** | read before and after; the condition is **no NEW orphan** (`after ≤ before`), not "no orphan". |
+
+A test writes a pre-existing orphan for the *other* account and proves the reset
+still passes; another writes one for the target and proves it does not. (Both
+fixtures turn foreign-key enforcement off, because `node:sqlite` enforces FKs and
+D1 does not guarantee it — which is exactly why orphans can exist in production,
+and why this reset deletes children explicitly rather than trusting cascade.)
 
 ---
 
@@ -176,6 +291,16 @@ one was caught:
 | remove the `--i-understand-this-deletes-all-activity` requirement | **1 test fails** |
 | remove the `--confirm-account` match | **1 test fails** |
 | let inventory mode fall through and execute | **1 test fails** |
+
+Five more, added by this correction:
+
+| Mutation | Result |
+|---|---|
+| rethrow the transport error instead of reconciling (the reported blocker) | **5 tests fail** |
+| retry the destructive command once on error | **5 tests fail** |
+| treat a failed reconciliation as committed | **1 test fails** |
+| put `notification_deliveries` back into the acceptance fingerprint | **1 test fails** |
+| require global orphans to be 0 rather than not increased | **1 test fails** |
 
 ---
 
