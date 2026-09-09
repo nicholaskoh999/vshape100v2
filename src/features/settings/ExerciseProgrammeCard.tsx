@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/Card'
 import { useProgramme } from '@/features/programme/programmeContext'
 import {
   ProgrammeConflictError,
+  defaultSlot,
   saveProgramme,
   toSaveSessions,
   type ProgrammeView,
@@ -63,20 +64,6 @@ function draftFrom(programme: ProgrammeView, exerciseId: string): Draft {
   }
 }
 
-/** A slot with the defaults a newly-added weekday starts from. */
-function newSlot(exerciseId: string): ProgrammeSlot {
-  return {
-    exerciseId,
-    position: 0,
-    setCount: 3,
-    resultKind: 'reps',
-    targetMin: 10,
-    targetMax: 15,
-    perSide: false,
-    equipment: null,
-  }
-}
-
 export function ExerciseProgrammeCard({ exerciseId }: { exerciseId: string }) {
   const { programme, adopt, reload } = useProgramme()
 
@@ -126,7 +113,7 @@ export function ExerciseProgrammeCard({ exerciseId }: { exerciseId: string }) {
   function toggleWeekday(sessionId: ProgrammeSessionId, on: boolean) {
     const slots = current!.sessions[sessionId]
     const next = on
-      ? [...slots, newSlot(exerciseId)]
+      ? [...slots, defaultSlot(exerciseId)]
       : slots.filter((slot) => slot.exerciseId !== exerciseId)
     update({
       sessions: { ...current!.sessions, [sessionId]: compactPositions(next) },

@@ -8,6 +8,7 @@ import {
   Plus,
   RefreshCw,
   Trash2,
+  X,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router'
@@ -35,6 +36,7 @@ import { MAX_EQUIPMENT_LENGTH, MAX_SETS_PER_EXERCISE } from '@shared/workoutLog'
 
 import {
   ProgrammeConflictError,
+  defaultSlot,
   saveProgramme,
   toSaveSessions,
   type ProgrammeView,
@@ -75,10 +77,23 @@ import { useProgramme } from './programmeContext'
  *   Renaming and archiving stay in the Exercise Library, which owns identity.
  */
 
-type Draft = { sessions: ProgrammeSessions }
+/**
+ * The week as the author currently wants it, AND the revision they authored it
+ * on.
+ *
+ * The revision is not decoration. Without it `current = draft ?? base` silently
+ * rebases: a draft written against revision N survives a conflict, the newer
+ * programme arrives as N+1, and the next Save states N+1 as the revision it
+ * was written against — which is how an old draft overwrites work the author
+ * never saw. Pinning the revision to the draft makes that impossible to
+ * express: a draft can only ever be saved against the revision it was written
+ * on, and that revision is exactly what a compare-and-swap refuses once the
+ * server has moved past it.
+ */
+type Draft = { revision: number; sessions: ProgrammeSessions }
 
 function draftFrom(programme: ProgrammeView): Draft {
-  return { sessions: toSaveSessions(programme) }
+  return { revision: programme.revision, sessions: toSaveSessions(programme) }
 }
 
 export function ProgrammePage() {
@@ -86,14 +101,21 @@ export function ProgrammePage() {
   const [day, setDay] = useState<ProgrammeSessionId>('monday')
   const [draft, setDraft] = useState<Draft | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
+  const [adding, setAdding] = useState(false)
+  const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState<'idle' | 'saved' | 'conflict' | 'error'>('idle')
 
   const base = programme ? draftFrom(programme) : null
   const current = draft ?? base
 
+  // Only the week itself. Comparing the revision too would report an untouched
+  // week as edited the moment the server moved on.
   const dirty = useMemo(
-    () => (base && current ? JSON.stringify(base) !== JSON.stringify(current) : false),
+    () =>
+      base && current
+        ? JSON.stringify(base.sessions) !== JSON.stringify(current.sessions)
+        : false,
     [base, current],
   )
 
@@ -158,9 +180,79 @@ export function ProgrammePage() {
     (issue) => 'sessionId' in issue && issue.sessionId === day,
   )
 
+  /*
+   * IS THE DRAFT STILL ABOUT THE PROGRAMME THE AUTHOR IS LOOKING AT?
+   *
+   * False for the ordinary case, where the draft was written against exactly
+   * the revision now loaded. True once the server has moved on underneath it —
+   * after a conflict, or after a reload that landed while edits were open.
+   *
+   * A stale draft is NOT thrown away and NOT quietly rebased. It stays on
+   * screen, it cannot be saved, and the only way forward is the explicit
+   * discard below.
+   */
+  const stale = draft !== null && draft.revision !== programme.revision
+
   function update(sessions: ProgrammeSessions) {
-    setDraft({ sessions })
+    // The revision travels with the draft, unchanged. Further edits on a stale
+    // draft keep it stale — editing more is not a way of re-basing.
+    setDraft({ revision: current!.revision, sessions })
     setFeedback('idle')
+  }
+
+  /*
+   * WEEKDAY → ADD AN EXISTING EXERCISE.
+   *
+   * The one week-first operation the first cut of this screen could not do: it
+   * offered "Add an exercise to Monday" as a link into the Exercise Library,
+   * which put the user straight back on the exercise-first path this screen
+   * exists to replace.
+   *
+   * Everything about the write is unchanged. Adding edits the DRAFT — no
+   * request is made by choosing an exercise — and the week still reaches the
+   * server as one all-or-nothing compare-and-swap.
+   */
+  function candidatesFor(sessionId: ProgrammeSessionId) {
+    const already = new Set(current!.sessions[sessionId].map((slot) => slot.exerciseId))
+    const needle = query.trim().toLowerCase()
+    return programme!.exercises
+      .filter((exercise) => !exercise.archived)
+      .filter((exercise) => !already.has(exercise.exerciseId))
+      .filter((exercise) => needle === '' || exercise.name.toLowerCase().includes(needle))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  function add(exerciseId: string) {
+    /*
+     * REFUSED, not merely un-offered. The list under the finger can be stale —
+     * an archive can land between render and tap — and neither of these may
+     * enter a future workout: an archived exercise has been retired, and one
+     * exercise cannot hold two places in the same weekday.
+     */
+    const exercise = programme!.exercises.find((e) => e.exerciseId === exerciseId)
+    if (!exercise || exercise.archived) return
+    if (current!.sessions[day].some((slot) => slot.exerciseId === exerciseId)) return
+
+    update({
+      ...current!.sessions,
+      // Appended to the END of the day, then positions rewritten from array
+      // order — the same rule every other edit here uses.
+      [day]: compactPositions([...current!.sessions[day], defaultSlot(exerciseId)]),
+    })
+    setAdding(false)
+    setQuery('')
+    // Straight into its prescription: the default is a starting point, not an
+    // answer, and this is the moment the author knows what they meant.
+    setEditing(exerciseId)
+  }
+
+  function discardAndReload() {
+    setDraft(null)
+    setEditing(null)
+    setAdding(false)
+    setQuery('')
+    setFeedback('idle')
+    reload()
   }
 
   function move(index: number, direction: -1 | 1) {
@@ -191,11 +283,17 @@ export function ProgrammePage() {
   }
 
   async function commit() {
+    // A stale draft is never submitted at all. The guard below is the second
+    // line, not the first: the button is already disabled.
+    if (stale) return
     setBusy(true)
     setFeedback('idle')
     try {
       const saved = await saveProgramme({
-        expectedRevision: programme!.revision,
+        // THE DRAFT'S OWN REVISION, never whichever one happens to be loaded.
+        // These are the same number in the ordinary case; where they differ,
+        // sending the loaded one is precisely the silent rebase this refuses.
+        expectedRevision: current!.revision,
         exercises: programme!.exercises,
         sessions: current!.sessions,
       })
@@ -205,9 +303,15 @@ export function ProgrammePage() {
       setFeedback('saved')
     } catch (failure: unknown) {
       if (failure instanceof ProgrammeConflictError) {
-        // Never auto-overwrite. The user is told what happened and offered the
-        // latest; their own edits stay on screen until they choose.
+        /*
+         * Never auto-overwrite. The 409 carries the server's CURRENT
+         * programme, and adopting it is adopting server truth — it is also
+         * what makes the refusal stick: the draft keeps the revision it was
+         * authored on, so from here it is stale and cannot be saved by any
+         * route. The edits stay on screen; the author decides.
+         */
         setFeedback('conflict')
+        adopt(failure.programme)
         return
       }
       console.error('Programme save failed', failure)
@@ -217,7 +321,8 @@ export function ProgrammePage() {
     }
   }
 
-  const canSave = !busy && dirty && issues.length === 0
+  const canSave =
+    !busy && dirty && issues.length === 0 && !stale && feedback !== 'conflict'
 
   return (
     <>
@@ -243,6 +348,8 @@ export function ProgrammePage() {
         onChange={(next) => {
           setDay(next)
           setEditing(null)
+          setAdding(false)
+          setQuery('')
         }}
         options={PROGRAMME_SESSION_IDS.map((id) => ({
           value: id,
@@ -299,21 +406,49 @@ export function ProgrammePage() {
 
           {slots.length === 0 && (
             <Banner tone="warn" live="alert" title={`${meta.day} has no exercises`}>
-              A weekday with nothing in it cannot be started, so it cannot be saved. Add an
-              exercise from the Exercise Library.
+              A weekday with nothing in it cannot be started, so it cannot be saved. Add one
+              below.
             </Banner>
           )}
 
-          <Link
-            to="/settings/exercises"
-            className="mt-3 flex min-h-tap w-full items-center justify-center gap-2 rounded-control border border-dashed border-line-strong bg-surface text-sm font-bold text-ink no-underline transition-colors duration-fast hover:border-ink-4"
-          >
-            <Plus className="size-4.5" aria-hidden="true" />
-            Add an exercise to {meta.day}
-          </Link>
+          {adding ? (
+            <AddExercisePanel
+              day={meta.day}
+              query={query}
+              onQuery={setQuery}
+              candidates={candidatesFor(day)}
+              // Where else in the week each one already sits, so adding a sixth
+              // Monday pull is a decision rather than an accident.
+              alsoOn={(exerciseId) =>
+                PROGRAMME_SESSION_IDS.filter(
+                  (id) =>
+                    id !== day &&
+                    current!.sessions[id].some((slot) => slot.exerciseId === exerciseId),
+                ).map((id) => FOUNDATION_SESSION_META[id].day.slice(0, 3))
+              }
+              onAdd={add}
+              onCancel={() => {
+                setAdding(false)
+                setQuery('')
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setAdding(true)
+                setEditing(null)
+              }}
+              className="mt-3 flex min-h-gym w-full items-center justify-center gap-2 rounded-control border border-dashed border-line-strong bg-surface text-sm font-bold text-ink transition-colors duration-fast hover:border-ink-4"
+            >
+              <Plus className="size-4.5" aria-hidden="true" />
+              Add exercise to {meta.day}
+            </button>
+          )}
+
           <p className="mt-2 px-1 text-xs text-ink-3">
-            Exercises are created and named in the Exercise Library, which owns their
-            identity. This screen arranges which day each one sits on.
+            Adding changes only what is on screen. Nothing reaches the server until you save
+            the week.
           </p>
 
           <p className="mt-4 px-1 text-xs text-ink-3">
@@ -328,14 +463,17 @@ export function ProgrammePage() {
             dirty={dirty}
             busy={busy}
             canSave={canSave}
+            stale={stale}
             feedback={feedback}
             onSave={() => void commit()}
             onDiscard={() => {
               setDraft(null)
               setEditing(null)
+              setAdding(false)
+              setQuery('')
               setFeedback('idle')
             }}
-            onReload={reload}
+            onDiscardAndReload={discardAndReload}
           />
 
           <section aria-label="Week at a glance">
@@ -356,6 +494,8 @@ export function ProgrammePage() {
                         onClick={() => {
                           setDay(id)
                           setEditing(null)
+                          setAdding(false)
+                          setQuery('')
                         }}
                         className={cn(
                           'flex min-h-tap w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-fast hover:bg-surface-soft',
@@ -569,6 +709,116 @@ function SlotCard({
   )
 }
 
+/* ------------------------------------------------------------------ */
+/* Adding an exercise to a weekday                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Choose an exercise that is not already on this day.
+ *
+ * A focused panel, opened deliberately and closed as soon as it is used — the
+ * whole point of the week-first screen is that a weekday is a list of rows, not
+ * a permanent form. Nothing here creates an exercise: identity is the Exercise
+ * Library's, and this only decides which day an existing one sits on.
+ *
+ * TWO EXCLUSIONS, BOTH DELIBERATE.
+ *
+ *   ARCHIVED exercises are not offered. Archiving retires an exercise from
+ *   future training; a screen that let one back into next Monday would make
+ *   archiving mean nothing. (The save would refuse it too — this is the first
+ *   of two doors, not the only one.)
+ *
+ *   EXERCISES ALREADY ON THIS DAY are not offered. Two slots for one exercise
+ *   in one weekday cannot be told apart in the workout that follows.
+ */
+function AddExercisePanel({
+  day,
+  query,
+  onQuery,
+  candidates,
+  alsoOn,
+  onAdd,
+  onCancel,
+}: {
+  day: string
+  query: string
+  onQuery: (next: string) => void
+  candidates: { exerciseId: string; name: string }[]
+  alsoOn: (exerciseId: string) => string[]
+  onAdd: (exerciseId: string) => void
+  onCancel: () => void
+}) {
+  return (
+    <section
+      aria-label={`Add an exercise to ${day}`}
+      data-add-exercise
+      className="vs-bordered mt-3 rounded-card border-2 border-accent-edge bg-surface p-4 shadow-card"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-[15px] font-bold text-ink">Add to {day}</h3>
+          <p className="mt-0.5 text-[13px] text-ink-2">
+            It joins the end of the day and starts at 3 × 10–15. You can change that next.
+          </p>
+        </div>
+        <IconButton label="Cancel adding an exercise" onClick={onCancel}>
+          <X className="size-4.5" aria-hidden="true" />
+        </IconButton>
+      </div>
+
+      <Field
+        id="add-exercise-search"
+        label="Search your exercises"
+        value={query}
+        onChange={onQuery}
+        placeholder="Type a name"
+        className="mt-3.5"
+      />
+
+      {candidates.length === 0 ? (
+        <p className="mt-3.5 text-[13px] text-ink-2">
+          {query.trim() === ''
+            ? `Every exercise you have is already on ${day}.`
+            : `Nothing matches “${query.trim()}” that is not already on ${day}.`}{' '}
+          New exercises are created in the{' '}
+          <Link to="/settings/exercises" className="font-semibold text-ink underline">
+            Exercise Library
+          </Link>
+          , which owns their name and identity.
+        </p>
+      ) : (
+        <ul className="mt-3.5 flex max-h-96 flex-col gap-2 overflow-y-auto">
+          {candidates.map((exercise) => {
+            const elsewhere = alsoOn(exercise.exerciseId)
+            return (
+              <li key={exercise.exerciseId}>
+                <button
+                  type="button"
+                  onClick={() => onAdd(exercise.exerciseId)}
+                  aria-label={`Add ${exercise.name} to ${day}`}
+                  className="flex min-h-tap w-full items-center gap-3 rounded-control border border-line bg-surface px-3.5 py-2.5 text-left transition-colors duration-fast hover:border-ink-4"
+                >
+                  <Plus className="size-4 shrink-0 text-ink-3" aria-hidden="true" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[14.5px] font-semibold text-ink">
+                      {exercise.name}
+                    </span>
+                    {elsewhere.length > 0 && (
+                      <span className="mt-0.5 block text-[12px] text-ink-3">
+                        Also on {elsewhere.join(', ')}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </section>
+  )
+}
+
 /**
  * A bounded whole number.
  *
@@ -632,24 +882,31 @@ function SaveBar({
   dirty,
   busy,
   canSave,
+  stale,
   feedback,
   onSave,
   onDiscard,
-  onReload,
+  onDiscardAndReload,
 }: {
   dirty: boolean
   busy: boolean
   canSave: boolean
+  /** The draft was written against a revision the server has moved past. */
+  stale: boolean
   feedback: 'idle' | 'saved' | 'conflict' | 'error'
   onSave: () => void
   onDiscard: () => void
-  onReload: () => void
+  onDiscardAndReload: () => void
 }) {
   return (
     <Card>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-[15px] font-bold text-ink">
-          {dirty ? 'Unsaved changes' : 'Your week is saved'}
+          {stale
+            ? 'These edits can no longer be saved'
+            : dirty
+              ? 'Unsaved changes'
+              : 'Your week is saved'}
         </p>
         <div className="flex flex-wrap items-center gap-2">
           {dirty && (
@@ -679,21 +936,36 @@ function SaveBar({
         </p>
       )}
 
-      {feedback === 'conflict' && (
+      {/*
+        A CONFLICT IS NOT SOMETHING TO CLICK PAST.
+
+        Nothing was overwritten, and nothing here will overwrite anything: these
+        edits were written against an older revision of the programme and this
+        screen will not re-address them to the newer one. There is no "save
+        anyway", because saving anyway is exactly the silent overwrite the
+        compare-and-swap exists to prevent — and there is no merge yet, so the
+        honest single way forward is to discard and start from what is actually
+        stored. The wording says plainly what is lost.
+      */}
+      {(feedback === 'conflict' || stale) && (
         <Banner
           tone="danger"
           live="alert"
           className="mt-3"
           title="Your programme changed somewhere else"
           actions={
-            <Button size="sm" onClick={onReload}>
+            <Button size="sm" variant="danger" onClick={onDiscardAndReload}>
               <RefreshCw className="size-4" aria-hidden="true" />
-              Show the newer version
+              Discard my edits and load the latest
             </Button>
           }
         >
-          Nothing was overwritten and your edits are still on screen. Review the newer
-          version, then decide.
+          Nothing was overwritten. Your edits were made against an older version of your
+          programme and cannot be saved over the newer one, because that would replace
+          changes you have not seen.{' '}
+          <strong className="font-bold text-ink">
+            Discarding will permanently lose the unsaved edits on this screen.
+          </strong>
         </Banner>
       )}
 

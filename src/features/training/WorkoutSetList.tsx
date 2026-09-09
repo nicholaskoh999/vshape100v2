@@ -139,6 +139,95 @@ function WorkoutSetRow({
   suggestedLoad: WorkoutLoad | null
   suggestionLocked: boolean
 } & Pick<WorkoutSetListProps, 'onComplete' | 'onSkip' | 'onUndo'>) {
+  const label = `Set ${set.setIndex + 1}`
+
+  if (set.status !== 'pending') {
+    return (
+      <ResolvedSetRow
+        set={set}
+        label={label}
+        busy={busy}
+        locked={locked}
+        onUndo={onUndo}
+      />
+    )
+  }
+
+  return (
+    <li
+      className={cn(
+        'vs-bordered rounded-control border bg-surface p-4',
+        current ? 'border-2 border-accent-edge' : 'border-line',
+        busy && 'opacity-70',
+      )}
+    >
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[15px] font-bold text-ink">{label}</p>
+        {current && <Badge tone="current">Current set</Badge>}
+      </div>
+
+      <PendingSetControls
+        set={set}
+        busy={busy}
+        locked={locked}
+        suggestedLoad={suggestedLoad}
+        suggestionLocked={suggestionLocked}
+        onComplete={onComplete}
+        onSkip={onSkip}
+      />
+
+      {busy && (
+        <p role="status" className="mt-2.5 text-xs font-semibold text-ink-2">
+          Saving…
+        </p>
+      )}
+    </li>
+  )
+}
+
+/**
+ * THE CONTROLS ONE PENDING SET GETS — the single implementation.
+ *
+ * Round 24 correction. Focused workout mode needs exactly these controls, and
+ * a second copy of them would be a second answer to the only question that
+ * actually matters here: what does this set's FROZEN modality allow to be
+ * recorded? A drifted copy is how "12 reps · 3kg" got written for three black
+ * bands. So both surfaces render this, and neither can decide differently:
+ *
+ *   - which control appears is read from `set.inputType` / `set.loadMode`,
+ *     which come from the snapshot the workout was started with
+ *   - a band set has NO kilogram field, and its band is a label and a count
+ *   - a bodyweight set has no load field at all
+ *   - "kg each" says per dumbbell, in the label and again in the hint
+ *   - nothing is ever prefilled, and exactly one kind of resistance travels
+ *   - an unreadable modality refuses to log rather than guessing
+ *
+ * The two surfaces differ only in the wrapper: the accordion lays the actions
+ * out inline, focused mode pins them to the bottom of the phone.
+ */
+export function PendingSetControls({
+  set,
+  busy,
+  locked,
+  suggestedLoad = null,
+  suggestionLocked = false,
+  completeLabel = 'Complete',
+  actionsClassName,
+  onComplete,
+  onSkip,
+}: {
+  set: WorkoutSet
+  busy: boolean
+  locked: boolean
+  suggestedLoad?: WorkoutLoad | null
+  suggestionLocked?: boolean
+  /** Focused mode names the action in full; the accordion keeps it short. */
+  completeLabel?: string
+  /** Lets focused mode pin the action row to the bottom of the viewport. */
+  actionsClassName?: string
+  onComplete: WorkoutSetListProps['onComplete']
+  onSkip: WorkoutSetListProps['onSkip']
+}) {
   const fieldId = useId()
   // Never prefilled: a default number would be a value the user did not do.
   const [loadInput, setLoadInput] = useState('')
@@ -146,7 +235,6 @@ function WorkoutSetRow({
   const [bandCountInput, setBandCountInput] = useState('')
   const [resultInput, setResultInput] = useState('')
 
-  const label = `Set ${set.setIndex + 1}`
   // WHICH CONTROL THIS SET GETS IS DECIDED BY THE FROZEN SNAPSHOT.
   //
   // Not by the exercise's current setting, and not by its name. A workout begun
@@ -204,33 +292,10 @@ function WorkoutSetRow({
     })
   }
 
-  if (set.status !== 'pending') {
-    return (
-      <ResolvedSetRow
-        set={set}
-        label={label}
-        busy={busy}
-        locked={locked}
-        onUndo={onUndo}
-      />
-    )
-  }
-
   const resultIsTime = set.resultKind === 'seconds'
 
   return (
-    <li
-      className={cn(
-        'vs-bordered rounded-control border bg-surface p-4',
-        current ? 'border-2 border-accent-edge' : 'border-line',
-        busy && 'opacity-70',
-      )}
-    >
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[15px] font-bold text-ink">{label}</p>
-        {current && <Badge tone="current">Current set</Badge>}
-      </div>
-
+    <>
       {unreadable && (
         <Banner tone="warn" live="alert" className="mb-3" title="This set cannot be logged">
           This set’s input type could not be read, so it cannot be logged. Nothing is assumed
@@ -314,7 +379,7 @@ function WorkoutSetRow({
           disabled={unreadable}
         />
 
-        <div className="flex items-center gap-2.5">
+        <div className={cn('flex items-center gap-2.5', actionsClassName)}>
           <Button
             variant="primary"
             size="lg"
@@ -328,7 +393,7 @@ function WorkoutSetRow({
             ) : (
               <Check className="size-[18px]" aria-hidden="true" />
             )}
-            Complete
+            {completeLabel}
           </Button>
 
           <Button size="lg" onClick={() => onSkip(set.exerciseOrder, set.setIndex)} disabled={locked}>
@@ -337,18 +402,12 @@ function WorkoutSetRow({
           </Button>
         </div>
       </div>
-
-      {busy && (
-        <p role="status" className="mt-2.5 text-xs font-semibold text-ink-2">
-          Saving…
-        </p>
-      )}
-    </li>
+    </>
   )
 }
 
 /** A completed or skipped set: what was stored, plus a way back to pending. */
-function ResolvedSetRow({
+export function ResolvedSetRow({
   set,
   label,
   busy,

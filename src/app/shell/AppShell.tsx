@@ -1,10 +1,13 @@
 import { motion } from 'motion/react'
+import { useState } from 'react'
 import { Outlet, useLocation } from 'react-router'
 
 import { BottomNav } from '@/components/navigation/BottomNav'
 import { SideNav } from '@/components/navigation/SideNav'
 import { pageVariants } from '@/design/motion'
 import { FoundationStartProvider } from '@/features/settings/FoundationStartProvider'
+import { cn } from '@/lib/utils'
+import { ImmersiveSetContext, ImmersiveStateContext } from './immersive'
 
 /**
  * Responsive application shell.
@@ -23,8 +26,16 @@ import { FoundationStartProvider } from '@/features/settings/FoundationStartProv
  */
 export function AppShell() {
   const { pathname } = useLocation()
+  /*
+   * One mounted screen — focused workout mode — may ask the mobile bar to
+   * stand down while Complete set owns the bottom of the phone. Nothing else
+   * uses this, and it is released the moment that screen unmounts.
+   */
+  const [immersive, setImmersive] = useState(false)
 
   return (
+    <ImmersiveSetContext.Provider value={setImmersive}>
+    <ImmersiveStateContext.Provider value={immersive}>
     <FoundationStartProvider>
     <div className="min-h-dvh">
       {/* Tablet rail */}
@@ -46,7 +57,11 @@ export function AppShell() {
       */}
       <main
         id="main"
-        className="min-h-dvh pb-24 pt-safe md:pb-12 md:pl-24 xl:pl-60"
+        className={cn(
+          'min-h-dvh pt-safe md:pb-12 md:pl-24 xl:pl-60',
+          // The bar's own height only needs reserving while the bar is there.
+          immersive ? 'pb-0' : 'pb-24',
+        )}
       >
         <motion.div
           key={pathname}
@@ -60,8 +75,10 @@ export function AppShell() {
       </main>
 
       {/* Mobile bottom nav */}
-      <BottomNav />
+      {!immersive && <BottomNav />}
     </div>
     </FoundationStartProvider>
+    </ImmersiveStateContext.Provider>
+    </ImmersiveSetContext.Provider>
   )
 }

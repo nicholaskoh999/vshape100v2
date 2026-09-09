@@ -191,6 +191,31 @@ export async function createCustomExercise(input: {
 /* Shapes the editor works in                                          */
 /* ------------------------------------------------------------------ */
 
+/**
+ * The slot a newly-added weekday starts from.
+ *
+ * ONE definition, shared by both editors. The exercise-first card in the
+ * Library and the week-first screen in Settings put an exercise onto a day
+ * with exactly the same starting prescription, because a "3 × 10–15" that
+ * depended on which screen you happened to add it from would be a second
+ * source of programme truth.
+ *
+ * `position` is a placeholder: every caller runs `compactPositions` over the
+ * whole day afterwards, which is the same rule the server applies.
+ */
+export function defaultSlot(exerciseId: string): ProgrammeSlot {
+  return {
+    exerciseId,
+    position: 0,
+    setCount: 3,
+    resultKind: 'reps',
+    targetMin: 10,
+    targetMax: 15,
+    perSide: false,
+    equipment: null,
+  }
+}
+
 /** The view flattened back into the shape a save states. */
 export function toSaveSessions(view: ProgrammeView): ProgrammeSessions {
   const sessions = {} as ProgrammeSessions

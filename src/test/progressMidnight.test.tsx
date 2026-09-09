@@ -376,7 +376,10 @@ describe('G. add, update and delete after a rollover', () => {
     await user.click(screen.getByRole('button', { name: /delete this measurement/i }))
     await user.click(screen.getByRole('button', { name: /delete it/i }))
 
-    await waitFor(() => expect(card()?.textContent).toMatch(/no measurements in the last/i))
+    // ROUND 24 CORRECTION. Deleting the only measurement leaves the account
+    // with no history at all, so the card returns to the compact fresh-empty
+    // state rather than to an empty 90-day window.
+    await waitFor(() => expect(card()?.textContent).toMatch(/no weight recorded yet/i))
   })
 
   it('leaves the stored measurement for the previous day alone', async () => {

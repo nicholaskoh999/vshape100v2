@@ -33,6 +33,10 @@ export function BottomNav() {
   return (
     <nav
       aria-label="Primary"
+      // Three navigations carry this name — the bar, the tablet rail and the
+      // desktop sidebar — and only this one is the phone's bottom plane, which
+      // focused workout mode stands down. Marked so a test can say which.
+      data-bottom-nav
       className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface pb-safe shadow-sticky md:hidden"
     >
       <ul className="mx-auto flex h-16 max-w-lg items-stretch px-1">

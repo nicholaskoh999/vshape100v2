@@ -53,15 +53,45 @@ async function renderProgress() {
 /* ------------------------------------------------------------------ */
 
 describe('1. honest states', () => {
+  /*
+   * ROUND 24 CORRECTION — the fresh-empty state.
+   *
+   * This used to assert the WINDOWED message ("no measurements in the last 90
+   * days"), which was the careful thing to say while the card could not tell
+   * an empty window from an empty history. It can: `summary.count` is a
+   * LIFETIME count, and at zero the strong claim is simply true. So the card
+   * now makes it once and gets out of the way, instead of spending most of a
+   * phone screen on three empty metric blocks and a window switcher for a
+   * history with nothing in it — which is the state every account will open on
+   * after the planned Fresh Start.
+   *
+   * The windowed message is unchanged and still tested, below, for the case it
+   * was actually written for: measurements that exist but fall outside the
+   * window.
+   */
   it('says nothing has been recorded rather than showing a zero', async () => {
     await renderProgress()
 
     const text = card()?.textContent ?? ''
-    // The default window is 90 days, so the empty message says exactly that
-    // and points at All rather than claiming nothing was ever recorded.
-    expect(text).toMatch(/no measurements in the last 90 days/i)
+    expect(text).toMatch(/no weight recorded yet/i)
     // "0.0 kg" would be a measurement that never happened.
     expect(text).not.toMatch(/0\.0 kg/)
+    // Neither is a comparison invented to fill the space.
+    expect(text).not.toMatch(/since previous/i)
+    expect(text).not.toMatch(/since first/i)
+    expect(card()?.querySelectorAll('[data-change]')).toHaveLength(0)
+    // And the one thing there is to do is right there.
+    expect(
+      within(card() as HTMLElement).getByRole('button', { name: 'Add measurement' }),
+    ).toBeInTheDocument()
+  })
+
+  it('offers no window switcher while there is no history to window', async () => {
+    await renderProgress()
+
+    expect(
+      screen.queryByRole('group', { name: /measurement window/i }),
+    ).not.toBeInTheDocument()
   })
 
   it('refuses to compare a single measurement', async () => {
@@ -154,6 +184,9 @@ describe('2. changes are exact and signed', () => {
 
 describe('3. 30D / 90D / All', () => {
   it('offers all three windows as pressable controls', async () => {
+    // One real measurement: the window switcher exists once there is a history
+    // to window, which is the only state it was ever meaningful in.
+    server.seedWeight(TODAY_DATE, 784)
     await renderProgress()
     const group = screen.getByRole('group', { name: /measurement window/i })
 
@@ -184,6 +217,7 @@ describe('3. 30D / 90D / All', () => {
   })
 
   it('marks the selected window for assistive technology', async () => {
+    server.seedWeight(TODAY_DATE, 784)
     const user = await renderProgress()
     await user.click(screen.getByRole('button', { name: '30D' }))
 
@@ -369,7 +403,10 @@ describe('5. deleting', () => {
     await user.click(screen.getByRole('button', { name: /delete this measurement/i }))
     await user.click(screen.getByRole('button', { name: /delete it/i }))
 
-    await waitFor(() => expect(card()?.textContent).toMatch(/no measurements in the last/i))
+    // Deleting the only measurement leaves the account with no history at all,
+    // so the card returns to the fresh-empty state rather than to an empty
+    // 90-day window.
+    await waitFor(() => expect(card()?.textContent).toMatch(/no weight recorded yet/i))
     const removed = server.calls.find((call) => call.method === 'DELETE')
     expect(removed?.url).toContain(TODAY_DATE)
   })

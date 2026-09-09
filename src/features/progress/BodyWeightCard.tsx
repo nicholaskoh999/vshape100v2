@@ -99,7 +99,31 @@ export function BodyWeightCard() {
           </div>
         )}
 
-        {status === "ready" && history && (
+        {/*
+          NOTHING RECORDED YET — A COMPACT STATE, NOT A SKELETON OF THE FULL ONE.
+
+          Round 24 correction. Before a first measurement exists this card spent
+          most of a phone screen on three empty metric blocks — Latest —,
+          Since previous —, Since first — — and a window switcher for a history
+          with nothing in it, pushing the one thing there is to do off the fold.
+          After the planned Fresh Start that is the state every account opens on.
+
+          So with a LIFETIME count of zero it says so once, plainly, and puts the
+          form directly underneath. No trend is fabricated to fill the space, and
+          the full layout returns untouched the moment there is a real
+          measurement to derive it from.
+        */}
+        {status === "ready" && history && history.summary.count === 0 && (
+          <div data-body-weight-empty className="mt-4">
+            <p className="text-[15px] font-bold text-ink">No weight recorded yet</p>
+            <p className="mt-1 text-[13px] leading-relaxed text-ink-3">
+              Add your first measurement below. Changes and the trend chart appear once
+              there is something real to derive them from.
+            </p>
+          </div>
+        )}
+
+        {status === "ready" && history && history.summary.count > 0 && (
           <>
             <Summary history={history} />
 

@@ -2,6 +2,13 @@
 
 **Same Round 24, continued into source (Q8, approved). Not Round 25.**
 
+> **Superseded in part by `12_CORRECTION_REPORT.md`.** The independent review
+> accepted the visual direction and named three blockers: Programme could not
+> add an exercise to a weekday, a conflict could rebase a stale draft, and the
+> active workout was still a session overview. Sections 1 (Q5), 2 (Programme,
+> Active workout) and 5 below describe the state as reviewed; the corrections
+> are in `12_CORRECTION_REPORT.md`.
+
 Blueprint reviewed at `1753862e2978dc744c745ce24f83f401d31f7c8f`.
 Accepted pre-redesign baseline `7213f3b15fc0af6597e0ee236802357e16985084`.
 
@@ -17,7 +24,7 @@ No merge · no deploy · no production D1 mutation · no Fresh Reset execution �
 | **Q2** Today / Training / Progress / Calendar / More · no centre FAB | Bottom bar unchanged in structure and restyled to an opaque white plane with an `accent-edge` active marker (a bare lime hairline is near-invisible on an off-white canvas). No centre action exists. Resume is contextual: Today's training hero says **Continue workout** with a real progress rail, and only when the server says the workout is started. |
 | **Q3** `/settings/programme`, week-first | **New screen.** Day tabs → ordered exercises → one focused editor per slot. Reached from Settings *and* from Training. The write is unchanged: whole programme, all-or-nothing, on `expectedRevision`. |
 | **Q4** no goal weight | No goal line, value or field exists anywhere in the source. Nothing was fabricated to stand in for one. |
-| **Q5** optional client-only rest timer | **Not built.** See §5 — it is the one approved item deliberately left out, and why. |
+| **Q5** optional client-only rest timer | **Not built.** See §5 — it is the one approved item deliberately left out, and why. Still deferred after the correction round. |
 | **Q6** three test-hardening items + the `node:sqlite` gap | All four done. See §4. |
 | **Q8** extend into source | This report. |
 
@@ -102,7 +109,12 @@ Every accepted V2 truth contract is intact, and the suite that pins each one pas
 
 **The rest timer (Q5, approved).** Nothing in the blueprint depends on it, and adding a new feature to the same commit that rewrites every screen makes both harder to review. It stays approved and unbuilt; it is a small, self-contained follow-up.
 
-**Auto-opening the exercise being worked on.** Built, then reverted. It reads well in a gym but takes the disclosure out of the user's hands: the panel opens itself on Start, so the user's own tap on that row then *closes* it, and finishing an exercise moves the open panel out from under them mid-scroll. It also fights the accordion's tested disclosure contract, and accommodating it would have meant rewriting ten tests. Carried to Development Directions, where it belongs with a real focused-workout mode.
+**Auto-opening the exercise being worked on.** Built, then reverted, and still
+not reintroduced — the correction round answered the underlying need with an
+explicit focused mode instead, which is where it belonged. Original reasoning
+kept below.
+
+Built, then reverted. It reads well in a gym but takes the disclosure out of the user's hands: the panel opens itself on Start, so the user's own tap on that row then *closes* it, and finishing an exercise moves the open panel out from under them mid-scroll. It also fights the accordion's tested disclosure contract, and accommodating it would have meant rewriting ten tests. Carried to Development Directions, where it belongs with a real focused-workout mode.
 
 ---
 

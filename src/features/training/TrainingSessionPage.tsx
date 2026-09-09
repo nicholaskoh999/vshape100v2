@@ -1,4 +1,12 @@
-import { ArrowLeft, CheckCircle2, Loader2, Play, RefreshCw, Trash2 } from 'lucide-react'
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Loader2,
+  Play,
+  RefreshCw,
+  Target,
+  Trash2,
+} from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router'
 
@@ -8,6 +16,7 @@ import { Banner, Skeleton } from '@/components/ui/Feedback'
 import { HeroCard, PageHeader } from '@/components/ui/Layout'
 import { useLocalToday } from '@/features/progress/useLocalToday'
 import { ExerciseAccordion } from './ExerciseAccordion'
+import { FocusedWorkout } from './FocusedWorkout'
 import { useExerciseInputTypeLibrary } from '@/features/settings/useExerciseInputTypeLibrary'
 import { modalityVerdictAt } from './inputTypeMismatch'
 import { workoutSessionFromSnapshot } from './extra'
@@ -109,6 +118,18 @@ function SessionView({
   const [pinnedDate, setPinnedDate] = useState<string | null>(null)
   const date = pinnedDate ?? liveToday
 
+  /*
+   * FOCUSED MODE IS ENTERED, NEVER ARRIVED AT.
+   *
+   * Round 24 correction (Blocker 3). Deliberately not the default and
+   * deliberately not a side effect of Start: this page is also how somebody
+   * looks over a session, reorders their thinking, or checks what Thursday
+   * involves, and dropping them into a single-set workspace for that would be
+   * worse than the overview it replaces. Continue workout opens it; Back to all
+   * exercises closes it; nothing is written either way.
+   */
+  const [focused, setFocused] = useState(false)
+
   const workout = useWorkoutLog(date, session.id)
 
   // Adjusted during render rather than in an effect — React supports this for
@@ -190,6 +211,38 @@ function SessionView({
       }
     : { day: session.day, focus: session.focus, intensity: session.intensity }
 
+  /*
+   * Focused mode needs a started workout with real counts behind it. If a Start
+   * is cancelled while it is open, the condition simply stops holding and the
+   * overview comes back — there is no state to unwind, because entering wrote
+   * nothing.
+   */
+  if (focused && workout.started && workout.progress && rendered.exercises.length > 0) {
+    return (
+      <FocusedWorkout
+        exercises={rendered.exercises}
+        sets={workout.sets}
+        progress={workout.progress}
+        busySet={workout.busySet}
+        mutationError={workout.mutationError}
+        modalityAt={modalityAt}
+        // Offered to the draft field only, and only where the modality is both
+        // known and agreed — the same gate the accordion applies.
+        suggestedLoadFor={(exerciseOrder) =>
+          guidance.status === 'ready'
+            ? (guidance.laneFor(exerciseOrder)?.suggestedLoad ?? null)
+            : null
+        }
+        // Guidance that no longer describes this workout may be read, not used.
+        suggestionLocked={guidance.status !== 'ready' || !guidance.confirmed}
+        onComplete={workout.complete}
+        onSkip={workout.skip}
+        onUndo={workout.undo}
+        onExit={() => setFocused(false)}
+      />
+    )
+  }
+
   return (
     <>
       <BackToTraining />
@@ -206,6 +259,7 @@ function SessionView({
         session={session}
         plan={plan}
         workout={workout}
+        onFocus={() => setFocused(true)}
         onStart={() => {
           // ROUND 22. The body states only which programme the user was
           // looking at. The server builds the snapshot from that programme.
@@ -257,11 +311,14 @@ function WorkoutBar({
   plan,
   workout,
   onStart,
+  onFocus,
 }: {
   session: TrainingSessionView
   plan: ReturnType<typeof buildWorkoutPlan>
   workout: ReturnType<typeof useWorkoutLog>
   onStart: () => void
+  /** Open the focused workspace. Writes nothing. */
+  onFocus: () => void
 }) {
   const { status, started, starting, progress, mutationError, reload } = workout
   const { cancelable, cancelling, cancelStart } = workout
@@ -364,6 +421,19 @@ function WorkoutBar({
             {progress.completed} completed · {progress.skipped} skipped
           </p>
           <ProgressBar resolved={progress.resolved} total={progress.total} />
+
+          {/*
+            The way into the workspace. Offered while there is still something
+            to log — once every set is resolved there is no current set for it
+            to open, and pretending otherwise is exactly the invented "current"
+            this round removed.
+          */}
+          {!finished && (
+            <Button variant="primary" size="lg" block onClick={onFocus} className="mt-4">
+              <Target className="size-[18px]" aria-hidden="true" />
+              Continue workout
+            </Button>
+          )}
 
           {/*
             TAKING BACK AN ACCIDENTAL START.
