@@ -1,21 +1,33 @@
 # Round 26 — Admin Lite / System Health v1, release candidate
 
-Formalises the accepted spike. **Not merged. Not deployed. No production D1 was read
-or written. No production variable was set.**
+Formalises the accepted spike. **This candidate is not merged and not deployed. No
+production D1 was read or written. No production variable was set.**
 
-- Base (Round 25 accepted tip): `ff6618411ad2855a511cf83c5dff7fba336865be`
-- Accepted spike: `232783814f23cd00d664d4ccabca1125f0635554`
+- **Authoritative `main`**: `ff6618411ad2855a511cf83c5dff7fba336865be` (the Round 25
+  accepted tip), confirmed against the GitHub remote with `git ls-remote`
+- Accepted spike: `232783814f23cd00d664d4ccabca1125f0635554`, sitting **directly on
+  top of that `main`**
 - Candidate branch: `claude/round-26-admin-lite-b3czmv`, fast-forwarded from the spike
+
+The candidate is therefore **3 commits ahead of `main` and 0 behind**, on a single
+unbroken line with no merge and no rewrite:
+
+```
+ff66184  main — Round 25 correction (accepted tip)
+   ↓
+2327838  Admin Lite spike (accepted)
+   ↓
+d11efe3  Round 26 — the copy polish
+   ↓
+<candidate HEAD>
+```
+
+Verified rather than assumed: `git merge-base origin/main HEAD` is `ff66184`, and
+`git rev-list --left-right --count origin/main...HEAD` reports `behind=0 ahead=3`.
 
 The spike record is `00_ADMIN_LITE_SPIKE.md` and still describes the security model,
 the health semantics and the Foundation control accurately. This document records only
 what Round 26 changed on top of it.
-
-> **Note on the baseline.** The round brief states that `main` is `ff66184`. The
-> repository's `origin/main` is actually `7213f3b` (Round 22 correction 2); `ff66184`
-> is the Round 25 tip and is not yet merged to `main`. The ancestry the brief locks —
-> `ff66184` → `2327838` — verifies exactly, and this candidate is cut from `2327838`.
-> Flagged rather than acted on: moving `main` is not this round's job.
 
 ---
 
