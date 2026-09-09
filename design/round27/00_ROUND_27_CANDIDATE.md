@@ -46,6 +46,13 @@ Before Day 1 the page said "Foundation starts in 5 days" in a small eyebrow, abo
 Foundation metric reading `—`. Correct, and quietly discouraging: it framed a week of
 real training as a waiting room.
 
+> **Correction 1.** The first cut of this treated `foundationStatus().phase ===
+> 'upcoming'` as a synonym for Prep Week. It is not one. The Foundation start date is
+> editable, so `upcoming` only means Day 1 has not arrived — equally true 30 or 60 days
+> out — and the page could therefore have rendered **"PREP WEEK · 30 days until
+> Foundation Day 1"**, naming a week that is nowhere near. That is the same class of
+> untruth as a confident number for something unknown, and it is fixed below.
+
 A new `PrepWeekNote` renders while, and only while, Foundation is `upcoming`:
 
 > **PREP WEEK**
@@ -62,10 +69,23 @@ accepted Foundation calculation — via `daysUntilStart`. Nothing re-derives a d
 no number is hard-coded to a particular day. It reads the *phase* rather than comparing
 dates itself, so a prep note and a Day number cannot appear together.
 
+**Prep Week is a window, defined once.** `src/features/today/prepWeek.ts` owns it:
+the last seven calendar days before Day 1, `daysUntilStart` of `1..7` inclusive. Both
+the note and the eyebrow ask `prepWeekDaysRemaining` rather than each interpreting the
+phase for itself — two callers separately deciding what a phase means is exactly how
+the original gap opened. It is its own module, not an export beside the component,
+because it is a domain rule rather than a component.
+
+Outside the window there is no note, so the eyebrow is the only thing that can speak,
+and it says the true thing: `Foundation starts in 30 days`, with correct singular
+handling if it is ever reached with 1.
+
 **No Day 0, structurally rather than by a guard.** `upcoming` means `day < 1`, which
 makes `daysUntilStart` at least 1 by construction. On Day 1 the phase becomes
 `foundation`, the component returns null, and the normal Foundation state takes over
-with nothing to dismiss and nothing to unwind.
+with nothing to dismiss and nothing to unwind. The eyebrow refuses to print a zero
+even on a path the types say is unreachable: with no trustworthy count it falls back
+to a bare "Foundation" rather than "starts in 0 days".
 
 It renders **outside** the holiday branches on purpose: whether today is a company
 Holiday is a fact the page may still be waiting for, but how many days remain until
@@ -73,9 +93,10 @@ Day 1 is not, so gating one on the other would blank the note for no reason. It 
 still gated on `foundationStart.status === 'ready'` — a count derived from the default
 while the account's real date is in flight is a number that changes under the reader.
 
-**The eyebrow gave up its arithmetic.** With the note printing the count, the eyebrow
-printed it twice on one screen. It now reads `Foundation · Prep week`, keeping its job
-(which phase) and staying parallel with `Foundation · Day 7` on every other day.
+**Inside the window the eyebrow gives up its arithmetic.** With the note printing the
+count, the eyebrow printed it twice on one screen. It reads `Foundation · Prep week`
+there, keeping its job (which phase) and staying parallel with `Foundation · Day 7`.
+Outside the window it keeps the count, because nothing else is carrying it.
 
 Nothing about completion, history or progression semantics changed. No persisted state,
 no Prepare Mode in the database, no migration.
@@ -126,12 +147,21 @@ lands on the right element, **and** the styling, class merging and component voc
 are unchanged. Includes that the passthrough target is the styled root itself and not a
 new wrapper.
 
-`src/test/round27Polish.test.tsx` (13) — driven through the real router, the real
+`src/test/round27Polish.test.tsx` (19) — driven through the real router, the real
 Foundation provider and the real pages. The Foundation date is seeded and every
 countdown assertion is derived from that date and a faked clock, never written into the
-test. Covers: several days before, one day before (singular "1 day"), exactly Day 1,
+test; `setDaysBefore(n)` counts back from `DAY_1` itself, so a test cannot quietly
+disagree with the page about which day is "8 days before".
+
+Covers: five days before (unchanged), one day before (singular "1 day"), exactly Day 1,
 well after Day 1, and a boundary sweep over days 12–15 asserting no `0 days`, no
 negative count and no `Day 0` anywhere on the page.
+
+Correction 1 adds section **2b**: seven days before is Prep Week; **eight days before is
+not**, and the eyebrow reads `Foundation starts in 8 days` with no "Prep week" anywhere;
+thirty days the same; a real countdown at 9/14/60 days; the boundary flipping exactly
+between 8 and 7 rather than somewhere near it; and no zero or negative count at any
+distance, near or far.
 
 ### Mutation testing
 
@@ -142,8 +172,12 @@ Each load-bearing claim was broken on purpose, the suite run, and the mutation r
 | prep note renders in every phase, with `1 - day` as the count | **3 fail** |
 | `Card` drops the passthrough spread | **3 fail** in layout, **2** in round27 |
 | the Admin row points somewhere other than `/admin` | **3 fail** |
+| **C1:** the window reverts to "upcoming means Prep Week" | **4 fail** |
+| **C1:** window off by one, `1..8` | **2 fail** |
+| **C1:** window off by one the other way, `1..6` | **2 fail** |
+| **C1:** the far-out eyebrow says "Prep week" anyway | **3 fail** |
 
-Baseline before and after each: 9 and 13 passed.
+Baseline before and after each: 9 and 19 passed.
 
 ### Gates
 
@@ -220,3 +254,5 @@ imported by nothing the app builds, and was deleted after capture.
 | `05-mobile-390-day-1-prep-gone.png` | Foundation Day 1: prep note gone, metric reads 1 |
 | `06-mobile-390-admin-after-settings-click.png` | after following the row — the server's refusal |
 | `07-desktop-1440-settings-admin-entry.png` | the Admin row at desktop width |
+| `08-mobile-390-far-out-not-prep-week.png` | **30 days out: no note; eyebrow reads "Foundation starts in 30 days"** |
+| `09-mobile-390-seven-days-prep-week-starts.png` | **7 days out: the window's first day, note present** |

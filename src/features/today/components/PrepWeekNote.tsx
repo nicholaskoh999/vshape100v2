@@ -3,8 +3,10 @@ import { CalendarCheck } from 'lucide-react'
 import { Card } from '@/components/ui/Layout'
 import type { FoundationStatus } from '@/features/progress/foundation'
 
+import { prepWeekDaysRemaining } from '../prepWeek'
+
 /**
- * ROUND 27 (VT-02). The days before Foundation Day 1, said out loud.
+ * ROUND 27 (VT-02). The last week before Foundation Day 1, said out loud.
  *
  * Before this, the run-up to Day 1 was one small eyebrow — "Foundation starts
  * in 6 days" — above a page whose Foundation metric read `—`. Factually
@@ -16,29 +18,13 @@ import type { FoundationStatus } from '@/features/progress/foundation'
  * HISTORY and nothing about Day 1 removes it. The third line says so, and it
  * is the reason this component exists at all.
  *
- * WHAT IT REFUSES TO INVENT.
- *
- *   - The count comes from `foundationStatus`, the one accepted Foundation
- *     calculation, via `daysUntilStart`. Nothing here re-derives a date, and
- *     no number is hard-coded to any particular day.
- *   - It renders ONLY in the `upcoming` phase. `upcoming` means `day < 1`, so
- *     `daysUntilStart` is at least 1 by construction: there is no Day 0 to
- *     show and no negative day to guard against after the fact.
- *   - On Day 1 the phase becomes `foundation` and this returns null. The
- *     normal Foundation state takes over with nothing to dismiss and nothing
- *     to unwind — the component simply stops existing.
- *   - It reads the phase rather than comparing dates itself, so a caller
- *     cannot get a prep note and a Day number on screen at the same time.
- *
- * It changes no completion, history or progression semantics. It is a
- * paragraph.
+ * It renders exactly when `prepWeekDaysRemaining` says so, and never decides
+ * for itself. It changes no completion, history or progression semantics. It
+ * is a paragraph.
  */
 export function PrepWeekNote({ status }: { status: FoundationStatus | null }) {
-  if (!status || status.phase !== 'upcoming') return null
-
-  // `upcoming` guarantees this, but a null here would print "null days".
-  const days = status.daysUntilStart
-  if (days === null || days < 1) return null
+  const days = prepWeekDaysRemaining(status)
+  if (days === null) return null
 
   return (
     <Card

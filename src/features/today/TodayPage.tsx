@@ -37,6 +37,7 @@ import { TodaySection } from './components/TodaySection'
 import { TodayStatusNotice } from './components/TodayStatusNotice'
 import { TodayTrainingHero } from './components/TodayTrainingHero'
 import { WeekStrip, type WeekDayMark } from './components/WeekStrip'
+import { prepWeekDaysRemaining } from './prepWeek'
 import { useScheduledStarted } from './useScheduledStarted'
 import { useTrainingFlex } from './useTrainingFlex'
 import { useTrainingFlexRange } from './useTrainingFlexRange'
@@ -76,15 +77,34 @@ function foundationEyebrow(now: Date, startDate: string, ready: boolean): string
   const status = foundationStatus(localDateOf(now), startDate)
   if (!status) return 'Foundation'
   /*
-   * ROUND 27 (VT-02). This used to read "Foundation starts in 5 days".
+   * ROUND 27 (VT-02), as corrected.
    *
-   * The prep note below now says exactly that, in a card the reader actually
-   * looks at, so keeping the number here printed it twice on one screen — the
-   * kind of duplication that reads as noise rather than emphasis. The eyebrow
-   * keeps its job (which phase Foundation is in) and gives up the arithmetic,
-   * staying parallel with "Foundation · Day 7" on every other day.
+   * INSIDE Prep Week the eyebrow gives up its arithmetic: the note below is
+   * printing the count in a card the reader actually looks at, and saying the
+   * same number twice on one screen reads as noise rather than emphasis. The
+   * eyebrow keeps its job — which phase Foundation is in — and stays parallel
+   * with "Foundation · Day 7".
+   *
+   * OUTSIDE it, there is no note, so the eyebrow is the only thing that can
+   * say anything, and it says the true thing: how many days out Day 1 is. It
+   * must not say "Prep week" there. The start date is editable, so `upcoming`
+   * is equally true a month out, and naming that a prep week would be wrong.
+   *
+   * The window is not re-decided here. `prepWeekDaysRemaining` owns it, and
+   * this asks.
    */
-  if (status.phase === 'upcoming') return 'Foundation · Prep week'
+  if (status.phase === 'upcoming') {
+    if (prepWeekDaysRemaining(status) !== null) return 'Foundation · Prep week'
+    const days = status.daysUntilStart
+    /*
+     * Unreachable while the phase is `upcoming` — `upcoming` means `day < 1`,
+     * so this is at least 1. But "Foundation starts in 0 days" is precisely
+     * the untruth this correction exists to remove, so it is never printed:
+     * with no trustworthy count the eyebrow says only what it knows.
+     */
+    if (days === null || days < 1) return 'Foundation'
+    return `Foundation starts in ${days} day${days === 1 ? '' : 's'}`
+  }
   return `Foundation · Day ${status.day}`
 }
 

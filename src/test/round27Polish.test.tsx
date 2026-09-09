@@ -50,21 +50,40 @@ function setDay(year: number, monthIndex: number, day: number) {
 }
 
 /**
+ * Put the clock `n` local days BEFORE Day 1, derived from `DAY_1` itself.
+ *
+ * Deliberately not a hand-written calendar date per case. Counting back from
+ * the seeded start date is the same arithmetic the page does, so a test cannot
+ * quietly disagree with it about which day is "8 days before" — and month
+ * boundaries take care of themselves.
+ */
+function setDaysBefore(n: number) {
+  const [year, month, day] = DAY_1.split('-').map(Number)
+  vi.setSystemTime(new Date(year, month - 1, day - n, 10, 0, 0, 0))
+}
+
+/** The Today eyebrow, as rendered. */
+function eyebrow(): string {
+  return document.body.textContent ?? ''
+}
+
+/**
  * Render Today and WAIT FOR THE ACCOUNT'S FOUNDATION DATE.
  *
  * The heading appears before the settings read resolves, and until it does the
  * page deliberately knows no start date — so asserting straight after the
  * heading would be asserting against a page that has not been told what
  * Foundation is yet. The eyebrow is the readiness signal: it says a bare
- * "Foundation" while loading, and names the phase — a day number, or Prep week
- * — once it knows.
+ * "Foundation" while loading, and once it knows it names the phase — a day
+ * number, Prep week, or a plain "starts in N days" when Day 1 is further out
+ * than a week.
  */
 async function renderToday() {
   renderApp('/today')
   await screen.findByRole('heading', { name: 'Today', level: 1 })
   await waitFor(() =>
     expect(document.body.textContent ?? '').toMatch(
-      /Foundation · Day \d+|Foundation · Prep week/,
+      /Foundation · Day \d+|Foundation · Prep week|Foundation starts in \d+ days?/,
     ),
   )
 }
@@ -187,6 +206,90 @@ describe('2. the prep note counts down to Day 1', () => {
 /* ================================================================== */
 /* 3. VT-02 — the boundary, which is the part that can go wrong        */
 /* ================================================================== */
+
+/* ================================================================== */
+/* 2b. CORRECTION 1 — Prep Week is a WINDOW, not the whole upcoming    */
+/*     phase                                                          */
+/* ================================================================== */
+
+describe('2b. Prep Week is the last seven days, and nothing before that', () => {
+  /*
+   * The gap this closes: `upcoming` only means Day 1 has not arrived. The
+   * start date is editable, so it is equally true a month out — and the first
+   * cut would have rendered "PREP WEEK · 30 days until Foundation Day 1".
+   */
+
+  it('A. SEVEN days before is the first day of Prep Week', async () => {
+    setDaysBefore(7)
+    await renderToday()
+
+    expect(prepNote()).not.toBeNull()
+    expect(screen.getByText('7 days until Foundation Day 1')).toBeInTheDocument()
+    expect(eyebrow()).toContain('Foundation · Prep week')
+  })
+
+  it('B. EIGHT days before is NOT Prep Week, and says so truthfully', async () => {
+    setDaysBefore(8)
+    await renderToday()
+
+    expect(prepNote()).toBeNull()
+    expect(screen.queryByText('Prep week')).toBeNull()
+    expect(screen.queryByText(/until Foundation Day 1/)).toBeNull()
+
+    // The eyebrow is now the only thing that can speak, and it is truthful.
+    expect(eyebrow()).toContain('Foundation starts in 8 days')
+    expect(eyebrow()).not.toContain('Prep week')
+  })
+
+  it('C. THIRTY days before is not Prep Week either', async () => {
+    setDaysBefore(30)
+    await renderToday()
+
+    expect(prepNote()).toBeNull()
+    expect(screen.queryByText('Prep week')).toBeNull()
+    expect(eyebrow()).toContain('Foundation starts in 30 days')
+    expect(eyebrow()).not.toContain('Prep week')
+  })
+
+  it('D. the far-out eyebrow counts down for real, day by day', async () => {
+    // Derived from the seeded date, so the numbers cannot be coincidences.
+    for (const [before, expected] of [
+      [9, 'Foundation starts in 9 days'],
+      [14, 'Foundation starts in 14 days'],
+      [60, 'Foundation starts in 60 days'],
+    ] as const) {
+      setDaysBefore(before)
+      await renderToday()
+      expect(eyebrow(), `${before} days before`).toContain(expected)
+      expect(eyebrow(), `${before} days before`).not.toContain('Prep week')
+      cleanup()
+    }
+  })
+
+  it('E. the boundary flips exactly between 8 and 7, not somewhere near it', async () => {
+    setDaysBefore(8)
+    await renderToday()
+    expect(prepNote(), 'day 8 must be outside').toBeNull()
+    cleanup()
+
+    setDaysBefore(7)
+    await renderToday()
+    expect(prepNote(), 'day 7 must be inside').not.toBeNull()
+  })
+
+  it('F. no window, near or far, ever prints a zero or a negative count', async () => {
+    for (const before of [60, 30, 9, 8, 7, 3, 1]) {
+      setDaysBefore(before)
+      await renderToday()
+
+      const body = eyebrow()
+      expect(body, `${before} before`).not.toMatch(/\b0 days? until Foundation/)
+      expect(body, `${before} before`).not.toMatch(/starts in 0 days?\b/)
+      expect(body, `${before} before`).not.toMatch(/-\d+ days?/)
+      cleanup()
+    }
+  })
+})
 
 describe('3. Day 1 and after', () => {
   it('A. ON Foundation Day 1 the prep note is gone', async () => {
