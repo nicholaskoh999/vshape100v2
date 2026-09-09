@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from 'react-router'
 
 import { AppShell } from '@/app/shell/AppShell'
 import { AchievementsPage } from '@/features/achievements/AchievementsPage'
+import { AdminPage } from '@/features/admin/AdminPage'
 import { LoginPage } from '@/features/auth/LoginPage'
 import { RequireAuth } from '@/features/auth/RequireAuth'
 import { CalendarPage } from '@/features/calendar/CalendarPage'
@@ -65,6 +66,18 @@ export const routes = [
           { path: '/settings/programme', element: <ProgrammePage /> },
           { path: '/settings/exercises', element: <ExerciseLibraryPage /> },
           { path: '/settings/exercises/:id', element: <ExerciseMediaEditorPage /> },
+          /*
+           * Admin Lite. Reachable by URL only — deliberately NOT in navItems,
+           * because it is not a destination for the person using the app; it is
+           * the owner's control page.
+           *
+           * ITS ABSENCE FROM THE NAV IS NOT THE SECURITY. Anyone may render
+           * this route. Everything on it comes from /api/admin/*, which decides
+           * admin server-side from the session's `google_sub` and a Worker
+           * allowlist, so a non-admin who finds the URL gets a refusal rather
+           * than a page.
+           */
+          { path: '/admin', element: <AdminPage /> },
           { path: '*', element: <NotFoundPage /> },
         ],
       },

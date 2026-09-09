@@ -11,6 +11,7 @@
  * not a second scheduler.
  */
 
+import { handleAdminRequest } from './admin/routes'
 import type { Env } from './auth/config'
 import { handleAuthRequest } from './auth/routes'
 import { handleExerciseInputTypeRequest } from './exerciseInput/routes'
@@ -72,6 +73,14 @@ export default {
 
     const trainingFlexResponse = await handleTrainingFlexRequest(request, env)
     if (trainingFlexResponse) return trainingFlexResponse
+
+    // Admin Lite. Last of the API handlers and matched on its own `/api/admin/`
+    // prefix, which no other route claims. Everything behind it is gated on the
+    // server-side admin allowlist, so its position here grants nothing: an
+    // ordinary signed-in user reaching these paths is refused inside the
+    // handler, not by failing to reach it.
+    const adminResponse = await handleAdminRequest(request, env)
+    if (adminResponse) return adminResponse
 
     return env.ASSETS.fetch(request)
   },

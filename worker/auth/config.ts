@@ -19,6 +19,25 @@ export type Env = {
   VAPID_PRIVATE_KEY?: string
   /** VAPID contact, `mailto:` or `https:` (RFC 8292). */
   VAPID_SUBJECT?: string
+  /**
+   * Admin Lite. Comma-separated `google_sub` values allowed to reach /api/admin.
+   *
+   * Deliberately SEPARATE from ALLOWED_GOOGLE_EMAILS: that list decides who may
+   * sign in at all, and every account on it is an ordinary user. Admin is a
+   * strictly narrower thing, keyed on the stable Google subject rather than on
+   * an email address, which the identity provider can change.
+   *
+   * Unset or empty means NOBODY is an admin. Fail closed: an absent allowlist
+   * must not open the page, it must shut it.
+   */
+  ADMIN_GOOGLE_SUBS?: string
+  /**
+   * The running build's source SHA, when the deployment supplies one.
+   *
+   * Read-only and optional. Nothing derives it, guesses it or falls back: an
+   * absent value is reported to the admin page as Unknown.
+   */
+  BUILD_SHA?: string
 }
 
 export type AuthConfig = {
