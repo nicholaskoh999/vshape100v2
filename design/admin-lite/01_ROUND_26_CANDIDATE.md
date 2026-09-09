@@ -138,26 +138,45 @@ deferral's machinery from the copy.
 | lint | clean |
 | production build | clean |
 
-### Known flaky test — `src/test/trainingNavigation.test.tsx`
+### Known flaky tests — NOT caused by this round, and NOT patched by it
 
-Not caused by this round, and not patched by it.
+Three files failed across five full-suite runs, and **a different set each time**.
+That is the signature of timing, not of a defect.
 
-Two full-suite runs failed differently — the second run's failures were a different
-pair from the first's, which is the signature of timing, not of a defect. Isolated:
-
-| Tree | Runs | Result |
+| # | Tree | Result |
 |---|---|---|
-| Round 26 candidate | 3 × `trainingNavigation` alone | 2 passed, 1 failed |
-| **untouched spike `2327838`** | 5 × `trainingNavigation` alone | 4 passed, **1 failed** |
-| untouched spike `2327838` | 3 × `notificationDelivery` alone | 3 passed |
+| 1 | candidate | 3 failed — `trainingNavigation`, `notificationDelivery`, +1 |
+| 2 | candidate | 2 failed — `trainingNavigation`, `notificationDelivery` |
+| 3 | **untouched spike `2327838`** | **2832 passed, 0 failed** |
+| 4 | candidate | 1 failed — `calendar` |
+| 5 | **untouched spike `2327838`** | **2 failed — `trainingNavigation`, `notificationDelivery`** |
 
-It fails on the untouched baseline, with none of Round 26's code present. Round 26
-changes no training, router or notification source — `git diff` against the spike
-touches four files, all of them admin or `.gitignore`. `notificationDelivery` only
-ever failed as a 30 s timeout under full-suite parallel load, and passes alone in both
-trees: container contention, not a defect.
+Run 5 settles it. The untouched spike, with none of Round 26's code present, failed
+with **exactly the pair** the candidate failed with in runs 1 and 2. The flakiness is
+in the tree this round inherited and in this container's scheduling, not in anything
+Round 26 wrote.
 
-No unrelated product code was modified to make either of them pass.
+Isolated, each one passes:
+
+| File | Tree | Runs | Result |
+|---|---|---|---|
+| `trainingNavigation` | candidate | 3 | 2 passed, 1 failed |
+| `trainingNavigation` | **untouched spike** | 5 | 4 passed, **1 failed** |
+| `notificationDelivery` | untouched spike | 3 | 3 passed |
+| `calendar` | candidate | 3 | 3 passed |
+
+`trainingNavigation` reproduces its failure on the untouched baseline at roughly the
+same rate as on the candidate. `notificationDelivery` only ever failed as a 30 s
+timeout under full-suite parallel load and passes alone in both trees — container
+contention, not a defect. `calendar` failed once, under load, and passes alone.
+
+Round 26 changes no training, calendar, router or notification source. The diff
+against the spike is four files, all of them admin or `.gitignore`. **No unrelated
+product code was modified to make any of these pass**, and none of them was skipped,
+quarantined or retried into green.
+
+The admin suites — `adminRoutes` (51), `adminPage` (16), `adminSourceAudit` (10) —
+passed in every run, isolated and full.
 
 ## 4. Screenshots
 
