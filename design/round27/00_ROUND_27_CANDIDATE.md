@@ -154,6 +154,48 @@ Baseline before and after each: 9 and 13 passed.
 | lint | clean |
 | production build | clean |
 
+### Full suite, and two flaky tests that are not this round's
+
+Two full-suite runs, and a **different** file failed each time — the signature of
+timing, not of a defect.
+
+| Run | Result |
+|---|---|
+| 1 (while screenshots were being captured, so the box was loaded) | 1 failed — `trainingNavigation` |
+| 2 (clean, nothing else running) | 1 failed — `calendar` |
+
+Both were then run in isolation, on this candidate **and on a worktree of the
+untouched baseline `7b6092b`**:
+
+| File | Tree | Runs | Failures |
+|---|---|---|---|
+| `trainingNavigation` | candidate | 5 | 1 |
+| `trainingNavigation` | **untouched `7b6092b`** | 5 | **2** |
+| `calendar` | candidate | 5 | 1 |
+| `calendar` | **untouched `7b6092b`** | 15 | **2** |
+
+Both reproduce on the baseline, with none of Round 27's code present.
+`trainingNavigation` in fact failed *more* often there than on the candidate.
+
+`Layout.tsx` is shared, so "unrelated" needed proving rather than asserting. Two
+things settle it for `calendar`:
+
+- The failing assertion reads
+  `document.querySelector('[data-holiday-training]')`. That attribute is on a plain
+  `<p>` in `CalendarPage.tsx` — never on a `Card` — so the passthrough cannot reach
+  it. And the change could only ever *add* a surviving `data-` attribute, never
+  remove one, so it cannot turn a found element into `undefined`.
+- The error, `expected undefined to be 'on'`, means the editing sheet had not
+  reopened yet. It is a timing failure in the test, and it is byte-identical to the
+  failure this same test produced during Round 26.
+
+Round 27 touches no calendar, training, router or shell source —
+`git diff origin/main -- src/features/calendar src/features/training src/app shared/`
+is empty.
+
+**Neither test was patched, skipped, quarantined or retried into green**, and no
+unrelated product code was modified. They are reported as what they are.
+
 ## Screenshots
 
 `design/round27/screenshots/`, captured from a **throwaway harness** that mounts the
